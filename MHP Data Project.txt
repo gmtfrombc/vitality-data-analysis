@@ -1,0 +1,169 @@
+Metabolic Health Data Analysis & AI-Assisted SQL Query Web Application
+
+1. Overview
+
+The goal of this project is to build an interactive, data-driven web application for in-depth analysis of metabolic health patient data. The app will ingest patient data from JSON files, update a local SQLite database incrementally, and provide a user-friendly interface to view, query, and edit patient records. An integrated ChatGPT assistant will help generate custom SQL queries from natural language prompts. The app will be built primarily using Python and Panel, with a future roadmap that includes server/cloud deployment options.
+
+2. Key Components
+
+2.1 Data Ingestion & Database Update
+	•	Data Source:
+	•	Patient data in JSON format containing:
+	•	Vital signs
+	•	Mental health survey results
+	•	Lab metrics
+	•	Patient visit completions
+	•	Medication usage
+	•	Audio transcript notes
+	•	Future data: Wearable integrations and other additional metrics.
+	•	Database:
+	•	SQLite for local storage.
+	•	Schema Design:
+	•	Tables for each data type (patients, vital signs, surveys, labs, visits, medications, transcripts).
+	•	Unique identifiers to manage incremental updates (e.g., patient ID).
+	•	Update Script:
+	•	A Python script that:
+	•	Parses the JSON file.
+	•	Checks for new patient records.
+	•	Adds only new records to the SQLite database (ensuring that manually edited or updated records are not overwritten).
+	•	Can be executed on a weekly basis (via a scheduled task/cron job).
+
+2.2 Backend & Query Layer
+	•	Database Interaction:
+	•	Use Python’s sqlite3 module or an ORM like SQLAlchemy for database operations.
+	•	Pandas for data manipulation, report generation, and complex querying.
+	•	APIs & Data Extraction:
+	•	Functions to retrieve patient data and run granular SQL queries.
+	•	Utilities to handle data transformation and aggregation.
+
+2.3 Interactive Web Application (Using Panel)
+	•	Framework:
+	•	Panel for building the interactive web dashboard and control interfaces.
+	•	User Interface Components:
+	•	Data Analysis Dashboard:
+	•	Interactive charts, filters, and controls for in-depth data analysis.
+	•	Integration with Pandas to visualize query results.
+	•	Patient Dashboard:
+	•	Detailed view of individual patient data.
+	•	Editable fields for correcting or completing missing data.
+	•	Functionality to update the SQLite database based on user input.
+	•	AI Assistant Interface:
+	•	Input field for natural language queries.
+	•	Display area for the generated SQL query.
+	•	Option to review and execute the generated query on the database.
+
+2.4 AI Integration with ChatGPT
+	•	ChatGPT API:
+	•	Use the OpenAI Python SDK to connect to the ChatGPT API.
+	•	The AI assistant will:
+	•	Accept natural language input from the user.
+	•	Generate SQL queries based on the prompt.
+	•	Provide an interface for the user to review the generated SQL before execution.
+
+2.5 Development Environment & Future Roadmap
+	•	Development Tools:
+	•	VS Code as the primary code editor.
+	•	Jupyter Notebooks for prototyping data manipulations, database queries, and testing API interactions.
+	•	Deployment:
+	•	Initially deployed and run locally.
+	•	Future plans include cloud deployment or serverless functions (e.g., Firebase functions) for scalability.
+
+⸻
+
+3. Functional Requirements
+	1.	Data Ingestion & Update:
+	•	Parse JSON files containing patient data.
+	•	Incrementally update the SQLite database without overwriting existing edits.
+	•	Schedule weekly updates.
+	2.	Backend Data Querying:
+	•	Retrieve and manipulate patient data using SQL.
+	•	Enable complex queries and generate detailed reports using Pandas.
+	3.	Interactive Web App:
+	•	Provide a Panel-based UI for:
+	•	Filtering and visualizing aggregate data.
+	•	Displaying detailed patient dashboards.
+	•	Editing patient records with real-time updates to the database.
+	•	Include an interface for generating and executing SQL queries.
+	4.	AI SQL Generation:
+	•	Integrate with the ChatGPT API.
+	•	Accept natural language prompts and generate SQL queries.
+	•	Allow the user to validate and execute these queries safely.
+
+⸻
+
+4. Non-Functional Requirements
+	•	Security & Privacy:
+	•	Ensure patient data remains secure.
+	•	Use local SQLite storage with proper access controls.
+	•	Maintainability & Extensibility:
+	•	Modular, well-documented codebase.
+	•	Easily extendable to include additional data sources (e.g., wearables).
+	•	Usability:
+	•	A visually appealing and intuitive UI.
+	•	Seamless interaction between the UI, database, and AI components.
+	•	Performance:
+	•	Efficient incremental updates and query processing.
+	•	Responsive web interface for data visualization and editing.
+
+⸻
+
+5. Technology Stack
+	•	Programming Language: Python 3.x
+	•	Web Framework: Panel
+	•	Database: SQLite (with potential use of SQLAlchemy for ORM)
+	•	Data Analysis: Pandas
+	•	AI Integration: OpenAI Python SDK (ChatGPT API)
+	•	Development Environment: VS Code, Jupyter Notebooks
+	•	Version Control: Git
+
+⸻
+
+6. Implementation Roadmap
+
+Phase 1: Data Pipeline Setup
+	•	Design the SQLite database schema.
+	•	Build and test the JSON parsing and incremental update script.
+	•	Schedule the script for weekly execution.
+
+Phase 2: Backend Query Layer
+	•	Develop functions to perform CRUD operations on the database.
+	•	Integrate Pandas for data manipulation and complex reporting.
+	•	Test query functionalities in Jupyter Notebooks.
+
+Phase 3: Panel-based Web Application
+	•	Set up the Panel project structure.
+	•	Build UI components for:
+	•	Data analysis dashboard (filters, charts, tables).
+	•	Individual patient dashboards with editable fields.
+	•	Implement real-time updates to the SQLite database.
+
+Phase 4: AI Assistant Integration
+	•	Integrate the OpenAI SDK to call ChatGPT API.
+	•	Create a UI element for natural language SQL query generation.
+	•	Implement logic to validate and execute the generated SQL queries.
+
+Phase 5: Testing & Iteration
+	•	Perform unit and integration tests across modules.
+	•	Collect feedback from initial usage and iterate on UI/UX.
+	•	Ensure data integrity and security in every update.
+
+Phase 6: Future Enhancements & Deployment
+	•	Plan for cloud/serverless deployment (e.g., Docker, Firebase functions).
+	•	Extend the system for additional data sources like wearables.
+	•	Optimize for multi-user scenarios if scaling becomes necessary.
+
+⸻
+
+7. Clarifying & Open Questions
+	1.	Data Schema Details:
+	•	Finalize the schema for patient data and associated tables.
+	•	Define unique identifiers and relationships between tables.
+	2.	Error Handling & Logging:
+	•	What level of logging is expected for the update script and UI actions?
+	•	Define error handling mechanisms for database conflicts or API failures.
+	3.	User Interface Details:
+	•	Any specific requirements for visual themes or branding in the Panel dashboard?
+	•	Would additional user authentication be required for future multi-user scenarios?
+	4.	AI Query Validation:
+	•	How should the app handle potentially unsafe or inefficient SQL generated by ChatGPT?
+	•	Define a review process before executing any AI-generated queries.
