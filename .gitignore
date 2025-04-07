@@ -49,6 +49,6 @@ ehthumbs.db
 Thumbs.db
 
 # Project specific
-patient_data.db     # Uncomment if you want to exclude the database from version control
+patient_data.db
 *.log
 logs/ 
