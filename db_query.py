@@ -458,62 +458,109 @@ def get_program_stats(db_path=DB_PATH):
 
 def get_patient_overview(patient_id, db_path=DB_PATH):
     """
-    Get a comprehensive overview of a patient including demographics, 
-    vitals, mental health, and lab results.
+    Get a comprehensive overview of a patient, including demographics, 
+    latest metrics, and status.
 
     Args:
-        patient_id (str or int): Patient ID
-        db_path (str): Path to the SQLite database file
+        patient_id (str): The ID of the patient.
+        db_path (str): Path to the SQLite database file.
 
     Returns:
-        dict: Overview data for the patient
+        dict: Patient overview with demographic, vital, lab and score data.
     """
-    patient_id = str(patient_id)
-    overview = {}
+    # Get basic patient demographics
+    patient_df = get_patient_by_id(patient_id, db_path)
+    if patient_df.empty:
+        logger.warning(f"No patient found with ID: {patient_id}")
+        return {"demographics": {}}
 
-    try:
-        # Get patient demographics
-        patient_df = get_patient_by_id(patient_id, db_path)
-        if patient_df.empty:
-            logger.warning(f"No patient found with ID: {patient_id}")
-            return overview
-
-        overview['demographics'] = patient_df.iloc[0].to_dict()
-
+    # Get latest vitals
+    vitals_df = get_patient_vitals(patient_id, db_path=db_path)
+    latest_vitals = {}
+    if not vitals_df.empty:
         # Get most recent vitals
-        vitals_df = get_patient_vitals(patient_id, db_path=db_path)
-        if not vitals_df.empty:
-            overview['latest_vitals'] = vitals_df.iloc[0].to_dict()
+        vitals_df = vitals_df.sort_values('date', ascending=False)
+        latest_row = vitals_df.iloc[0]
+        latest_vitals = {
+            'date': latest_row['date'],
+            'weight': latest_row['weight'],
+            'height': latest_row['height'],
+            'bmi': latest_row['bmi'],
+            'systolic': latest_row['sbp'],
+            'diastolic': latest_row['dbp']
+        }
 
-        # Get most recent mental health assessments (one of each type)
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM mental_health t1
-            INNER JOIN (
-                SELECT assessment_type, MAX(date) as max_date
-                FROM mental_health
-                WHERE patient_id = ?
-                GROUP BY assessment_type
-            ) t2 ON t1.assessment_type = t2.assessment_type AND t1.date = t2.max_date
-            WHERE t1.patient_id = ?
-        """, (patient_id, patient_id))
+    # Get latest labs (A1C, etc.)
+    labs_df = get_patient_labs(patient_id, db_path=db_path)
+    latest_labs = {}
+    if not labs_df.empty:
+        # Get most recent of each test type
+        labs_df = labs_df.sort_values('date', ascending=False)
+        for test in ['A1C', 'HDL', 'LDL', 'Triglycerides', 'Glucose']:
+            test_rows = labs_df[labs_df['test_name'] == test]
+            if not test_rows.empty:
+                latest_row = test_rows.iloc[0]
+                latest_labs[test] = {
+                    'date': latest_row['date'],
+                    'value': latest_row['value'],
+                    'unit': latest_row['unit']
+                }
 
-        columns = [desc[0] for desc in cursor.description]
-        mh_results = cursor.fetchall()
-        conn.close()
+    # Get latest scores
+    scores_df = get_patient_scores(patient_id, db_path=db_path)
+    latest_scores = {}
+    if not scores_df.empty:
+        scores_df = scores_df.sort_values('date', ascending=False)
+        for score_type in scores_df['score_type'].unique():
+            type_rows = scores_df[scores_df['score_type'] == score_type]
+            if not type_rows.empty:
+                latest_row = type_rows.iloc[0]
+                latest_scores[score_type] = {
+                    'date': latest_row['date'],
+                    'value': latest_row['score_value']
+                }
 
-        if mh_results:
-            overview['mental_health'] = [
-                dict(zip(columns, row)) for row in mh_results]
+    # Get visit metrics
+    visit_metrics = {}
+    visit_df = get_patient_visit_metrics(patient_id, db_path=db_path)
+    if not visit_df.empty:
+        visit_row = visit_df.iloc[0]
+        visit_metrics = {
+            'provider_visits': visit_row['provider_visits'],
+            'health_coach_visits': visit_row['health_coach_visits'],
+            'cancelled_visits': visit_row['cancelled_visits'],
+            'no_show_visits': visit_row['no_show_visits'],
+            'rescheduled_visits': visit_row['rescheduled_visits'],
+            'last_updated': visit_row['last_updated']
+        }
 
-        # Get most recent lab results
-        labs_df = get_most_recent_labs(patient_id, db_path=db_path)
-        if not labs_df.empty:
-            overview['latest_labs'] = labs_df.to_dict('records')
+    # Format the patient data as a dictionary
+    patient_row = patient_df.iloc[0]
+    demographics = {col: patient_row[col] for col in patient_df.columns}
 
-    except Exception as e:
-        logger.error(f"Error getting patient overview: {e}")
+    # Convert boolean fields to Yes/No format
+    bool_fields = {
+        'active': 'Active Status',
+        'etoh': 'ETOH',
+        'tobacco': 'Tobacco',
+        'glp1_full': 'On GLP-1'
+    }
+
+    formatted_bools = {}
+    for field, label in bool_fields.items():
+        if field in demographics:
+            value = demographics.get(field, 0)
+            formatted_bools[label] = 'Yes' if value == 1 else 'No'
+
+    # Combine all data
+    overview = {
+        'demographics': demographics,
+        'formatted_bools': formatted_bools,
+        'latest_vitals': latest_vitals,
+        'latest_labs': latest_labs,
+        'latest_scores': latest_scores,
+        'visit_metrics': visit_metrics
+    }
 
     return overview
 
@@ -791,3 +838,49 @@ def get_patient_scores(patient_id, start_date=None, end_date=None, db_path=DB_PA
     query += " ORDER BY date DESC"
 
     return query_dataframe(query, params=tuple(params), db_path=db_path)
+
+
+def get_patient_pmh(patient_id, db_path=DB_PATH):
+    """
+    Retrieve past medical history data for a patient.
+
+    Args:
+        patient_id (str): The patient ID
+        db_path (str): Path to the SQLite database file
+
+    Returns:
+        DataFrame: Patient's past medical history records
+    """
+    query = """
+        SELECT pmh_id, patient_id, condition, onset_date, status, notes
+        FROM pmh
+        WHERE patient_id = ?
+        ORDER BY onset_date DESC
+    """
+    return query_dataframe(query, params=(patient_id,), db_path=db_path)
+
+
+def get_patient_visit_metrics(patient_id, db_path=DB_PATH):
+    """
+    Retrieve visit metrics data for a patient.
+
+    Args:
+        patient_id (str): The patient ID
+        db_path (str): Path to the SQLite database file
+
+    Returns:
+        DataFrame: Patient's visit metrics
+    """
+    query = """
+        SELECT 
+            patient_id,
+            provider_visits,
+            health_coach_visits,
+            cancelled_visits,
+            no_show_visits,
+            rescheduled_visits,
+            last_updated
+        FROM patient_visit_metrics
+        WHERE patient_id = ?
+    """
+    return query_dataframe(query, params=(patient_id,), db_path=db_path)
