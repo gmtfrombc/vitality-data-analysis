@@ -28,7 +28,6 @@ hv.extension('bokeh')
 
 # Set explicit renderer
 renderer = hv.renderer('bokeh')
-renderer.theme = 'dark'
 
 # Configure matplotlib to use non-GUI backend
 matplotlib.use('agg')
@@ -337,11 +336,11 @@ class PatientView(param.Parameterized):
                         grid=True,
                         line_width=2.0
                     )
-                    score_plot = self.format_plot_time_axis(
-                        score_plot, program_start_date, patient_data)
-                    plots.append(pn.pane.HoloViews(
-                        score_plot, sizing_mode='stretch_width'))
-                    logger.info(f"Added plot for {score_type}")
+                score_plot = self.format_plot_time_axis(
+                    score_plot, program_start_date, patient_data)
+                plots.append(pn.pane.HoloViews(
+                    score_plot, sizing_mode='stretch_width'))
+                logger.info(f"Added plot for {score_type}")
         except Exception as e:
             logger.error(f"Error creating score plots: {e}", exc_info=True)
             print(f"Error creating score plots: {e}")
@@ -423,12 +422,12 @@ class PatientView(param.Parameterized):
                         grid=True,
                         line_width=2.0
                     )
-                    weight_plot = self.format_plot_time_axis(
-                        weight_plot, program_start_date, patient_data)
-                    plots.append(pn.pane.HoloViews(
-                        weight_plot, sizing_mode='stretch_width'))
-                    logger.info(
-                        "Weight plot created and added to plots list")
+                weight_plot = self.format_plot_time_axis(
+                    weight_plot, program_start_date, patient_data)
+                plots.append(pn.pane.HoloViews(
+                    weight_plot, sizing_mode='stretch_width'))
+                logger.info(
+                    "Weight plot created and added to plots list")
 
             if not plot_df.empty and 'date' in plot_df.columns:
                 bp_plots = []
@@ -449,10 +448,10 @@ class PatientView(param.Parameterized):
                             grid=True,
                             line_width=2.0
                         )
-                        sbp_plot = self.format_plot_time_axis(
-                            sbp_plot, program_start_date, patient_data)
-                        bp_plots.append(sbp_plot)
-                        logger.info("SBP plot created")
+                    sbp_plot = self.format_plot_time_axis(
+                        sbp_plot, program_start_date, patient_data)
+                    bp_plots.append(sbp_plot)
+                    logger.info("SBP plot created")
 
                 # Create diastolic plot if data exists
                 if 'dbp' in plot_df.columns:
@@ -470,10 +469,10 @@ class PatientView(param.Parameterized):
                             grid=True,
                             line_width=2.0
                         )
-                        dbp_plot = self.format_plot_time_axis(
-                            dbp_plot, program_start_date, patient_data)
-                        bp_plots.append(dbp_plot)
-                        logger.info("DBP plot created")
+                    dbp_plot = self.format_plot_time_axis(
+                        dbp_plot, program_start_date, patient_data)
+                    bp_plots.append(dbp_plot)
+                    logger.info("DBP plot created")
 
                 # Combine BP plots if both exist
                 if len(bp_plots) > 1:
@@ -612,10 +611,10 @@ class PatientView(param.Parameterized):
                                 grid=True,
                                 line_width=2.0
                             )
-                            individual_plot = self.format_plot_time_axis(
-                                individual_plot, program_start_date, patient_data)
-                            plots.append(pn.pane.HoloViews(
-                                individual_plot, sizing_mode='stretch_width'))
+                        individual_plot = self.format_plot_time_axis(
+                            individual_plot, program_start_date, patient_data)
+                        plots.append(pn.pane.HoloViews(
+                            individual_plot, sizing_mode='stretch_width'))
         except Exception as e:
             print(f"Error creating mental health plots: {e}")
 
@@ -725,10 +724,10 @@ class PatientView(param.Parameterized):
                         grid=True,
                         line_width=2.0
                     )
-                    lab_plot = self.format_plot_time_axis(
-                        lab_plot, program_start_date, patient_data)
-                    plots.append(pn.pane.HoloViews(
-                        lab_plot, sizing_mode='stretch_width'))
+                lab_plot = self.format_plot_time_axis(
+                    lab_plot, program_start_date, patient_data)
+                plots.append(pn.pane.HoloViews(
+                    lab_plot, sizing_mode='stretch_width'))
         except Exception as e:
             print(f"Error creating lab plots: {e}")
 
@@ -981,3 +980,9 @@ class PatientView(param.Parameterized):
                 f"Error in format_plot_time_axis: {e}", exc_info=True)
             # Return the original plot if formatting fails
             return plot
+
+
+def patient_view_page():
+    """Returns the patient view page for the application"""
+    patient_view = PatientView()
+    return patient_view.view()

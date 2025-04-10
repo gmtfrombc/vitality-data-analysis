@@ -18,6 +18,16 @@ logger = logging.getLogger(__name__)
 DB_PATH = "patient_data.db"
 
 
+def get_db_path():
+    """
+    Get the database path used by this module.
+
+    Returns:
+        str: Path to the SQLite database file
+    """
+    return DB_PATH
+
+
 def query_dataframe(query, params=None, db_path=DB_PATH):
     """
     Execute a SQL query and return the results as a Pandas DataFrame.
@@ -884,3 +894,22 @@ def get_patient_visit_metrics(patient_id, db_path=DB_PATH):
         WHERE patient_id = ?
     """
     return query_dataframe(query, params=(patient_id,), db_path=db_path)
+
+
+def get_all_vitals(db_path=DB_PATH):
+    """
+    Retrieve all vital signs data from the database.
+
+    Args:
+        db_path (str): Path to the SQLite database file
+
+    Returns:
+        DataFrame: All vitals data from the vitals table
+    """
+    query = """
+        SELECT * 
+        FROM vitals
+        ORDER BY date DESC
+    """
+
+    return query_dataframe(query, db_path=db_path)

@@ -124,6 +124,15 @@ class AIAssistant(param.Parameterized):
         self.client = None
         self.results_container = None  # Will be set during view() method
 
+        # Set up logging level from environment variable
+        debug_mode = os.environ.get(
+            "DEBUG", "").lower() in ("true", "1", "yes", "y")
+        if debug_mode:
+            self._set_log_level(logging.DEBUG)
+            logger.debug("Debug mode enabled")
+        else:
+            self._set_log_level(logging.INFO)
+
         # Get API key from environment variable
         self.api_key = os.environ.get("OPENAI_API_KEY", "")
         if self.api_key:
@@ -159,6 +168,7 @@ class AIAssistant(param.Parameterized):
             )
 
             schema_info = []
+            table_details = {}  # Store detailed table info for validation
 
             # Get columns for each table
             for table in tables_info['name']:
@@ -169,15 +179,53 @@ class AIAssistant(param.Parameterized):
                         [f"{row['name']} ({row['type']})" for _, row in columns_info.iterrows()])
                     schema_info.append(
                         f"Table: {table}\nColumns: {columns_str}\n")
+
+                    # Store column details for validation
+                    table_details[table.lower()] = {
+                        'columns': [row['name'].lower() for _, row in columns_info.iterrows()],
+                        'column_types': {row['name'].lower(): row['type'] for _, row in columns_info.iterrows()}
+                    }
+
                 except Exception as e:
                     logger.error(
                         f"Error getting columns for table {table}: {str(e)}")
 
             self.db_schema = "\n".join(schema_info)
+            # Store table details for validation
+            self.table_details = table_details
             logger.info(f"Loaded schema for {len(tables_info)} tables")
+
+            # Generate table relationship information
+            self._extract_table_relationships()
+
         except Exception as e:
             logger.error(f"Error loading database schema: {str(e)}")
             self.db_schema = f"Error loading schema: {str(e)}"
+            self.table_details = {}
+
+    def _extract_table_relationships(self):
+        """Extract table relationships from foreign keys"""
+        try:
+            relationships = []
+            for table_name in self.table_details.keys():
+                # Get foreign keys for the table
+                fk_info = db_query.query_dataframe(
+                    f"PRAGMA foreign_key_list({table_name});")
+
+                if not fk_info.empty:
+                    for _, row in fk_info.iterrows():
+                        ref_table = row.get('table', '')
+                        from_col = row.get('from', '')
+                        to_col = row.get('to', '')
+                        if ref_table and from_col and to_col:
+                            relationships.append(
+                                f"Table '{table_name}' has foreign key '{from_col}' referencing '{ref_table}({to_col})'")
+
+            self.table_relationships = relationships
+            logger.info(f"Extracted {len(relationships)} table relationships")
+        except Exception as e:
+            logger.error(f"Error extracting table relationships: {str(e)}")
+            self.table_relationships = []
 
     def _load_saved_queries(self):
         """Load saved queries from file"""
@@ -413,6 +461,12 @@ class AIAssistant(param.Parameterized):
             set OPENAI_API_KEY=your_api_key_here
             ```
             
+            For more detailed logging during development, set DEBUG=true:
+            ```
+            export DEBUG=true  # For macOS/Linux
+            set DEBUG=true     # For Windows
+            ```
+            
             Then restart the application.
             """,
             styles={'background': '#f8f9fa',
@@ -575,284 +629,229 @@ class AIAssistant(param.Parameterized):
 
         return tabs
 
-    def _preprocess_query(self, query_text):
-        """Preprocess natural language query to replace common terms with database field names"""
-        processed_text = query_text
-
-        # Convert query to lowercase for case-insensitive matching
-        query_lower = query_text.lower()
-
-        # Find and replace terms
-        for term, replacement in HEALTHCARE_TERMS.items():
-            # Skip complex replacements (dictionaries)
-            if isinstance(replacement, dict):
-                continue
-
-            # Pattern to match whole words only
-            pattern = r'\b' + re.escape(term) + r'\b'
-
-            # Check if term exists in query
-            if re.search(pattern, query_lower):
-                # Get the actual case used in the original query
-                matches = re.finditer(pattern, query_lower)
-                for match in matches:
-                    start, end = match.span()
-                    original_term = query_text[start:end]
-
-                    # Log the replacement
-                    logger.info(
-                        f"Term replacement: '{original_term}' -> '{replacement}'")
-
-                    # Replace in the original text, preserving case if replacement is single word
-                    if ' ' not in replacement and original_term.isupper():
-                        processed_text = processed_text.replace(
-                            original_term, replacement.upper())
-                    elif ' ' not in replacement and original_term[0].isupper():
-                        processed_text = processed_text.replace(
-                            original_term, replacement.capitalize())
-                    else:
-                        processed_text = processed_text.replace(
-                            original_term, replacement)
-
-        # Special handling for blood pressure
-        if "blood pressure" in query_lower or "bp" in query_lower:
-            # If not specifically mentioning systolic or diastolic, assume both
-            if "systolic" not in query_lower and "diastolic" not in query_lower:
-                processed_text = processed_text.replace(
-                    "blood pressure", "systolic blood pressure (sbp) and diastolic blood pressure (dbp)")
-                processed_text = processed_text.replace(
-                    "BP", "systolic blood pressure (sbp) and diastolic blood pressure (dbp)")
-                processed_text = processed_text.replace(
-                    "bp", "systolic blood pressure (sbp) and diastolic blood pressure (dbp)")
-
-        logger.info(
-            f"Preprocessed query: '{query_text}' -> '{processed_text}'")
-        return processed_text
-
     def _generate_sql(self, event=None):
-        """Generate SQL from natural language using OpenAI API"""
-        if not self.query_text:
+        """Generate SQL from natural language using OpenAI"""
+        if not self.client:
+            self.status_message = "OpenAI client not initialized"
+            return
+
+        if not self.query_text.strip():
             self.status_message = "Please enter a question first"
             return
 
-        if not self.client:
-            if not self.api_key:
-                self.status_message = "OpenAI API key not available. Set the OPENAI_API_KEY environment variable."
-                return
-            self.init_client()
-            if not self.client:
-                return  # init_client already set an error message
-
-        self.status_message = "Generating SQL query..."
-
         try:
-            # Preprocess the query to handle terminology
-            preprocessed_query = self._preprocess_query(self.query_text)
+            # Get the query text from the instance variable, not the event
+            query_text = self.query_text
+            logger.info(f"Generating SQL for query: {query_text}")
 
-            prompt = f"""
-            You are a SQL expert helping to generate SQLite queries for a patient health database.
-            
-            Here is the database schema:
-            {self.db_schema}
-            
-            Important domain knowledge:
-            - The scores table has a 'score_type' column with values like 'vitality_score' and 'heart_fit_score'
-            - When a question asks about 'vitality', use 'vitality_score' in the query
-            - When a question asks about 'heart fitness', use 'heart_fit_score' in the query
-            - Patient ages should be calculated from their birth_date column using: strftime('%Y', 'now') - strftime('%Y', birth_date)
-            - Gender is stored as single characters: 'F' for female and 'M' for male
-            - For first/earliest/initial readings, use subqueries with MIN(date)
-            - Always format date columns in the output using strftime('%Y-%m-%d', date_column) to display as YYYY-MM-DD
-            - When joining tables, explicitly qualify column names with their table names to avoid ambiguity
-            - For lab test results like A1C, HbA1c, or blood tests, use the 'labs' table, not 'lab_results'
-            
-            Generate a valid SQLite query to answer this question: "{preprocessed_query}"
-            
-            Important guidelines:
-            1. Return ONLY the SQL query with no additional text, explanations, or markdown.
-            2. The query should be valid SQLite syntax.
-            3. Don't include any comments in the query unless absolutely necessary.
-            4. Don't use placeholder values - use literal values that make sense.
-            5. Use appropriate joins where needed.
-            6. Limit the results to 100 rows maximum.
-            7. For any date columns in the result, use strftime('%Y-%m-%d', date_column) AS formatted_date to format them as YYYY-MM-DD.
-            8. Make sure all table and column references are correct according to the schema.
-            9. When filtering gender, use 'F' for female and 'M' for male, not full words.
-            """
+            # Create a structured schema description
+            schema_description = self._create_enhanced_schema_description()
+            logger.debug(
+                f"Schema description for prompt:\n{schema_description}")
 
-            logger.info(f"Sending prompt to OpenAI: {preprocessed_query}")
+            # Build the system prompt
+            system_prompt = f"""You are an expert SQL generator specializing in healthcare database queries. 
+            
+DATABASE SCHEMA:
+{schema_description}
 
+IMPORTANT RULES:
+1. Generate ONLY valid SQLite SQL queries
+2. All table names are in PLURAL form (patients, not patient; vitals, not vital)
+3. Use only tables and columns that exist in the schema
+4. When joining tables, always ensure the join conditions are correct
+5. Format dates using datetime() function when needed
+6. Return ONLY the SQL query with no explanation or comments
+7. Use table aliases for readability (p for patients, v for vitals, etc.)
+8. The vitals table does NOT have a test_name column - it has direct columns for sbp, dbp, weight, etc.
+
+The query should be straightforward, focused, and follow SQLite syntax exactly.
+"""
+            logger.debug(f"System prompt:\n{system_prompt}")
+
+            # Create example-based user prompt
+            user_prompt = f"""Here are some examples of natural language questions and their corresponding SQL queries:
+
+Example 1:
+User: Show me all female patients over 65
+SQL:
+SELECT p.id as patient_id, p.first_name, p.last_name, p.birth_date
+FROM patients p
+WHERE p.gender = 'F' AND (date('now') - p.birth_date) > 65
+ORDER BY p.birth_date ASC
+
+Example 2:
+User: Find patients with A1C over 8
+SQL:
+SELECT p.id as patient_id, p.first_name, p.last_name, l.value as a1c_value
+FROM patients p
+JOIN lab_results l ON p.id = l.patient_id
+WHERE l.test_name = 'HbA1c' AND l.value > 8
+ORDER BY l.value DESC
+
+Example 3:
+User: Show me patients who improved their blood pressure during the program
+SQL:
+WITH first_bp AS (
+    SELECT patient_id, MIN(date) as first_date, sbp as first_sbp, dbp as first_dbp
+    FROM vitals
+    GROUP BY patient_id
+),
+last_bp AS (
+    SELECT patient_id, MAX(date) as last_date, sbp as last_sbp, dbp as last_dbp
+    FROM vitals
+    GROUP BY patient_id
+)
+SELECT p.id as patient_id, p.first_name, p.last_name, 
+       f.first_sbp, f.first_dbp, l.last_sbp, l.last_dbp
+FROM patients p
+JOIN first_bp f ON p.id = f.patient_id
+JOIN last_bp l ON p.id = l.patient_id
+WHERE (f.first_sbp > l.last_sbp OR f.first_dbp > l.last_dbp)
+ORDER BY (f.first_sbp - l.last_sbp) + (f.first_dbp - l.last_dbp) DESC
+
+Example 4:
+User: Find patients with high blood pressure readings
+SQL:
+SELECT p.id as patient_id, p.first_name, p.last_name, v.sbp, v.dbp, v.date as test_date
+FROM patients p
+JOIN vitals v ON p.id = v.patient_id
+WHERE v.sbp > 140 OR v.dbp > 90
+ORDER BY v.sbp DESC
+
+Example 5:
+User: Show me patients who lost weight during the program
+SQL:
+WITH first_weight AS (
+    SELECT patient_id, MIN(date) as first_date, weight as initial_weight
+    FROM vitals
+    GROUP BY patient_id
+),
+last_weight AS (
+    SELECT patient_id, MAX(date) as last_date, weight as final_weight
+    FROM vitals
+    GROUP BY patient_id
+)
+SELECT p.id as patient_id, p.first_name, p.last_name, 
+       fw.initial_weight, lw.final_weight,
+       (fw.initial_weight - lw.final_weight) as weight_loss,
+       ((fw.initial_weight - lw.final_weight) / fw.initial_weight * 100) as pct_loss
+FROM patients p
+JOIN first_weight fw ON p.id = fw.patient_id
+JOIN last_weight lw ON p.id = lw.patient_id
+WHERE lw.final_weight < fw.initial_weight
+ORDER BY pct_loss DESC
+
+Now, generate ONLY a SQL query for this question:
+{query_text}
+"""
+            logger.debug(f"User prompt:\n{user_prompt}")
+
+            # Show generating status
+            self.status_message = "<span style='color: blue;'>Generating SQL query... please wait.</span>"
+
+            # Call the OpenAI API
             response = self.client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=[
-                    {"role": "system", "content": "You are a SQL expert that generates SQLite queries based on natural language questions."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.1,  # Lower temperature for more deterministic outputs
-                max_tokens=500
+                temperature=0.1  # Lower temperature for more deterministic SQL generation
             )
 
-            sql_query = response.choices[0].message.content.strip()
-            logger.info(f"Generated SQL: {sql_query}")
+            # Extract the SQL from the response
+            sql = response.choices[0].message.content.strip()
+            logger.debug(f"Raw AI response: {sql}")
 
-            # Clean SQL by removing markdown code block syntax if present
-            sql_query = self._clean_sql(sql_query)
-            logger.info(f"Cleaned SQL: {sql_query}")
+            # Clean up the SQL if it contains markdown or comments
+            sql = self._clean_generated_sql(sql)
 
-            # Ensure it ends with a semicolon
-            if not sql_query.endswith(';'):
-                sql_query += ';'
+            # Update the UI with the generated SQL
+            self.generated_sql = sql
+            logger.info(f"Generated SQL: {sql}")
 
-            # Validate the SQL query
-            validation_result = self._validate_sql(sql_query)
+            # Update status message
+            self.status_message = "<span style='color: green;'>SQL generated successfully. Click 'Validate SQL' or 'Execute Query' to continue.</span>"
 
-            # If there's a syntax error, try to fix it
-            if not validation_result['valid']:
-                logger.warning(
-                    f"Initial SQL validation failed: {validation_result['error']}")
-
-                # Try to fix common issues
-                fixed_query = self._attempt_sql_fix(
-                    sql_query, validation_result['error'])
-
-                # Check if the fix worked
-                fixed_validation = self._validate_sql(fixed_query)
-                if fixed_validation['valid']:
-                    logger.info("SQL query was fixed automatically")
-                    sql_query = fixed_query
-                    self.status_message = "SQL query generated and automatically fixed."
-                else:
-                    logger.warning("Failed to automatically fix SQL syntax")
-                    self.status_message = "SQL query generated with potential syntax issues."
-            else:
-                self.status_message = "SQL query generated successfully"
-
-            self.generated_sql = sql_query
-
-            # If query_name is empty, generate a suggested name
-            if not self.query_name:
-                suggested_name = self._generate_query_name()
-                self.query_name = suggested_name
-
+            # Return the SQL for use in tests or other functions
+            return {"sql": sql, "error": None}
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Error generating SQL: {error_msg}")
-            self.status_message = f"Error generating SQL: {error_msg}"
-            self.generated_sql = f"-- Error generating SQL: {error_msg}"
+            logger.error(f"Error generating SQL: {str(e)}")
+            self.status_message = f"<span style='color: red; font-weight: bold;'>ERROR</span><br>Failed to generate SQL: {str(e)}"
+            return {"sql": "", "error": str(e)}
 
-    def _attempt_sql_fix(self, sql_query, error_message):
-        """Attempt to fix common SQL syntax errors"""
-        fixed_query = sql_query
+    def _create_enhanced_schema_description(self):
+        """Create an enhanced description of the database schema for the prompt"""
+        schema_parts = []
 
-        # Fix gender values
-        if "gender" in fixed_query.lower():
-            # Check for incorrect gender values and fix them
-            fixed_query = fixed_query.replace(
-                "gender = 'female'", "gender = 'F'")
-            fixed_query = fixed_query.replace(
-                "gender = 'male'", "gender = 'M'")
-            fixed_query = fixed_query.replace(
-                "gender = \"female\"", "gender = 'F'")
-            fixed_query = fixed_query.replace(
-                "gender = \"male\"", "gender = 'M'")
-            # Check for incorrect gender values with spaces
-            fixed_query = fixed_query.replace(
-                "gender = 'Female'", "gender = 'F'")
-            fixed_query = fixed_query.replace(
-                "gender = 'Male'", "gender = 'M'")
-            fixed_query = fixed_query.replace(
-                "gender = \"Female\"", "gender = 'F'")
-            fixed_query = fixed_query.replace(
-                "gender = \"Male\"", "gender = 'M'")
-            # For IN clauses
-            fixed_query = fixed_query.replace(
-                "gender IN ('female'", "gender IN ('F'")
-            fixed_query = fixed_query.replace(
-                "gender IN ('male'", "gender IN ('M'")
+        # Include only essential tables to keep the context concise
+        essential_tables = [
+            "patients", "vitals", "lab_results", "scores", "pmh", "patient_visit_metrics", "mental_health"
+        ]
 
-        # Common error patterns and fixes
-        if "no such column" in error_message.lower():
-            # Try to identify the problematic column
-            import re
-            column_match = re.search(
-                r"no such column: ([^\s]+)", error_message.lower())
-            if column_match:
-                bad_column = column_match.group(1)
-                logger.info(
-                    f"Attempting to fix reference to non-existent column: {bad_column}")
+        # Add tables with their columns and types
+        for table_name in essential_tables:
+            if table_name.lower() in self.table_details:
+                table_info = self.table_details[table_name.lower()]
+                columns_info = []
 
-                # Try common column name variations (e.g., singular/plural, underscores)
-                possible_fixes = []
-                if bad_column.endswith('s'):
-                    # Remove trailing 's'
-                    possible_fixes.append(bad_column[:-1])
-                if '_' in bad_column:
-                    possible_fixes.append(bad_column.replace(
-                        '_', ''))  # Remove underscores
-                else:
-                    # Try adding underscores between words if camelCase or PascalCase
-                    camel_case_fix = re.sub(
-                        r'([a-z])([A-Z])', r'\1_\2', bad_column).lower()
-                    if camel_case_fix != bad_column:
-                        possible_fixes.append(camel_case_fix)
+                for col_name, col_type in table_info.get('column_types', {}).items():
+                    columns_info.append(f"{col_name} ({col_type})")
 
-                # Look for possible column replacements
-                for fix in possible_fixes:
-                    if fix in self.db_schema.lower():
-                        fixed_query = fixed_query.replace(bad_column, fix)
-                        break
+                schema_parts.append(
+                    f"Table: {table_name}\nColumns: {', '.join(columns_info)}")
 
-        # Missing FROM clause
-        if "no tables specified" in error_message.lower():
-            if "where" in fixed_query.lower() and "from" not in fixed_query.lower():
-                # Add missing FROM clause before WHERE
-                fixed_query = fixed_query.replace(
-                    "WHERE", "FROM patients WHERE")
+        # Add key relationships for better joins
+        relationship_info = []
+        if hasattr(self, 'table_relationships'):
+            for relation in self.table_relationships:
+                relationship_info.append(relation)
 
-        # Incorrect table name
-        if "no such table" in error_message.lower():
-            import re
-            table_match = re.search(
-                r"no such table: ([^\s]+)", error_message.lower())
-            if table_match:
-                bad_table = table_match.group(1)
-                logger.info(
-                    f"Attempting to fix reference to non-existent table: {bad_table}")
+        if relationship_info:
+            schema_parts.append("Relationships:\n" +
+                                "\n".join(relationship_info))
 
-                # Common table naming variations
-                if bad_table == "patient":
-                    fixed_query = fixed_query.replace(bad_table, "patients")
-                elif bad_table == "vital":
-                    fixed_query = fixed_query.replace(bad_table, "vitals")
-                elif bad_table == "lab":
-                    fixed_query = fixed_query.replace(bad_table, "labs")
-                elif bad_table == "lab_results":
-                    fixed_query = fixed_query.replace(bad_table, "labs")
-                elif bad_table == "score":
-                    fixed_query = fixed_query.replace(bad_table, "scores")
+        return "\n\n".join(schema_parts)
 
-        # Fix incorrect date expressions
-        if "near \"date\"" in error_message.lower():
-            # DATE might be a reserved word causing issues
-            fixed_query = fixed_query.replace("date(", "datetime(")
+    def _clean_generated_sql(self, sql):
+        """Clean the generated SQL by removing markdown formatting and comments"""
+        # Extract SQL from markdown code blocks if present
+        if "```sql" in sql:
+            # Try to extract from SQL code block
+            match = re.search(r'```sql\n(.*?)\n```', sql, re.DOTALL)
+            if match:
+                sql = match.group(1).strip()
+        elif "```" in sql:
+            # Try to extract from any code block
+            match = re.search(r'```\n(.*?)\n```', sql, re.DOTALL)
+            if match:
+                sql = match.group(1).strip()
 
-        logger.info(f"Original query: {sql_query}")
-        logger.info(f"Fixed query: {fixed_query}")
+        # Remove any comments
+        sql = re.sub(r'--.*$', '', sql, flags=re.MULTILINE)
 
-        return fixed_query
+        # Fix table name issues (singular to plural)
+        sql = re.sub(r'\bpatient\b', 'patients', sql, flags=re.IGNORECASE)
+        sql = re.sub(r'\bvital\b', 'vitals', sql, flags=re.IGNORECASE)
+        sql = re.sub(r'\blab\b(?!_)', 'lab_results', sql,
+                     flags=re.IGNORECASE)  # Don't match lab_results
+        sql = re.sub(r'\bscore\b', 'scores', sql, flags=re.IGNORECASE)
 
-    def _generate_query_name(self):
-        """Generate a suggested name for the query based on its content"""
-        # Simple approach: use the first 5-7 words
-        words = self.query_text.split()
-        name_words = words[:min(7, len(words))]
-        name = " ".join(name_words)
+        # Fix incorrect vital table references (vitals table doesn't have test_name column)
+        sql = re.sub(
+            r'FROM\s+vitals\s+WHERE\s+test_name\s*=\s*[\'"]blood_pressure[\'"]', 'FROM vitals', sql, flags=re.IGNORECASE)
+        sql = re.sub(
+            r'FROM\s+vitals\s+WHERE\s+test_name\s*=\s*[\'"]weight[\'"]', 'FROM vitals', sql, flags=re.IGNORECASE)
+        sql = re.sub(
+            r'FROM\s+vitals\s+WHERE\s+test_name\s*=\s*[\'"]bmi[\'"]', 'FROM vitals', sql, flags=re.IGNORECASE)
 
-        # Truncate if too long
-        if len(name) > 50:
-            name = name[:47] + "..."
+        # Fix date column name for vitals table
+        sql = re.sub(r'vitals\.test_date', 'vitals.date',
+                     sql, flags=re.IGNORECASE)
 
-        return name
+        logger.debug(f"Cleaned SQL: {sql}")
+        return sql.strip()
 
     def _execute_sql(self, event=None):
         """Execute the generated SQL query"""
@@ -861,18 +860,31 @@ class AIAssistant(param.Parameterized):
             return
 
         # Validate SQL before executing
-        validation_result = self._validate_sql(self.generated_sql)
-        if not validation_result['valid']:
-            error_msg = validation_result['error']
-            self.status_message = f"<span style='color: red; font-weight: bold;'>SQL EXECUTION FAILED</span><br><br><strong>Error:</strong> {error_msg}"
+        try:
+            validation_result = self._validate_sql(self.generated_sql)
+            if not validation_result['valid']:
+                error_msg = validation_result['error']
+                self.status_message = f"<span style='color: red; font-weight: bold;'>SQL EXECUTION FAILED</span><br><br><strong>Error:</strong> {error_msg}"
+                return
+
+            # If the validation returned a fixed query, use that instead
+            sql_to_execute = validation_result.get(
+                'fixed_query', self.generated_sql)
+            if 'fixed_query' in validation_result:
+                self.generated_sql = sql_to_execute
+                self.status_message = f"<span style='color: blue;'>SQL was automatically fixed and will be executed.</span>"
+                logger.info(f"Using fixed SQL for execution: {sql_to_execute}")
+        except Exception as e:
+            logger.error(f"Error during SQL validation: {str(e)}")
+            self.status_message = f"<span style='color: red; font-weight: bold;'>VALIDATION ERROR</span><br><br>Could not validate SQL: {str(e)}"
             return
 
         try:
             self.status_message = "<span style='color: blue;'>Executing query...</span>"
-            logger.info(f"Executing SQL: {self.generated_sql}")
+            logger.info(f"Executing SQL: {sql_to_execute}")
 
             # Execute the query using our db_query module
-            self.result_data = db_query.query_dataframe(self.generated_sql)
+            self.result_data = db_query.query_dataframe(sql_to_execute)
 
             # Update the results display
             self._update_results_display()
@@ -886,11 +898,34 @@ class AIAssistant(param.Parameterized):
                 self.status_message = f"<span style='color: orange; font-weight: bold;'>NOTICE</span><br>Query executed successfully but returned <strong>zero rows</strong>. Your query might be too restrictive or there's no matching data."
             else:
                 self.status_message = f"<span style='color: green; font-weight: bold;'>SUCCESS</span><br>Query executed successfully. Returned <strong>{rows_count} rows</strong>."
+
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"Error executing query: {error_msg}")
-            self.status_message = f"<span style='color: red; font-weight: bold;'>ERROR</span><br>Query execution failed: <pre>{error_msg}</pre>"
-            self.result_data = pd.DataFrame({'Error': [error_msg]})
+            logger.error(f"Error executing SQL: {error_msg}")
+
+            # Try to automatically fix the error and retry
+            fixed_query = self._attempt_sql_fix(sql_to_execute, error_msg)
+            if fixed_query:
+                try:
+                    logger.info(f"Retrying with fixed query: {fixed_query}")
+                    self.result_data = db_query.query_dataframe(fixed_query)
+
+                    # If we get here, the fix worked
+                    self.generated_sql = fixed_query
+                    rows_count = len(self.result_data)
+                    self._update_results_display()
+
+                    self.status_message = f"<span style='color: green; font-weight: bold;'>AUTO-FIXED</span><br>SQL query was automatically fixed and returned <strong>{rows_count} rows</strong>.<br><br>Original error: {error_msg}"
+                    return
+                except Exception as retry_error:
+                    logger.error(f"Auto-fix failed: {str(retry_error)}")
+                    # Fall through to error handling
+
+            self.status_message = f"<span style='color: red; font-weight: bold;'>ERROR</span><br><br><strong>Failed to execute query:</strong> {error_msg}"
+
+            # Clear results if there was an error
+            self.result_data = pd.DataFrame()
+            self._update_results_display()
 
     def _update_results_display(self):
         """Update the results container with current data"""
@@ -950,99 +985,6 @@ class AIAssistant(param.Parameterized):
                 "No results to display. Generate and execute a query."))
 
         logger.info("Reset form to default state")
-
-    def _clean_sql(self, sql):
-        """Clean SQL by removing markdown code blocks and other formatting"""
-        # Remove markdown code block syntax
-        if sql.startswith('```') and '```' in sql[3:]:
-            # Extract content between the first and last ```
-            first_marker = sql.find('```')
-            last_marker = sql.rfind('```')
-            if first_marker != last_marker:
-                # Extract just the SQL between the markers
-                sql_between_markers = sql[first_marker+3:last_marker].strip()
-
-                # If there's a language identifier (like sql) after the first ```, remove it
-                if '\n' in sql_between_markers:
-                    sql_between_markers = sql_between_markers[sql_between_markers.find(
-                        '\n'):].strip()
-
-                return sql_between_markers
-
-        return sql
-
-    def _validate_sql(self, sql_query):
-        """Validate SQL syntax without executing the query"""
-        result = {'valid': False, 'error': None}
-
-        if not sql_query:
-            result['error'] = "Query is empty"
-            return result
-
-        # Log the query being validated
-        logger.info(f"Validating SQL query: {sql_query}")
-
-        # Always check for and fix common issues before validation
-        fixed_query = sql_query
-
-        # Quick check for common issues with specific queries
-        if "lab_results" in fixed_query.lower():
-            # Fix common table name error before validation
-            fixed_query = fixed_query.replace("lab_results", "labs")
-            logger.info(f"Fixed 'lab_results' to 'labs': {fixed_query}")
-
-        # Fix date calculations - SQLite requires special handling
-        if "date('now')" in fixed_query:
-            # This is valid in real SQLite but might cause issues in validation
-            fixed_query = fixed_query.replace("date('now')", "'now'")
-            logger.info(f"Fixed date('now') syntax: {fixed_query}")
-
-        # Special handling for age calculations
-        if "birth_date" in fixed_query.lower() and "strftime" in fixed_query:
-            # Age calculations are complex but valid, let's trust it's correct
-            logger.info(
-                "Query contains age calculation with birth_date, bypassing some validation")
-            result['valid'] = True
-            return result
-
-        if "test_name = 'A1C'" in fixed_query and "labs" not in fixed_query.lower():
-            result['error'] = "Table reference missing. Lab tests should use the 'labs' table."
-            return result
-
-        try:
-            # Connect to SQLite database
-            conn = sqlite3.connect(':memory:')
-            cursor = conn.cursor()
-
-            # Try to parse the query - this will validate syntax without executing
-            try:
-                cursor.execute(f"EXPLAIN QUERY PLAN {fixed_query}")
-                # If we get here, the syntax is valid
-                result['valid'] = True
-                result['error'] = None
-                logger.info("SQL validation successful")
-            except sqlite3.Error as e:
-                error_msg = str(e)
-                logger.warning(f"SQL validation error: {error_msg}")
-
-                # Special case: If we have date calculations and get an obscure error,
-                # it might be due to the in-memory db lacking proper context
-                if "strftime" in fixed_query and ("no such column" in error_msg.lower() or
-                                                  "no such table" in error_msg.lower()):
-                    logger.info(
-                        "Query contains date functions, might be valid despite error")
-                    result['valid'] = True
-                    result['error'] = "Query appears to have valid syntax but contains date calculations that couldn't be fully validated."
-                else:
-                    result['error'] = error_msg
-
-            conn.close()
-        except Exception as e:
-            error_msg = f"Unexpected error: {str(e)}"
-            logger.error(f"SQL validation unexpected error: {error_msg}")
-            result['error'] = error_msg
-
-        return result
 
     def _validate_button_click(self, event=None, validation_badge=None):
         """Handle validate button click"""
@@ -1117,3 +1059,519 @@ class AIAssistant(param.Parameterized):
         # Generate a suggested name based on the example
         self.query_name = self._generate_query_name()
         self.status_message = f"Loaded example query: {example}"
+
+    def _validate_sql(self, sql_query):
+        """Validate SQL syntax and schema references without executing the query"""
+        if not sql_query:
+            return {"valid": False, "error": "Empty SQL query"}
+
+        logger.info(f"Validating SQL: {sql_query}")
+
+        # Extract tables and columns from the query
+        query_references = self._extract_sql_references(sql_query)
+
+        # Validate schema references
+        schema_validation = self._validate_schema_references(query_references)
+        if not schema_validation['valid']:
+            return schema_validation
+
+        # Pre-check for common errors that SQLite might not catch clearly
+        if "JOIN" in sql_query.upper() and "vitals" in sql_query.lower() and "test_name" in sql_query.lower():
+            logger.warning(
+                "Detected potential error: JOIN with 'test_name' in vitals table")
+            # Fix the vitals table subquery issue
+            fixed_query = re.sub(
+                r'FROM\s+vitals\s+WHERE\s+test_name\s*=\s*[\'"]([^\'"]+)[\'"]', 'FROM vitals', sql_query, flags=re.IGNORECASE)
+            if fixed_query != sql_query:
+                logger.info(
+                    f"Automatically fixed vitals table query: {fixed_query}")
+                sql_query = fixed_query
+
+        # Pre-check for singular table names and convert to plural
+        singular_to_plural = {
+            r'\bpatient\b': 'patients',
+            r'\bvital\b': 'vitals',
+            r'\blab\b(?!_)': 'lab_results',
+            r'\bscore\b': 'scores',
+        }
+
+        for singular, plural in singular_to_plural.items():
+            if re.search(singular, sql_query, re.IGNORECASE):
+                logger.warning(
+                    f"Detected singular table name: {singular.strip('\\b')} should be {plural}")
+                sql_query = re.sub(
+                    singular, plural, sql_query, flags=re.IGNORECASE)
+                logger.info(
+                    f"Automatically converted singular table name to plural: {singular.strip('\\b')} → {plural}")
+
+        try:
+            # Ask db_query to explain the query plan (validates syntax without executing)
+            try:
+                db_query.query_dataframe(f"EXPLAIN QUERY PLAN {sql_query}")
+                return {"valid": True, "error": None}
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"SQL validation error: {error_msg}")
+
+                # Try to fix the SQL query automatically
+                fixed_query = self._attempt_sql_fix(sql_query, error_msg)
+                if fixed_query:
+                    logger.info("Attempting to validate fixed query")
+                    try:
+                        # Validate the fixed query
+                        db_query.query_dataframe(
+                            f"EXPLAIN QUERY PLAN {fixed_query}")
+                        return {
+                            "valid": True,
+                            "error": f"Original query had errors but was fixed automatically: {error_msg}",
+                            "fixed_query": fixed_query
+                        }
+                    except Exception as fix_error:
+                        logger.error(
+                            f"Fixed query still has errors: {str(fix_error)}")
+                        # Continue with original error handling
+
+                # Simple error message processing for the original query
+                if "no such table" in error_msg.lower():
+                    table_match = re.search(
+                        r"no such table: ([^\s]+)", error_msg.lower())
+                    if table_match:
+                        bad_table = table_match.group(1)
+                        # Suggest plural form if singular was used
+                        if not bad_table.lower().endswith('s') and bad_table.lower() + 's' in self.table_details:
+                            plural = bad_table + 's'
+                            logger.info(
+                                f"Suggesting plural form: {plural} for {bad_table}")
+                            return {"valid": False, "error": f"Table '{bad_table}' doesn't exist. Did you mean '{plural}'? Our database uses plural table names (patients, vitals, etc.)."}
+
+                        # Check common table name mismatches
+                        if bad_table.lower() == 'lab' or bad_table.lower() == 'labs':
+                            return {"valid": False, "error": f"Table '{bad_table}' doesn't exist. Did you mean 'lab_results'?"}
+
+                        # Suggest similar table names
+                        similar_tables = self._suggest_similar_names(
+                            bad_table, list(self.table_details.keys()))
+                        if similar_tables:
+                            suggestion = f"Did you mean: {', '.join(similar_tables)}?"
+                            return {"valid": False, "error": f"Table '{bad_table}' doesn't exist in the database. {suggestion}"}
+
+                        return {"valid": False, "error": f"Table '{bad_table}' doesn't exist in the database. Check the schema for available tables."}
+
+                elif "no such column" in error_msg.lower():
+                    col_match = re.search(
+                        r"no such column: ([^\s]+)", error_msg.lower())
+                    if col_match:
+                        bad_column = col_match.group(1).strip()
+
+                        # Check if this might be the test_name issue in vitals table
+                        if bad_column.lower() == "test_name" and "vitals" in sql_query.lower():
+                            logger.info(
+                                "Detected 'test_name' column error in vitals table")
+                            return {"valid": False, "error": f"The vitals table doesn't have a 'test_name' column. It has direct columns like sbp, dbp, weight, etc."}
+
+                        # Check if this might be the id vs patient_id issue
+                        if bad_column.lower() == "patient_id" and "patients" in sql_query.lower():
+                            if "patients.patient_id" in sql_query.lower():
+                                return {"valid": False, "error": f"The patients table uses 'id' not 'patient_id' as its primary key column."}
+
+                        # Check for date vs test_date confusion
+                        if bad_column.lower() == "test_date" and "vitals" in sql_query.lower():
+                            return {"valid": False, "error": f"The vitals table uses 'date' not 'test_date' for the date column."}
+
+                        # Try to suggest correct column names from all tables
+                        all_columns = []
+                        for table_name, table_info in self.table_details.items():
+                            all_columns.extend(table_info.get('columns', []))
+
+                        similar_columns = self._suggest_similar_names(
+                            bad_column, all_columns)
+                        if similar_columns:
+                            suggestion = f"Did you mean: {', '.join(similar_columns)}?"
+                            return {"valid": False, "error": f"Column '{bad_column}' doesn't exist in the referenced tables. {suggestion}"}
+
+                        return {"valid": False, "error": f"Column '{bad_column}' doesn't exist in the referenced tables."}
+
+                # For any other error, return the SQLite error message
+                return {"valid": False, "error": f"SQL Error: {error_msg}"}
+
+        except Exception as e:
+            logger.error(f"Error validating SQL: {str(e)}")
+            return {"valid": False, "error": f"Validation error: {str(e)}"}
+
+    def _extract_sql_references(self, sql_query):
+        """Extract table and column references from an SQL query"""
+        logger.info("Extracting table and column references from SQL query")
+
+        # Convert to lowercase for case-insensitive matching
+        sql_lower = sql_query.lower()
+
+        # Extract table references
+        # Look for patterns like "FROM table", "JOIN table", "table.column"
+        tables = set()
+
+        # Find tables in FROM clauses
+        from_matches = re.finditer(r'from\s+([a-z0-9_]+)', sql_lower)
+        for match in from_matches:
+            tables.add(match.group(1))
+
+        # Find tables in JOIN clauses
+        join_matches = re.finditer(r'join\s+([a-z0-9_]+)', sql_lower)
+        for match in join_matches:
+            tables.add(match.group(1))
+
+        # Find tables in qualified column references (table.column)
+        qualified_matches = re.finditer(r'([a-z0-9_]+)\.', sql_lower)
+        for match in qualified_matches:
+            tables.add(match.group(1))
+
+        # Extract column references
+        columns = set()
+
+        # Find columns in SELECT clause
+        select_clause = ""
+        select_match = re.search(
+            r'select\s+(.*?)\s+from', sql_lower, re.DOTALL)
+        if select_match:
+            select_clause = select_match.group(1)
+            # Remove functions and aliases for cleaner column extraction
+            select_clause = re.sub(r'count\s*\(\s*\*\s*\)', '', select_clause)
+            select_clause = re.sub(
+                r'[a-z0-9_]+\s*\(([^)]*)\)', r'\1', select_clause)
+            select_clause = re.sub(r'as\s+[a-z0-9_]+', '', select_clause)
+
+            # Extract columns from cleaned SELECT clause
+            for item in select_clause.split(','):
+                item = item.strip()
+                # Handle qualified columns (table.column)
+                if '.' in item:
+                    cols = re.findall(r'[a-z0-9_]+\.([a-z0-9_]+)', item)
+                    columns.update(cols)
+                elif item and item != '*':
+                    columns.add(item)
+
+        # Find columns in WHERE, GROUP BY, ORDER BY clauses
+        clause_matches = re.finditer(
+            r'(where|group\s+by|order\s+by|having)\s+(.*?)(?:limit|$|\s+(?:where|group\s+by|order\s+by|having))', sql_lower, re.DOTALL)
+        for clause_match in clause_matches:
+            clause = clause_match.group(2).strip()
+            # Find qualified columns
+            qualified_cols = re.findall(r'([a-z0-9_]+)\.([a-z0-9_]+)', clause)
+            for _, col in qualified_cols:
+                columns.add(col)
+
+            # Find unqualified columns (not part of a function)
+            unqualified_cols = re.findall(
+                r'(?<![a-z0-9_\.])[a-z0-9_]+(?=\s*[=<>!]|\s+(?:is|like|in|between))', clause)
+            columns.update(unqualified_cols)
+
+        logger.info(f"Extracted tables: {tables}")
+        logger.info(f"Extracted columns: {columns}")
+
+        return {"tables": tables, "columns": columns}
+
+    def _validate_schema_references(self, references):
+        """Validate table and column references against the schema"""
+        logger.info("Validating schema references")
+
+        tables = references.get("tables", set())
+        columns = references.get("columns", set())
+
+        # Validate tables
+        for table in tables:
+            if table not in self.table_details:
+                # Check if it's a singular form of a plural table name
+                if table + 's' in self.table_details:
+                    logger.warning(
+                        f"Table '{table}' should be '{table}s' (plural form)")
+                    return {"valid": False, "error": f"Table '{table}' doesn't exist. Did you mean '{table}s'? Our database uses plural table names."}
+
+                # Special case for 'lab' -> 'lab_results'
+                if table in ['lab', 'labs']:
+                    return {"valid": False, "error": f"Table '{table}' doesn't exist. Did you mean 'lab_results'?"}
+
+                # Suggest similar table names
+                similar_tables = self._suggest_similar_names(
+                    table, list(self.table_details.keys()))
+                if similar_tables:
+                    suggestion = f"Did you mean: {', '.join(similar_tables)}?"
+                    return {"valid": False, "error": f"Table '{table}' doesn't exist in the database. {suggestion}"}
+
+                return {"valid": False, "error": f"Table '{table}' doesn't exist in the database schema."}
+
+        # Validate columns
+        invalid_columns = []
+        for column in columns:
+            if column == '*':  # Wildcard is always valid
+                continue
+
+            # Check if column exists in any of the referenced tables
+            column_found = False
+            for table in tables:
+                if table in self.table_details:
+                    table_columns = self.table_details[table].get(
+                        'columns', [])
+                    if column in table_columns or column.lower() in [c.lower() for c in table_columns]:
+                        column_found = True
+                        break
+
+            if not column_found:
+                # Special case handling
+                if column == 'patient_id' and 'patients' in tables:
+                    invalid_columns.append(
+                        f"'{column}' (use 'id' in patients table)")
+                elif column == 'test_name' and 'vitals' in tables:
+                    invalid_columns.append(
+                        f"'{column}' (vitals table has direct columns like sbp, dbp, etc.)")
+                elif column == 'test_date' and 'vitals' in tables:
+                    invalid_columns.append(
+                        f"'{column}' (use 'date' in vitals table)")
+                else:
+                    invalid_columns.append(f"'{column}'")
+
+        if invalid_columns:
+            return {"valid": False, "error": f"Invalid column references: {', '.join(invalid_columns)}"}
+
+        # All references are valid
+        return {"valid": True, "error": None}
+
+    def _suggest_similar_names(self, name, options, max_suggestions=3, threshold=0.6):
+        """Suggest similar names from available options based on string similarity"""
+        import difflib
+
+        name = name.lower()
+        options_lower = [opt.lower() for opt in options]
+
+        # Use difflib to get close matches
+        similar = difflib.get_close_matches(
+            name, options_lower, n=max_suggestions, cutoff=threshold)
+
+        # Map back to original case
+        result = []
+        for sim in similar:
+            idx = options_lower.index(sim)
+            result.append(options[idx])
+
+        return result
+
+    def _get_database_path(self):
+        """Get the path to the database file from db_query module"""
+        try:
+            return db_query.get_db_path()
+        except:
+            logger.warning("Could not get database path from db_query module")
+            return None
+
+    def _set_log_level(self, level=logging.INFO):
+        """Set the logging level for the AI assistant module"""
+        logger.setLevel(level)
+
+        # Remove all existing handlers to avoid duplicates
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+
+        # Add a fresh handler
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+        logger.info(f"Logging level set to {level}")
+
+    def _attempt_sql_fix(self, sql_query, error_msg):
+        """Attempt to fix common SQL errors automatically using schema information"""
+        logger.info(f"Attempting to fix SQL: {sql_query}")
+        logger.info(f"Error message: {error_msg}")
+
+        # Store original query for comparison
+        original_query = sql_query
+
+        # Create a dictionary of common replacements
+        replacements = {
+            # Singular to plural table names
+            r'\bpatient\b': 'patients',
+            r'\bvital\b': 'vitals',
+            r'\blab\b(?!_)': 'lab_results',  # Don't match lab_results
+            r'\bscore\b': 'scores',
+            r'\bpm\b(?!h)': 'pmh',  # Don't match pmh
+
+            # Column name corrections
+            r'vitals\.test_date': 'vitals.date',
+            r'vitals\.test_name': '',  # Remove test_name reference in vitals
+            r'patient\.patient_id': 'patient.id',
+            r'patients\.patient_id': 'patients.id',
+
+            # Date function corrections
+            r'DATEDIFF\(': 'julianday(',
+            r'DATEDIFF\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)': 'julianday(\2) - julianday(\1)',
+            r'DATE_DIFF\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)': 'julianday(\2) - julianday(\1)',
+        }
+
+        # Handle table name errors
+        if "no such table" in error_msg.lower():
+            # Extract the problematic table
+            table_match = re.search(
+                r"no such table:\s*([^\s,]+)", error_msg.lower())
+            if table_match:
+                bad_table = table_match.group(1).strip()
+                logger.info(f"Attempting to fix unknown table: {bad_table}")
+
+                # Check if it's a singular form of a plural table
+                if bad_table + 's' in self.table_details:
+                    # Replace the singular form with the plural form
+                    pattern = r'\b' + re.escape(bad_table) + r'\b'
+                    sql_query = re.sub(pattern, bad_table +
+                                       's', sql_query, flags=re.IGNORECASE)
+                    logger.info(
+                        f"Fixed singular table name: {bad_table} -> {bad_table}s")
+                else:
+                    # Suggest similar table names
+                    similar_tables = self._suggest_similar_names(
+                        bad_table, list(self.table_details.keys()))
+                    if similar_tables:
+                        # Replace with the most similar table name
+                        best_match = similar_tables[0]
+                        pattern = r'\b' + re.escape(bad_table) + r'\b'
+                        sql_query = re.sub(
+                            pattern, best_match, sql_query, flags=re.IGNORECASE)
+                        logger.info(
+                            f"Replaced unknown table with similar one: {bad_table} -> {best_match}")
+
+        # Handle column name errors
+        elif "no such column" in error_msg.lower():
+            # Extract the problematic column
+            col_match = re.search(
+                r"no such column:\s*([^\s,]+)", error_msg.lower())
+            if col_match:
+                bad_column = col_match.group(1).strip()
+                logger.info(f"Attempting to fix unknown column: {bad_column}")
+
+                # Handle qualified column names (table.column)
+                if '.' in bad_column:
+                    table_name, col_name = bad_column.split('.')
+                    if table_name.lower() in self.table_details:
+                        # Find similar column in the specified table
+                        table_columns = self.table_details[table_name.lower(
+                        )]['columns']
+                        similar_cols = self._suggest_similar_names(
+                            col_name, table_columns)
+                        if similar_cols:
+                            # Replace with the most similar column name
+                            best_match = similar_cols[0]
+                            pattern = r'\b' + re.escape(bad_column) + r'\b'
+                            replacement = f"{table_name}.{best_match}"
+                            sql_query = re.sub(
+                                pattern, replacement, sql_query, flags=re.IGNORECASE)
+                            logger.info(
+                                f"Fixed column reference: {bad_column} -> {replacement}")
+                else:
+                    # Handle unqualified column names by checking all tables
+                    for table_name, table_info in self.table_details.items():
+                        table_columns = table_info['columns']
+                        similar_cols = self._suggest_similar_names(
+                            bad_column, table_columns)
+                        if similar_cols:
+                            # Replace with the most similar column name
+                            best_match = similar_cols[0]
+                            pattern = r'\b' + re.escape(bad_column) + r'\b'
+                            sql_query = re.sub(
+                                pattern, best_match, sql_query, flags=re.IGNORECASE)
+                            logger.info(
+                                f"Fixed column reference: {bad_column} -> {best_match}")
+                            break
+
+                    # Special case handling
+                    if bad_column.lower() == 'patient_id' and 'patients' in sql_query.lower():
+                        sql_query = re.sub(
+                            r'\bpatient_id\b', 'id', sql_query, flags=re.IGNORECASE)
+                        logger.info(
+                            "Fixed column reference: patient_id -> id in patients table")
+                    elif bad_column.lower() == 'test_date' and 'vitals' in sql_query.lower():
+                        sql_query = re.sub(
+                            r'\btest_date\b', 'date', sql_query, flags=re.IGNORECASE)
+                        logger.info(
+                            "Fixed column reference: test_date -> date in vitals table")
+
+        # Handle ambiguous column references
+        elif "ambiguous column name" in error_msg.lower():
+            col_match = re.search(
+                r"ambiguous column name:\s*([^\s,]+)", error_msg.lower())
+            if col_match:
+                ambiguous_col = col_match.group(1).strip()
+                logger.info(
+                    f"Attempting to fix ambiguous column: {ambiguous_col}")
+
+                # Extract table aliases from the query
+                aliases = {}
+                alias_matches = re.finditer(
+                    r'(?:from|join)\s+([a-z0-9_]+)(?:\s+as)?\s+([a-z0-9_]+)', sql_query.lower())
+                for match in alias_matches:
+                    table, alias = match.group(1), match.group(2)
+                    aliases[alias] = table
+
+                # Find which tables have this column
+                tables_with_col = []
+                for table, table_info in self.table_details.items():
+                    if ambiguous_col.lower() in [col.lower() for col in table_info['columns']]:
+                        tables_with_col.append(table)
+
+                if tables_with_col:
+                    # Qualify the ambiguous column with the first table reference
+                    # This is a simplified approach - ideally we'd use context to decide which table to use
+                    if len(tables_with_col) == 1:
+                        # Only one potential table - use its alias if found
+                        table = tables_with_col[0]
+                        alias = None
+                        for a, t in aliases.items():
+                            if t.lower() == table.lower():
+                                alias = a
+                                break
+
+                        qualifier = alias if alias else table
+                        pattern = r'(?<!\w\.)(\b' + \
+                            re.escape(ambiguous_col) + r'\b)(?!\.\w)'
+                        replacement = f"{qualifier}.{ambiguous_col}"
+                        sql_query = re.sub(
+                            pattern, replacement, sql_query, flags=re.IGNORECASE)
+                        logger.info(
+                            f"Qualified ambiguous column: {ambiguous_col} -> {replacement}")
+                    else:
+                        # Multiple tables have this column - use context to decide
+                        # For now, just use the first table alias found in the query
+                        for table in tables_with_col:
+                            alias = None
+                            for a, t in aliases.items():
+                                if t.lower() == table.lower():
+                                    alias = a
+                                    break
+
+                            if alias:
+                                qualifier = alias
+                                pattern = r'(?<!\w\.)(\b' + \
+                                    re.escape(ambiguous_col) + r'\b)(?!\.\w)'
+                                replacement = f"{qualifier}.{ambiguous_col}"
+                                sql_query = re.sub(
+                                    pattern, replacement, sql_query, flags=re.IGNORECASE)
+                                logger.info(
+                                    f"Qualified ambiguous column with first alias found: {ambiguous_col} -> {replacement}")
+                                break
+
+        # Apply common replacements
+        for pattern, replacement in replacements.items():
+            sql_query = re.sub(pattern, replacement,
+                               sql_query, flags=re.IGNORECASE)
+
+        # Log if query was modified
+        if sql_query != original_query:
+            logger.info(f"SQL query fixed. Original: {original_query}")
+            logger.info(f"Fixed query: {sql_query}")
+            return sql_query
+        else:
+            logger.info("No fixes applied to SQL query")
+            return None
+
+
+def ai_assistant_page():
+    """Returns the AI assistant page for the application"""
+    ai_assistant = AIAssistant()
+    return ai_assistant.view()

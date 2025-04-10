@@ -88,15 +88,28 @@ def create_app():
         else:
             return pn.pane.Markdown("# Page not found")
 
-    # Combine sidebar and content in template
-    template = pn.template.MaterialTemplate(
-        title="Metabolic Health Data Analysis",
-        sidebar=side_panel,
-        main=get_content,
-        header_background="#054471",
+    # Combine sidebar and content in a simple layout instead of MaterialTemplate
+    # to avoid potential BrowserInfo object issues
+    main_layout = pn.Column(
+        pn.Row(
+            pn.pane.Markdown("# Metabolic Health Data Analysis",
+                             styles={'background-color': '#054471',
+                                     'color': 'white',
+                                     'padding': '10px'}),
+            sizing_mode='stretch_width'
+        ),
+        pn.Row(
+            side_panel,
+            pn.Column(
+                get_content,
+                sizing_mode='stretch_width'
+            ),
+            sizing_mode='stretch_width'
+        ),
+        sizing_mode='stretch_width'
     )
 
-    return template
+    return main_layout
 
 
 app = create_app()

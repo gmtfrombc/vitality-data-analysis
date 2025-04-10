@@ -1,0 +1,30 @@
+{
+    "Patient Demographics": [
+        "How many active patients do we have?",
+        "What is the gender distribution of our patients?",
+        "Show me the age distribution of our patients",
+        "What ethnicities are represented in our patient population?",
+        "How many patients have been in the program for at least 6 months?"
+    ],
+    "Weight Analysis": [
+        "How many patients lost weight during the program?",
+        "What percentage of active patients lost at least 10% body weight?",
+        "Show weight change trends by age group",
+        "Who are the top 10 patients with the most weight loss?",
+        "Is there a correlation between time in program and weight loss?"
+    ],
+    "Health Metrics": [
+        "What's the average A1C change for patients in the program?",
+        "Show blood pressure trends over time",
+        "Compare engagement scores to health outcomes",
+        "Which patients improved both weight and blood pressure?",
+        "How many patients have high risk mental health scores?"
+    ],
+    "Program Effectiveness": [
+        "Do patients who see health coaches more often lose more weight?",
+        "Is there a difference in outcomes between male and female patients?",
+        "Which type of provider visit is most associated with improvements?",
+        "How does weight loss compare to other metrics of success?",
+        "What percentage of patients meet all their health goals?"
+    ]
+}

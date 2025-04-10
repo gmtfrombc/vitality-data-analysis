@@ -134,3 +134,9 @@ class Dashboard(param.Parameterized):
     def _refresh_data(self, event=None):
         """Refresh the data displayed in the dashboard"""
         self.stats = db_query.get_program_stats()
+
+
+def dashboard_page():
+    """Returns the dashboard page for the application"""
+    dashboard = Dashboard()
+    return dashboard.view()
