@@ -1160,9 +1160,20 @@ if 'gender' in patients_df.columns:
     
     # Visualize gender distribution
     plt.figure(figsize=(8, 6))
-    gender_counts.plot.pie(autopct='%1.1f%%', startangle=90)
-    plt.title('Patients by Gender')
-    plt.ylabel('')
+    # Create pie chart using hvplot directly with kind='pie'
+    pie_data = pd.DataFrame({
+        'Gender': ["Female" if g == "F" else "Male" for g in gender_counts.index],
+        'Count': gender_counts.values
+    })
+    gender_pie = pie_data.hvplot(
+        x='Gender',
+        y='Count',
+        kind='pie',
+        title='Patients by Gender',
+        height=300,
+        width=300,
+        legend='right'
+    )
 
 # Analyze program duration if available
 if 'program_start_date' in patients_df.columns:
@@ -1602,12 +1613,15 @@ The code is designed to be transparent and show each step of the analysis proces
                             'Count': gender_counts.values
                         })
 
-                        gender_pie = pie_data.hvplot.pie(
+                        # Create pie chart using hvplot directly with kind='pie'
+                        gender_pie = pie_data.hvplot(
                             x='Gender',
                             y='Count',
+                            kind='pie',
+                            title="Active Patients by Gender",
                             height=300,
                             width=300,
-                            title="Active Patients by Gender"
+                            legend='right'
                         )
                         result_panels.append(pn.pane.HoloViews(gender_pie))
 
@@ -1846,12 +1860,15 @@ The code is designed to be transparent and show each step of the analysis proces
                             'Count': gender_counts.values
                         })
 
-                        gender_pie = pie_data.hvplot.pie(
+                        # Create pie chart using hvplot directly with kind='pie'
+                        gender_pie = pie_data.hvplot(
                             x='Gender',
                             y='Count',
+                            kind='pie',
+                            title="Active Patients by Gender",
                             height=350,
                             width=350,
-                            title="Active Patients by Gender"
+                            legend='right'
                         )
 
                         # Store the plot

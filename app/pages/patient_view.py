@@ -123,11 +123,11 @@ class PatientView(param.Parameterized):
             self._update_patient_list()
 
             # Update the patient selector with new options
-            patients_df = db_query.get_all_patients()
-            if self.show_active_only:
+        patients_df = db_query.get_all_patients()
+        if self.show_active_only:
                 patients_df = patients_df[patients_df['active'] == 1]
 
-            try:
+        try:
                 # Update the patient dropdown options
                 new_options = {f"{row['first_name']} {row['last_name']}": str(row['id'])
                                for _, row in patients_df.iterrows()}
@@ -156,7 +156,7 @@ class PatientView(param.Parameterized):
                         # All button green
                         self._filter_buttons[1].button_type = 'success'
 
-            except Exception as e:
+        except Exception as e:
                 print(f"Error updating patient selector: {e}")
 
         # Add the method to the class
@@ -270,486 +270,486 @@ class PatientView(param.Parameterized):
         print(f"Debug: Patient data received: {self.patient_data}")
 
     def create_scores_tab(self, patient_id):
-        print(f"Debug: Getting scores for patient ID: '{patient_id}'")
-        scores_df = db_query.get_patient_scores(patient_id)
-        print(f"Debug: Scores data rows: {len(scores_df)}")
-        logger.info(
-            f"Scores data for patient {patient_id}: {len(scores_df)} rows")
-
-        if not scores_df.empty:
-            logger.info(f"Scores columns: {scores_df.columns.tolist()}")
+            print(f"Debug: Getting scores for patient ID: '{patient_id}'")
+            scores_df = db_query.get_patient_scores(patient_id)
+            print(f"Debug: Scores data rows: {len(scores_df)}")
             logger.info(
-                f"Sample scores data: {scores_df.head(1).to_dict('records')}")
+                f"Scores data for patient {patient_id}: {len(scores_df)} rows")
 
-        # Get patient data for program start date
-        patient_data = db_query.get_patient_overview(patient_id)
-        program_start_date = patient_data.get(
-            'demographics', {}).get('program_start_date', None)
+            if not scores_df.empty:
+                logger.info(f"Scores columns: {scores_df.columns.tolist()}")
+                logger.info(
+                    f"Sample scores data: {scores_df.head(1).to_dict('records')}")
 
-        if scores_df.empty:
-            return pn.pane.Markdown("No metabolic health scores available")
+            # Get patient data for program start date
+            patient_data = db_query.get_patient_overview(patient_id)
+            program_start_date = patient_data.get(
+                'demographics', {}).get('program_start_date', None)
 
-        # Format dates for display in tables
-        scores_df_display = scores_df.copy()
-        if 'date' in scores_df_display.columns:
-            scores_df_display['date'] = scores_df_display['date'].apply(
+            if scores_df.empty:
+                return pn.pane.Markdown("No metabolic health scores available")
+
+            # Format dates for display in tables
+            scores_df_display = scores_df.copy()
+            if 'date' in scores_df_display.columns:
+                scores_df_display['date'] = scores_df_display['date'].apply(
                 self.format_date)
 
-        # For plotting, we need datetime objects
-        plot_df = scores_df.copy()
-        if 'date' in plot_df.columns:
-            # Keep the original date format for conversion to datetime
-            plot_df['date'] = pd.to_datetime(plot_df['date'])
-            # Sort by date for proper line plotting
-            plot_df = plot_df.sort_values('date')
-            logger.info(f"Plot data prepared with {len(plot_df)} rows")
+            # For plotting, we need datetime objects
+            plot_df = scores_df.copy()
+            if 'date' in plot_df.columns:
+                # Keep the original date format for conversion to datetime
+                plot_df['date'] = pd.to_datetime(plot_df['date'])
+                # Sort by date for proper line plotting
+                plot_df = plot_df.sort_values('date')
+                logger.info(f"Plot data prepared with {len(plot_df)} rows")
 
-        # Original table view (always show this)
-        scores_table = pn.widgets.Tabulator(
-            scores_df_display,
-            sizing_mode='stretch_width',
-            show_index=False
-        )
-        logger.info("Created scores table")
+            # Original table view (always show this)
+            scores_table = pn.widgets.Tabulator(
+                scores_df_display,
+                sizing_mode='stretch_width',
+                show_index=False
+            )
+            logger.info("Created scores table")
 
-        # Direct plotting approach
-        plots = []
-        try:
-            # Group by date and score_type for plotting
-            for score_type in plot_df['score_type'].unique():
-                # Filter data for this score type
-                score_data = plot_df[plot_df['score_type'] == score_type]
+            # Direct plotting approach
+            plots = []
+            try:
+                # Group by date and score_type for plotting
+                for score_type in plot_df['score_type'].unique():
+                    # Filter data for this score type
+                    score_data = plot_df[plot_df['score_type'] == score_type]
 
-                if not score_data.empty and len(score_data) > 0:
-                    logger.info(
-                        f"Creating plot for score type: {score_type} with {len(score_data)} points")
+                    if not score_data.empty and len(score_data) > 0:
+                        logger.info(
+                            f"Creating plot for score type: {score_type} with {len(score_data)} points")
 
-                    # Create plot
-                    score_plot = score_data.hvplot(
-                        x='date',
-                        y='score_value',
-                        title=f'{score_type.replace("_", " ").title()} Over Time',
-                        xlabel='Date',
-                        ylabel=f'{score_type.replace("_", " ").title()}',
-                        width=600,
-                        height=350,
-                        grid=True,
-                        line_width=2.0
-                    )
+                        # Create plot
+                        score_plot = score_data.hvplot(
+                            x='date',
+                            y='score_value',
+                            title=f'{score_type.replace("_", " ").title()} Over Time',
+                            xlabel='Date',
+                            ylabel=f'{score_type.replace("_", " ").title()}',
+                            width=600,
+                            height=350,
+                            grid=True,
+                            line_width=2.0
+                        )
                 score_plot = self.format_plot_time_axis(
-                    score_plot, program_start_date, patient_data)
+                            score_plot, program_start_date, patient_data)
                 plots.append(pn.pane.HoloViews(
-                    score_plot, sizing_mode='stretch_width'))
+                            score_plot, sizing_mode='stretch_width'))
                 logger.info(f"Added plot for {score_type}")
-        except Exception as e:
-            logger.error(f"Error creating score plots: {e}", exc_info=True)
-            print(f"Error creating score plots: {e}")
+            except Exception as e:
+                logger.error(f"Error creating score plots: {e}", exc_info=True)
+                print(f"Error creating score plots: {e}")
 
-        # Create layout
-        logger.info(f"Total plots created: {len(plots)}")
-        components = [
-            pn.pane.Markdown("### Scores Data"),
-            scores_table
-        ]
+            # Create layout
+            logger.info(f"Total plots created: {len(plots)}")
+            components = [
+                pn.pane.Markdown("### Scores Data"),
+                scores_table
+            ]
 
-        if plots:
-            components.extend([
-                pn.layout.Divider(),
-                pn.pane.Markdown("### Score Trends"),
-                pn.pane.Markdown(
-                    "*Click and drag to zoom in, double-click to reset view*"),
-                *plots  # Display plots vertically for better visibility
-            ])
-            logger.info("Added plots to layout")
+            if plots:
+                components.extend([
+                    pn.layout.Divider(),
+                    pn.pane.Markdown("### Score Trends"),
+                    pn.pane.Markdown(
+                        "*Click and drag to zoom in, double-click to reset view*"),
+                    *plots  # Display plots vertically for better visibility
+                ])
+                logger.info("Added plots to layout")
 
-        return pn.Column(*components, sizing_mode='stretch_width')
+            return pn.Column(*components, sizing_mode='stretch_width')
 
     def create_vitals_tab(self, patient_id):
-        print(f"Debug: Getting vitals for patient ID: '{patient_id}'")
-        # Always get the current ID, not a cached version
-        current_id = patient_id
-        vitals_df = db_query.get_patient_vitals(current_id)
-        print(f"Debug: Vitals data rows: {len(vitals_df)}")
-        logger.info(
-            f"Vitals data for patient {patient_id}: {len(vitals_df)} rows")
-
-        if not vitals_df.empty:
-            logger.info(f"Vitals columns: {vitals_df.columns.tolist()}")
+            print(f"Debug: Getting vitals for patient ID: '{patient_id}'")
+            # Always get the current ID, not a cached version
+            current_id = patient_id
+            vitals_df = db_query.get_patient_vitals(current_id)
+            print(f"Debug: Vitals data rows: {len(vitals_df)}")
             logger.info(
-                f"Sample vitals data: {vitals_df.head(1).to_dict('records')}")
+                f"Vitals data for patient {patient_id}: {len(vitals_df)} rows")
 
-        # Get patient data for program start date
-        patient_data = db_query.get_patient_overview(patient_id)
-        program_start_date = patient_data.get(
-            'demographics', {}).get('program_start_date', None)
-        logger.info(f"Program start date: {program_start_date}")
+            if not vitals_df.empty:
+                logger.info(f"Vitals columns: {vitals_df.columns.tolist()}")
+                logger.info(
+                    f"Sample vitals data: {vitals_df.head(1).to_dict('records')}")
 
-        if vitals_df.empty:
-            logger.warning("No vitals data available for plotting")
-            return pn.pane.Markdown("No vitals data available")
+            # Get patient data for program start date
+            patient_data = db_query.get_patient_overview(patient_id)
+            program_start_date = patient_data.get(
+                'demographics', {}).get('program_start_date', None)
+            logger.info(f"Program start date: {program_start_date}")
 
-        # Format dates for display in tables
-        vitals_df_display = vitals_df.copy()
-        if 'date' in vitals_df_display.columns:
-            vitals_df_display['date'] = vitals_df_display['date'].apply(
+            if vitals_df.empty:
+                logger.warning("No vitals data available for plotting")
+                return pn.pane.Markdown("No vitals data available")
+
+            # Format dates for display in tables
+            vitals_df_display = vitals_df.copy()
+            if 'date' in vitals_df_display.columns:
+                vitals_df_display['date'] = vitals_df_display['date'].apply(
                 self.format_date)
 
-        # For plotting, we need datetime objects
-        plot_df = vitals_df.copy()
-        if 'date' in plot_df.columns:
-            # Keep the original date format for conversion to datetime
-            plot_df['date'] = pd.to_datetime(plot_df['date'])
-            # Sort by date for proper line plotting
-            plot_df = plot_df.sort_values('date')
-            logger.info(f"Plot data prepared with {len(plot_df)} rows")
+            # For plotting, we need datetime objects
+            plot_df = vitals_df.copy()
+            if 'date' in plot_df.columns:
+                # Keep the original date format for conversion to datetime
+                plot_df['date'] = pd.to_datetime(plot_df['date'])
+                # Sort by date for proper line plotting
+                plot_df = plot_df.sort_values('date')
+                logger.info(f"Plot data prepared with {len(plot_df)} rows")
 
-        # Only create plots if we have data with dates
-        plots = []
-        try:
-            if not plot_df.empty and 'date' in plot_df.columns and 'weight' in plot_df.columns:
-                # Filter out null values
-                weight_data = plot_df[plot_df['weight'].notnull()]
-                logger.info(
-                    f"Weight data points for plotting: {len(weight_data)}")
+            # Only create plots if we have data with dates
+            plots = []
+            try:
+                if not plot_df.empty and 'date' in plot_df.columns and 'weight' in plot_df.columns:
+                    # Filter out null values
+                    weight_data = plot_df[plot_df['weight'].notnull()]
+                    logger.info(
+                        f"Weight data points for plotting: {len(weight_data)}")
 
-                if not weight_data.empty:
-                    logger.info("Creating weight plot")
-                    weight_plot = weight_data.hvplot(
-                        x='date', y='weight',
-                        title='Weight Over Time',
-                        xlabel='Date', ylabel='Weight (kg)',
-                        width=600, height=350,
-                        grid=True,
-                        line_width=2.0
-                    )
+                    if not weight_data.empty:
+                        logger.info("Creating weight plot")
+                        weight_plot = weight_data.hvplot(
+                            x='date', y='weight',
+                            title='Weight Over Time',
+                            xlabel='Date', ylabel='Weight (kg)',
+                            width=600, height=350,
+                            grid=True,
+                            line_width=2.0
+                        )
                 weight_plot = self.format_plot_time_axis(
-                    weight_plot, program_start_date, patient_data)
+                            weight_plot, program_start_date, patient_data)
                 plots.append(pn.pane.HoloViews(
-                    weight_plot, sizing_mode='stretch_width'))
+                            weight_plot, sizing_mode='stretch_width'))
                 logger.info(
-                    "Weight plot created and added to plots list")
+                            "Weight plot created and added to plots list")
 
-            if not plot_df.empty and 'date' in plot_df.columns:
-                bp_plots = []
+                if not plot_df.empty and 'date' in plot_df.columns:
+                    bp_plots = []
 
-                # Create systolic plot if data exists
-                if 'sbp' in plot_df.columns:
-                    sbp_data = plot_df[plot_df['sbp'].notnull()]
-                    logger.info(
-                        f"SBP data points for plotting: {len(sbp_data)}")
+                    # Create systolic plot if data exists
+                    if 'sbp' in plot_df.columns:
+                        sbp_data = plot_df[plot_df['sbp'].notnull()]
+                        logger.info(
+                            f"SBP data points for plotting: {len(sbp_data)}")
 
-                    if not sbp_data.empty:
-                        logger.info("Creating SBP plot")
-                        sbp_plot = sbp_data.hvplot(
-                            x='date', y='sbp',
-                            title='Blood Pressure Over Time',
-                            xlabel='Date', ylabel='mmHg (Systolic)',
-                            width=600, height=350,
-                            grid=True,
-                            line_width=2.0
-                        )
-                    sbp_plot = self.format_plot_time_axis(
-                        sbp_plot, program_start_date, patient_data)
-                    bp_plots.append(sbp_plot)
-                    logger.info("SBP plot created")
-
-                # Create diastolic plot if data exists
-                if 'dbp' in plot_df.columns:
-                    dbp_data = plot_df[plot_df['dbp'].notnull()]
-                    logger.info(
-                        f"DBP data points for plotting: {len(dbp_data)}")
-
-                    if not dbp_data.empty:
-                        logger.info("Creating DBP plot")
-                        dbp_plot = dbp_data.hvplot(
-                            x='date', y='dbp',
-                            title='',
-                            xlabel='Date', ylabel='mmHg (Diastolic)',
-                            width=600, height=350,
-                            grid=True,
-                            line_width=2.0
-                        )
-                    dbp_plot = self.format_plot_time_axis(
-                        dbp_plot, program_start_date, patient_data)
-                    bp_plots.append(dbp_plot)
-                    logger.info("DBP plot created")
-
-                # Combine BP plots if both exist
-                if len(bp_plots) > 1:
-                    logger.info("Combining BP plots")
-                    bp_plot = bp_plots[0] * bp_plots[1]
-                    plots.append(pn.pane.HoloViews(
-                        bp_plot, sizing_mode='stretch_width'))
-                    logger.info("Combined BP plot added to plots list")
-                elif len(bp_plots) == 1:
-                    logger.info("Adding single BP plot")
-                    plots.append(pn.pane.HoloViews(
-                        bp_plots[0], sizing_mode='stretch_width'))
-                    logger.info("Single BP plot added to plots list")
-
-            logger.info(f"Total plots created: {len(plots)}")
-        except Exception as e:
-            logger.error(
-                f"Error creating vitals plots: {e}", exc_info=True)
-            print(f"Error creating vitals plots: {e}")
-            # Continue execution even if plot creation fails
-
-        # Create table view of data
-        vitals_table = pn.widgets.Tabulator(
-            vitals_df_display,
-            sizing_mode='stretch_width',
-            show_index=False  # Hide index column for cleaner display
-        )
-        logger.info("Vitals table created")
-
-        # Create layout with plots if available
-        if plots:
-            logger.info("Returning layout with plots")
-            layout = pn.Column(
-                pn.pane.Markdown("### Vitals Data"),
-                vitals_table,
-                pn.layout.Divider(),
-                pn.pane.Markdown("### Vitals Trends"),
-                pn.pane.Markdown(
-                    "*Click and drag to zoom in, double-click to reset view*"),
-                *plots,  # Display plots vertically for better visibility
-                sizing_mode='stretch_width'
-            )
-            logger.info("Vitals layout created with plots")
-            return layout
-        else:
-            logger.info("Returning layout without plots")
-            return pn.Column(
-                pn.pane.Markdown("### Vitals Data"),
-                vitals_table,
-                sizing_mode='stretch_width'
-            )
-
-    def create_mental_health_tab(self, patient_id):
-        print(
-            f"Debug: Getting mental health data for patient ID: '{patient_id}'")
-        # Always get the current ID, not a cached version
-        current_id = patient_id
-        mh_df = db_query.get_patient_mental_health(current_id)
-        print(f"Debug: Mental health data rows: {len(mh_df)}")
-
-        # Get patient data for program start date
-        patient_data = db_query.get_patient_overview(patient_id)
-        program_start_date = patient_data.get(
-            'demographics', {}).get('program_start_date', None)
-
-        if mh_df.empty:
-            return pn.pane.Markdown("No mental health data available")
-
-        # Format dates for display in tables
-        mh_df_display = mh_df.copy()
-        if 'date' in mh_df_display.columns:
-            mh_df_display['date'] = mh_df_display['date'].apply(
-                self.format_date)
-
-        # For plotting, we need datetime objects
-        plot_df = mh_df.copy()
-        if 'date' in plot_df.columns:
-            # Keep the original date format for conversion to datetime
-            plot_df['date'] = pd.to_datetime(plot_df['date'])
-            # Sort by date for proper line plotting
-            plot_df = plot_df.sort_values('date')
-
-        # Create a similar pivot but with assessment_type as rows for display
-        try:
-            # Sort data by date (descending)
-            display_df = mh_df_display.sort_values('date', ascending=False)
-
-            # Create a pivot table with assessment types as rows and dates as columns
-            pivot_df = display_df.pivot_table(
-                index='assessment_type',
-                columns='date',
-                values='score',
-                aggfunc='first'  # In case of duplicates, take the first value
-            ).reset_index()
-
-            # Format the pivot table for better display
-            pivot_df.columns.name = None  # Remove the columns name
-
-            # Create table view of restructured data
-            mh_table = pn.widgets.Tabulator(
-                pivot_df,
-                sizing_mode='stretch_width',
-                show_index=False  # Hide index column for cleaner display
-            )
-        except Exception as e:
-            print(f"Error creating mental health pivot table: {e}")
-            # If pivot fails, fall back to original table
-            mh_table = pn.widgets.Tabulator(
-                mh_df_display,
-                sizing_mode='stretch_width',
-                show_index=False  # Hide index column for cleaner display
-            )
-
-        # Try to create plots if we have enough data
-        plots = []
-        try:
-            # Create plots - we need to pivot data since assessment types are rows
-            plot_pivot_data = plot_df.pivot_table(
-                index='date', columns='assessment_type', values='score', aggfunc='mean'
-            ).reset_index()
-
-            # Need at least one assessment type
-            if not plot_pivot_data.empty and len(plot_pivot_data.columns) > 1:
-                # Create individual plots for each assessment type
-                for col in plot_pivot_data.columns:
-                    if col != 'date':  # Skip the date column
-                        # Create a dataframe with only the data for this assessment type with no nulls
-                        assessment_data = plot_pivot_data[[
-                            'date', col]].dropna()
-                        if not assessment_data.empty:
-                            individual_plot = assessment_data.hvplot(
-                                x='date', y=col,
-                                title=f'{col} Score Over Time',
-                                xlabel='Date', ylabel='Score',
+                        if not sbp_data.empty:
+                            logger.info("Creating SBP plot")
+                            sbp_plot = sbp_data.hvplot(
+                                x='date', y='sbp',
+                                title='Blood Pressure Over Time',
+                                xlabel='Date', ylabel='mmHg (Systolic)',
                                 width=600, height=350,
                                 grid=True,
                                 line_width=2.0
                             )
-                        individual_plot = self.format_plot_time_axis(
-                            individual_plot, program_start_date, patient_data)
+                    sbp_plot = self.format_plot_time_axis(
+                                sbp_plot, program_start_date, patient_data)
+                    bp_plots.append(sbp_plot)
+                    logger.info("SBP plot created")
+
+                    # Create diastolic plot if data exists
+                    if 'dbp' in plot_df.columns:
+                        dbp_data = plot_df[plot_df['dbp'].notnull()]
+                        logger.info(
+                            f"DBP data points for plotting: {len(dbp_data)}")
+
+                        if not dbp_data.empty:
+                            logger.info("Creating DBP plot")
+                            dbp_plot = dbp_data.hvplot(
+                                x='date', y='dbp',
+                                title='',
+                                xlabel='Date', ylabel='mmHg (Diastolic)',
+                                width=600, height=350,
+                                grid=True,
+                                line_width=2.0
+                            )
+                    dbp_plot = self.format_plot_time_axis(
+                                dbp_plot, program_start_date, patient_data)
+                    bp_plots.append(dbp_plot)
+                    logger.info("DBP plot created")
+
+                    # Combine BP plots if both exist
+                    if len(bp_plots) > 1:
+                        logger.info("Combining BP plots")
+                        bp_plot = bp_plots[0] * bp_plots[1]
                         plots.append(pn.pane.HoloViews(
-                            individual_plot, sizing_mode='stretch_width'))
-        except Exception as e:
-            print(f"Error creating mental health plots: {e}")
+                            bp_plot, sizing_mode='stretch_width'))
+                        logger.info("Combined BP plot added to plots list")
+                    elif len(bp_plots) == 1:
+                        logger.info("Adding single BP plot")
+                        plots.append(pn.pane.HoloViews(
+                            bp_plots[0], sizing_mode='stretch_width'))
+                        logger.info("Single BP plot added to plots list")
 
-        # Return layout with or without plots
-        if plots:
-            return pn.Column(
-                pn.pane.Markdown("### Mental Health Assessments by Type"),
-                mh_table,
-                pn.layout.Divider(),
-                pn.pane.Markdown("### Mental Health Score Trends"),
-                pn.pane.Markdown(
-                    "*Click and drag to zoom in, double-click to reset view*"),
-                *plots,  # Display plots vertically for better visibility
-                sizing_mode='stretch_width'
+                logger.info(f"Total plots created: {len(plots)}")
+            except Exception as e:
+                logger.error(
+                    f"Error creating vitals plots: {e}", exc_info=True)
+                print(f"Error creating vitals plots: {e}")
+                # Continue execution even if plot creation fails
+
+            # Create table view of data
+            vitals_table = pn.widgets.Tabulator(
+                vitals_df_display,
+                sizing_mode='stretch_width',
+                show_index=False  # Hide index column for cleaner display
             )
-        else:
-            # Fall back to table-only view if plot creation fails
-            return pn.Column(
-                pn.pane.Markdown("### Mental Health Assessments by Type"),
-                mh_table,
-                sizing_mode='stretch_width'
-            )
+            logger.info("Vitals table created")
 
-    def create_labs_tab(self, patient_id):
-        print(f"Debug: Getting lab data for patient ID: '{patient_id}'")
-        # Always get the current ID, not a cached version
-        current_id = patient_id
-        labs_df = db_query.get_patient_labs(current_id)
-        print(f"Debug: Lab data rows: {len(labs_df)}")
+            # Create layout with plots if available
+            if plots:
+                logger.info("Returning layout with plots")
+                layout = pn.Column(
+                    pn.pane.Markdown("### Vitals Data"),
+                    vitals_table,
+                    pn.layout.Divider(),
+                    pn.pane.Markdown("### Vitals Trends"),
+                    pn.pane.Markdown(
+                        "*Click and drag to zoom in, double-click to reset view*"),
+                    *plots,  # Display plots vertically for better visibility
+                    sizing_mode='stretch_width'
+                )
+                logger.info("Vitals layout created with plots")
+                return layout
+            else:
+                logger.info("Returning layout without plots")
+                return pn.Column(
+                    pn.pane.Markdown("### Vitals Data"),
+                    vitals_table,
+                    sizing_mode='stretch_width'
+                )
 
-        # Get patient data for program start date
-        patient_data = db_query.get_patient_overview(patient_id)
-        program_start_date = patient_data.get(
-            'demographics', {}).get('program_start_date', None)
+    def create_mental_health_tab(self, patient_id):
+            print(
+                f"Debug: Getting mental health data for patient ID: '{patient_id}'")
+            # Always get the current ID, not a cached version
+            current_id = patient_id
+            mh_df = db_query.get_patient_mental_health(current_id)
+            print(f"Debug: Mental health data rows: {len(mh_df)}")
 
-        if labs_df.empty:
-            return pn.pane.Markdown("No lab data available")
+            # Get patient data for program start date
+            patient_data = db_query.get_patient_overview(patient_id)
+            program_start_date = patient_data.get(
+                'demographics', {}).get('program_start_date', None)
 
-        # Format dates for display in tables
-        labs_df_display = labs_df.copy()
-        if 'date' in labs_df_display.columns:
-            labs_df_display['date'] = labs_df_display['date'].apply(
+            if mh_df.empty:
+                return pn.pane.Markdown("No mental health data available")
+
+            # Format dates for display in tables
+            mh_df_display = mh_df.copy()
+            if 'date' in mh_df_display.columns:
+                mh_df_display['date'] = mh_df_display['date'].apply(
                 self.format_date)
 
-        # For plotting, we need datetime objects
-        plot_df = labs_df.copy()
-        if 'date' in plot_df.columns:
-            # Keep the original date format for conversion to datetime
-            plot_df['date'] = pd.to_datetime(plot_df['date'])
-            # Sort by date for proper line plotting
-            plot_df = plot_df.sort_values('date')
+            # For plotting, we need datetime objects
+            plot_df = mh_df.copy()
+            if 'date' in plot_df.columns:
+                # Keep the original date format for conversion to datetime
+                plot_df['date'] = pd.to_datetime(plot_df['date'])
+                # Sort by date for proper line plotting
+                plot_df = plot_df.sort_values('date')
 
-        # Create a line plot showing trends for key lab values over time
-        # First, get a list of common lab tests we want to plot
-        key_labs = ['Total Cholesterol', 'HDL', 'LDL',
-                    'Triglycerides', 'Glucose', 'HbA1c']
+            # Create a similar pivot but with assessment_type as rows for display
+            try:
+                # Sort data by date (descending)
+                display_df = mh_df_display.sort_values('date', ascending=False)
 
-        # Filter for only these labs and create a more readable format for plotting
-        key_plot_df = plot_df[plot_df['test_name'].isin(key_labs)]
+                # Create a pivot table with assessment types as rows and dates as columns
+                pivot_df = display_df.pivot_table(
+                    index='assessment_type',
+                    columns='date',
+                    values='score',
+                    aggfunc='first'  # In case of duplicates, take the first value
+                ).reset_index()
 
-        # Restructure the data to have test_names as rows and dates as columns
-        # First, sort by date (descending)
-        labs_display_sorted = labs_df_display.sort_values(
-            'date', ascending=False)
+                # Format the pivot table for better display
+                pivot_df.columns.name = None  # Remove the columns name
 
-        # Pivot the data to get test names as rows and dates as columns
-        try:
-            pivot_df = labs_display_sorted.pivot_table(
-                index='test_name',
-                columns='date',
-                values='value',
-                aggfunc='first'  # In case of duplicates, take the first value
-            ).reset_index()
+                # Create table view of restructured data
+                mh_table = pn.widgets.Tabulator(
+                    pivot_df,
+                    sizing_mode='stretch_width',
+                    show_index=False  # Hide index column for cleaner display
+                )
+            except Exception as e:
+                print(f"Error creating mental health pivot table: {e}")
+                # If pivot fails, fall back to original table
+                mh_table = pn.widgets.Tabulator(
+                    mh_df_display,
+                    sizing_mode='stretch_width',
+                    show_index=False  # Hide index column for cleaner display
+                )
 
-            # Format the pivot table for better display
-            pivot_df.columns.name = None  # Remove the columns name
+            # Try to create plots if we have enough data
+            plots = []
+            try:
+                # Create plots - we need to pivot data since assessment types are rows
+                plot_pivot_data = plot_df.pivot_table(
+                    index='date', columns='assessment_type', values='score', aggfunc='mean'
+                ).reset_index()
 
-            # Create table view of restructured data
-            labs_table = pn.widgets.Tabulator(
-                pivot_df,
-                sizing_mode='stretch_width',
-                show_index=False  # Hide index column for cleaner display
-            )
-        except Exception as e:
-            print(f"Error creating lab pivot table: {e}")
-            # If pivot fails, fall back to original table
-            labs_table = pn.widgets.Tabulator(
-                labs_df_display,
-                sizing_mode='stretch_width',
-                show_index=False  # Hide index column for cleaner display
-            )
+                # Need at least one assessment type
+                if not plot_pivot_data.empty and len(plot_pivot_data.columns) > 1:
+                    # Create individual plots for each assessment type
+                    for col in plot_pivot_data.columns:
+                        if col != 'date':  # Skip the date column
+                            # Create a dataframe with only the data for this assessment type with no nulls
+                            assessment_data = plot_pivot_data[[
+                                'date', col]].dropna()
+                            if not assessment_data.empty:
+                                individual_plot = assessment_data.hvplot(
+                                    x='date', y=col,
+                                    title=f'{col} Score Over Time',
+                                    xlabel='Date', ylabel='Score',
+                                    width=600, height=350,
+                                    grid=True,
+                                    line_width=2.0
+                                )
+                        individual_plot = self.format_plot_time_axis(
+                                    individual_plot, program_start_date, patient_data)
+                        plots.append(pn.pane.HoloViews(
+                                    individual_plot, sizing_mode='stretch_width'))
+            except Exception as e:
+                print(f"Error creating mental health plots: {e}")
 
-        # Create individual plots for each important lab test
-        plots = []
-        try:
-            # Create separate plots for each key lab test
-            for lab_test in key_labs:
-                test_data = key_plot_df[key_plot_df['test_name'] == lab_test]
+            # Return layout with or without plots
+            if plots:
+                return pn.Column(
+                    pn.pane.Markdown("### Mental Health Assessments by Type"),
+                    mh_table,
+                    pn.layout.Divider(),
+                    pn.pane.Markdown("### Mental Health Score Trends"),
+                    pn.pane.Markdown(
+                        "*Click and drag to zoom in, double-click to reset view*"),
+                    *plots,  # Display plots vertically for better visibility
+                    sizing_mode='stretch_width'
+                )
+            else:
+                # Fall back to table-only view if plot creation fails
+                return pn.Column(
+                    pn.pane.Markdown("### Mental Health Assessments by Type"),
+                    mh_table,
+                    sizing_mode='stretch_width'
+                )
 
-                if not test_data.empty and len(test_data) > 0:
-                    # Convert to clean format for plotting
-                    lab_plot = test_data.hvplot(
-                        x='date', y='value',
-                        title=f'{lab_test} Over Time',
-                        xlabel='Date', ylabel=f'{lab_test} Value',
-                        height=350, width=600,
-                        grid=True,
-                        line_width=2.0
-                    )
+    def create_labs_tab(self, patient_id):
+            print(f"Debug: Getting lab data for patient ID: '{patient_id}'")
+            # Always get the current ID, not a cached version
+            current_id = patient_id
+            labs_df = db_query.get_patient_labs(current_id)
+            print(f"Debug: Lab data rows: {len(labs_df)}")
+
+            # Get patient data for program start date
+            patient_data = db_query.get_patient_overview(patient_id)
+            program_start_date = patient_data.get(
+                'demographics', {}).get('program_start_date', None)
+
+            if labs_df.empty:
+                return pn.pane.Markdown("No lab data available")
+
+            # Format dates for display in tables
+            labs_df_display = labs_df.copy()
+            if 'date' in labs_df_display.columns:
+                labs_df_display['date'] = labs_df_display['date'].apply(
+                self.format_date)
+
+            # For plotting, we need datetime objects
+            plot_df = labs_df.copy()
+            if 'date' in plot_df.columns:
+                # Keep the original date format for conversion to datetime
+                plot_df['date'] = pd.to_datetime(plot_df['date'])
+                # Sort by date for proper line plotting
+                plot_df = plot_df.sort_values('date')
+
+            # Create a line plot showing trends for key lab values over time
+            # First, get a list of common lab tests we want to plot
+            key_labs = ['Total Cholesterol', 'HDL', 'LDL',
+                        'Triglycerides', 'Glucose', 'HbA1c']
+
+            # Filter for only these labs and create a more readable format for plotting
+            key_plot_df = plot_df[plot_df['test_name'].isin(key_labs)]
+
+            # Restructure the data to have test_names as rows and dates as columns
+            # First, sort by date (descending)
+            labs_display_sorted = labs_df_display.sort_values(
+                'date', ascending=False)
+
+            # Pivot the data to get test names as rows and dates as columns
+            try:
+                pivot_df = labs_display_sorted.pivot_table(
+                    index='test_name',
+                    columns='date',
+                    values='value',
+                    aggfunc='first'  # In case of duplicates, take the first value
+                ).reset_index()
+
+                # Format the pivot table for better display
+                pivot_df.columns.name = None  # Remove the columns name
+
+                # Create table view of restructured data
+                labs_table = pn.widgets.Tabulator(
+                    pivot_df,
+                    sizing_mode='stretch_width',
+                    show_index=False  # Hide index column for cleaner display
+                )
+            except Exception as e:
+                print(f"Error creating lab pivot table: {e}")
+                # If pivot fails, fall back to original table
+                labs_table = pn.widgets.Tabulator(
+                    labs_df_display,
+                    sizing_mode='stretch_width',
+                    show_index=False  # Hide index column for cleaner display
+                )
+
+            # Create individual plots for each important lab test
+            plots = []
+            try:
+                # Create separate plots for each key lab test
+                for lab_test in key_labs:
+                    test_data = key_plot_df[key_plot_df['test_name'] == lab_test]
+
+                    if not test_data.empty and len(test_data) > 0:
+                        # Convert to clean format for plotting
+                        lab_plot = test_data.hvplot(
+                            x='date', y='value',
+                            title=f'{lab_test} Over Time',
+                            xlabel='Date', ylabel=f'{lab_test} Value',
+                            height=350, width=600,
+                            grid=True,
+                            line_width=2.0
+                        )
                 lab_plot = self.format_plot_time_axis(
-                    lab_plot, program_start_date, patient_data)
+                            lab_plot, program_start_date, patient_data)
                 plots.append(pn.pane.HoloViews(
-                    lab_plot, sizing_mode='stretch_width'))
-        except Exception as e:
-            print(f"Error creating lab plots: {e}")
+                            lab_plot, sizing_mode='stretch_width'))
+            except Exception as e:
+                print(f"Error creating lab plots: {e}")
 
-        # Return layout with or without plots
-        if plots:
-            return pn.Column(
-                pn.pane.Markdown("### Lab Results by Test"),
-                labs_table,
-                pn.layout.Divider(),
-                pn.pane.Markdown("### Lab Value Trends"),
-                pn.pane.Markdown(
-                    "*Click and drag to zoom in, double-click to reset view*"),
-                *plots,  # Display plots vertically for better visibility
-                sizing_mode='stretch_width'
-            )
-        else:
-            # Fall back to just showing the table
-            return pn.Column(
-                pn.pane.Markdown("### Lab Results by Test"),
-                labs_table,
-                sizing_mode='stretch_width'
-            )
+            # Return layout with or without plots
+            if plots:
+                return pn.Column(
+                    pn.pane.Markdown("### Lab Results by Test"),
+                    labs_table,
+                    pn.layout.Divider(),
+                    pn.pane.Markdown("### Lab Value Trends"),
+                    pn.pane.Markdown(
+                        "*Click and drag to zoom in, double-click to reset view*"),
+                    *plots,  # Display plots vertically for better visibility
+                    sizing_mode='stretch_width'
+                )
+            else:
+                # Fall back to just showing the table
+                return pn.Column(
+                    pn.pane.Markdown("### Lab Results by Test"),
+                    labs_table,
+                    sizing_mode='stretch_width'
+                )
 
     def create_pmh_tab(self, patient_id):
         """Create tab for Past Medical History data"""
