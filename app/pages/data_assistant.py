@@ -13,7 +13,11 @@ import numpy as np
 import logging
 import db_query
 import sys
+import json
+import os
+import re
 from pathlib import Path
+from app.ai_helper import ai, get_data_schema  # Fix import path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -24,6 +28,69 @@ logger = logging.getLogger('data_assistant')
 hv.extension('bokeh')
 pn.extension('tabulator')
 pn.extension('plotly')
+
+# Define the path for storing saved questions
+SAVED_QUESTIONS_FILE = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.dirname(__file__))), 'data', 'saved_questions.json')
+
+# Ensure the data directory exists
+os.makedirs(os.path.dirname(SAVED_QUESTIONS_FILE), exist_ok=True)
+
+# TODO: For cloud deployment, replace file storage with database storage
+# - Create a 'saved_questions' table in patient_data.db
+# - Update load_saved_questions() and save_questions_to_file() to use the database
+# - This will make saved questions persist across instances in a cloud environment
+
+# Function to load saved questions from file
+
+
+def load_saved_questions():
+    """Load saved questions from a JSON file"""
+    if os.path.exists(SAVED_QUESTIONS_FILE):
+        try:
+            with open(SAVED_QUESTIONS_FILE, 'r') as f:
+                saved_questions = json.load(f)
+                logger.info(
+                    f"Loaded {len(saved_questions)} saved questions from {SAVED_QUESTIONS_FILE}")
+                return saved_questions
+        except Exception as e:
+            logger.error(
+                f"Error loading saved questions: {str(e)}", exc_info=True)
+
+    # Return default questions if file doesn't exist or has an error
+    return [
+        {"name": "Active patients count",
+            "query": "How many active patients are in the program?"},
+        {"name": "Average patient weight",
+            "query": "What is the average weight of patients?"},
+        {"name": "Female BMI average",
+            "query": "What is the average BMI of female patients?"},
+        {"name": "Male BMI average",
+            "query": "What is the average BMI of male patients?"},
+        {"name": "BMI distribution",
+            "query": "Show me the distribution of BMI across all patients"},
+        {"name": "Blood pressure comparison",
+            "query": "Compare blood pressure values for patients with high vs. normal A1C"},
+        {"name": "Improvement percentage",
+            "query": "What percentage of patients showed improvement in their vital signs?"},
+        {"name": "No recent visits",
+            "query": "Which patients have not had a visit in the last 3 months?"},
+    ]
+
+# Function to save questions to file
+
+
+def save_questions_to_file(questions):
+    """Save questions to a JSON file"""
+    try:
+        with open(SAVED_QUESTIONS_FILE, 'w') as f:
+            json.dump(questions, f, indent=2)
+        logger.info(
+            f"Saved {len(questions)} questions to {SAVED_QUESTIONS_FILE}")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving questions: {str(e)}", exc_info=True)
+        return False
 
 
 class DataAnalysisAssistant(param.Parameterized):
@@ -60,35 +127,28 @@ class DataAnalysisAssistant(param.Parameterized):
     def __init__(self, **params):
         super().__init__(**params)
 
-        # Initialize saved questions with some examples
+        # Initialize saved questions from the saved file
         if not self.saved_questions:
-            self.saved_questions = [
-                {"name": "Active patients count",
-                    "query": "How many active patients are in the program?"},
-                {"name": "Average patient weight",
-                    "query": "What is the average weight of patients?"},
-                {"name": "Female BMI average",
-                    "query": "What is the average BMI of female patients?"},
-                {"name": "Male BMI average",
-                    "query": "What is the average BMI of male patients?"},
-                {"name": "BMI distribution",
-                    "query": "Show me the distribution of BMI across all patients"},
-                {"name": "Blood pressure comparison",
-                    "query": "Compare blood pressure values for patients with high vs. normal A1C"},
-                {"name": "Improvement percentage",
-                    "query": "What percentage of patients showed improvement in their vital signs?"},
-                {"name": "No recent visits",
-                    "query": "Which patients have not had a visit in the last 3 months?"},
-            ]
+            self.saved_questions = load_saved_questions()
 
         # Results display panes
         self.result_pane = pn.pane.Markdown("Enter a query to analyze data")
         self.code_display = pn.pane.Markdown("")
         self.visualization_pane = pn.pane.HoloViews(hv.Div(''))
 
+        # AI progress indicator (simple text-based approach)
+        self.ai_status_text = pn.pane.Markdown(
+            "", styles={"color": "#0066cc", "font-weight": "bold"})
+
+        # Setup for animated ellipsis
+        self.ai_status_row_ref = None  # Will hold reference to the status row
+        self.ellipsis_count = 0
+        self.ellipsis_animation = None  # Will hold periodic callback
+
         # Status and interaction
         self.status_message = "Ready to analyze data"
-        self.status_display = None
+        self.status_display = pn.pane.Markdown(
+            f"**Status:** {self.status_message}")
         self.query_input = None
         self.question_name_input = None
 
@@ -175,16 +235,11 @@ class DataAnalysisAssistant(param.Parameterized):
         # Create saved questions sidebar
         saved_questions_title = pn.pane.Markdown("### Saved Questions:")
         self.saved_question_buttons_container = pn.Column(
-            sizing_mode="stretch_width")
+            sizing_mode="stretch_width"
+        )
 
         # Update the saved question buttons
         self._update_saved_question_buttons()
-
-        saved_questions_panel = pn.Column(
-            saved_questions_title,
-            self.saved_question_buttons_container,
-            sizing_mode="stretch_width"
-        )
 
         # Workflow progress display
         workflow_indicators = pn.Column(
@@ -263,6 +318,18 @@ class DataAnalysisAssistant(param.Parameterized):
             margin=(15, 15, 15, 15)
         )
 
+        # Status indicator
+        self.status_display = pn.pane.Markdown(
+            f"**Status:** {self.status_message}")
+
+        # Combine everything in a layout
+        input_row = pn.Row(
+            pn.Column(self.query_input, sizing_mode="stretch_width"),
+            pn.Spacer(width=10),
+            analyze_button,
+            sizing_mode="stretch_width"
+        )
+
         # Workflow panel
         workflow_panel = pn.Column(
             workflow_indicators,
@@ -275,8 +342,47 @@ class DataAnalysisAssistant(param.Parameterized):
             css_classes=["workflow-panel"]
         )
 
-        # Main content
-        main_content = pn.Column(
+        # AI processing indicator with prominent styling
+        ai_status_row = pn.Row(
+            self.ai_status_text,
+            sizing_mode="stretch_width",
+            align="center",
+            styles={
+                "background": "#f0f7ff",
+                "border-radius": "5px",
+                "padding": "8px",
+                "margin-top": "10px",
+                "margin-bottom": "10px",
+                "border": "1px solid #cce5ff"
+            },
+            visible=False  # Initially hidden until needed
+        )
+
+        # Store reference to the status row for animation control
+        self.ai_status_row_ref = ai_status_row
+
+        # Create tabs for results, code, and visualizations
+        result_tabs = pn.Tabs(
+            ("Results", self.result_pane),
+            ("Code", self.code_display),
+            ("Visualization", self.visualization_pane),
+            dynamic=True
+        )
+
+        # Create the left sidebar with saved questions
+        left_sidebar = pn.Card(
+            pn.Column(
+                saved_questions_title,
+                self.saved_question_buttons_container,
+                sizing_mode="stretch_width"
+            ),
+            sizing_mode="stretch_width",
+            title="Saved Questions",
+            collapsed=False
+        )
+
+        # Create the main content area
+        main_content_area = pn.Column(
             title,
             description,
             pn.layout.Divider(),
@@ -284,24 +390,17 @@ class DataAnalysisAssistant(param.Parameterized):
             pn.layout.Divider(),
             self.status_display,
             workflow_panel,
+            ai_status_row,  # Add AI status indicator after workflow panel
             pn.layout.Divider(),
             result_tabs,
             sizing_mode="stretch_width"
         )
 
-        # Create sidebar with saved questions
-        sidebar = pn.Column(
-            saved_questions_panel,
-            sizing_mode="stretch_width",
-            width=300
-        )
-
-        # Combine main content and sidebar
+        # Simplified layout with responsive sizes
         layout = pn.Row(
-            sidebar,
-            pn.layout.HSpacer(width=20),
-            main_content,
-            sizing_mode="stretch_both"
+            pn.Column(left_sidebar, width=300),
+            pn.Column(main_content_area, margin=(0, 10, 0, 20)),
+            sizing_mode="stretch_width"
         )
 
         return layout
@@ -433,7 +532,25 @@ class DataAnalysisAssistant(param.Parameterized):
             # Filter only records with valid BMI values
             vitals_df = vitals_df.dropna(subset=['bmi'])
 
-            # Filter if gender is specified
+            # Check for threshold query patterns - count patients above/below a threshold
+            is_threshold_query = False
+            threshold_value = None
+            threshold_direction = None
+
+            # Extract threshold from query
+            if any(word in query for word in ["above", "over", "greater than", "higher than"]):
+                threshold_direction = "above"
+                is_threshold_query = True
+            elif any(word in query for word in ["below", "under", "less than", "lower than"]):
+                threshold_direction = "below"
+                is_threshold_query = True
+
+            # Extract numeric value from query (e.g., 30 from "BMI over 30")
+            numbers = re.findall(r'\d+(?:\.\d+)?', query)
+            if numbers and is_threshold_query:
+                threshold_value = float(numbers[0])
+
+            # Filter by gender if specified
             if "female" in query or "women" in query:
                 logger.info("Filtering BMI for female patients")
                 patients_df = db_query.get_all_patients()
@@ -458,27 +575,53 @@ class DataAnalysisAssistant(param.Parameterized):
                 title = "BMI Distribution (All Patients)"
                 filtered_desc = "all patients"
 
-            # Calculate statistics
-            logger.info(
-                f"Calculating BMI stats based on {len(vitals_df)} records")
-            avg_bmi = round(vitals_df['bmi'].mean(), 1)
-            count = len(vitals_df['patient_id'].unique())
+            # Create different analysis based on query type
+            if is_threshold_query and threshold_value is not None:
+                # Count-based threshold query
+                if threshold_direction == "above":
+                    threshold_data = vitals_df[vitals_df['bmi']
+                                               > threshold_value]
+                    comparison_text = f"above {threshold_value}"
+                else:
+                    threshold_data = vitals_df[vitals_df['bmi']
+                                               < threshold_value]
+                    comparison_text = f"below {threshold_value}"
 
-            # Generate code string based on the filters
-            if "female" in query or "women" in query:
-                code_str = "# Python code to analyze BMI for female patients\npatients_df = db_query.get_all_patients()\nvitals_df = db_query.get_all_vitals()\n\n# Filter for female patients\nfemale_patients = patients_df[patients_df['gender'] == 'F']['id'].tolist()\nvitals_df = vitals_df[vitals_df['patient_id'].isin(female_patients)]\nvitals_df = vitals_df.dropna(subset=['bmi'])\n\n# Calculate statistics\navg_bmi = vitals_df['bmi'].mean()\nunique_patients = len(vitals_df['patient_id'].unique())"
-            elif "male" in query or "men" in query:
-                code_str = "# Python code to analyze BMI for male patients\npatients_df = db_query.get_all_patients()\nvitals_df = db_query.get_all_vitals()\n\n# Filter for male patients\nmale_patients = patients_df[patients_df['gender'] == 'M']['id'].tolist()\nvitals_df = vitals_df[vitals_df['patient_id'].isin(male_patients)]\nvitals_df = vitals_df.dropna(subset=['bmi'])\n\n# Calculate statistics\navg_bmi = vitals_df['bmi'].mean()\nunique_patients = len(vitals_df['patient_id'].unique())"
+                # Count unique patients
+                count = threshold_data['patient_id'].nunique()
+
+                # Store the result
+                self.analysis_result = {
+                    "type": "count",
+                    "value": count,
+                    "title": f"Patients with BMI {comparison_text}",
+                    "description": f"There are {count} {filtered_desc} with a BMI {comparison_text}.",
+                    "code": f"# Python code to count patients with BMI {comparison_text}\nvitals_df = db_query.get_all_vitals()\nvitals_df = vitals_df.dropna(subset=['bmi'])\n\n# Filter for patients with BMI {comparison_text}\nthreshold_data = vitals_df[vitals_df['bmi'] {'>' if threshold_direction == 'above' else '<'} {threshold_value}]\n\n# Count unique patients\ncount = threshold_data['patient_id'].nunique()",
+                    "visualization": self._create_histogram(vitals_df, 'bmi', f"BMI Distribution - {filtered_desc}")
+                }
             else:
-                code_str = "# Python code to analyze BMI distribution\nvitals_df = db_query.get_all_vitals()\nvitals_df = vitals_df.dropna(subset=['bmi'])\n\n# Calculate statistics\navg_bmi = vitals_df['bmi'].mean()\nunique_patients = len(vitals_df['patient_id'].unique())"
+                # Standard BMI analysis (average and distribution)
+                # Calculate statistics
+                logger.info(
+                    f"Calculating BMI stats based on {len(vitals_df)} records")
+                avg_bmi = round(vitals_df['bmi'].mean(), 1)
+                count = len(vitals_df['patient_id'].unique())
 
-            self.analysis_result = {
-                "type": "distribution",
-                "title": title,
-                "description": f"The average BMI for {filtered_desc} is {avg_bmi}, based on data from {count} patients.",
-                "code": code_str,
-                "visualization": self._create_histogram(vitals_df, 'bmi', f"BMI Distribution - {count} patients")
-            }
+                # Generate code string based on the filters
+                if "female" in query or "women" in query:
+                    code_str = "# Python code to analyze BMI for female patients\npatients_df = db_query.get_all_patients()\nvitals_df = db_query.get_all_vitals()\n\n# Filter for female patients\nfemale_patients = patients_df[patients_df['gender'] == 'F']['id'].tolist()\nvitals_df = vitals_df[vitals_df['patient_id'].isin(female_patients)]\nvitals_df = vitals_df.dropna(subset=['bmi'])\n\n# Calculate statistics\navg_bmi = vitals_df['bmi'].mean()\nunique_patients = len(vitals_df['patient_id'].unique())"
+                elif "male" in query or "men" in query:
+                    code_str = "# Python code to analyze BMI for male patients\npatients_df = db_query.get_all_patients()\nvitals_df = db_query.get_all_vitals()\n\n# Filter for male patients\nmale_patients = patients_df[patients_df['gender'] == 'M']['id'].tolist()\nvitals_df = vitals_df[vitals_df['patient_id'].isin(male_patients)]\nvitals_df = vitals_df.dropna(subset=['bmi'])\n\n# Calculate statistics\navg_bmi = vitals_df['bmi'].mean()\nunique_patients = len(vitals_df['patient_id'].unique())"
+                else:
+                    code_str = "# Python code to analyze BMI distribution\nvitals_df = db_query.get_all_vitals()\nvitals_df = vitals_df.dropna(subset=['bmi'])\n\n# Calculate statistics\navg_bmi = vitals_df['bmi'].mean()\nunique_patients = len(vitals_df['patient_id'].unique())"
+
+                self.analysis_result = {
+                    "type": "distribution",
+                    "title": title,
+                    "description": f"The average BMI for {filtered_desc} is {avg_bmi}, based on data from {count} patients.",
+                    "code": code_str,
+                    "visualization": self._create_histogram(vitals_df, 'bmi', f"BMI Distribution - {count} patients")
+                }
 
         else:
             # Default response for other queries
@@ -643,50 +786,40 @@ class DataAnalysisAssistant(param.Parameterized):
         logger.info(
             f"Generating clarifying questions for: '{self.query_text}'")
 
-        query = self.query_text.lower()
+        try:
+            # Show AI is thinking
+            self._start_ai_indicator(
+                "ChatGPT is generating clarifying questions...")
 
-        # In a full implementation, an LLM would generate these questions
-        # For now, we'll use predetermined questions based on query keywords
-        questions = []
+            # Use AI helper to generate relevant clarifying questions
+            questions = ai.generate_clarifying_questions(self.query_text)
 
-        if "bmi" in query:
-            if "female" in query or "women" in query:
-                questions = [
-                    "Are you looking for the average BMI or the full distribution?",
-                    "Would you like to filter by age group?",
-                    "Are you interested in comparing to male patients?",
-                    "Should only active patients be included?"
-                ]
-            elif "male" in query or "men" in query:
-                questions = [
-                    "Are you looking for the average BMI or the full distribution?",
-                    "Would you like to filter by age group?",
-                    "Are you interested in comparing to female patients?",
-                    "Should only active patients be included?"
-                ]
-            else:
-                questions = [
-                    "Would you like to filter by gender?",
-                    "Are you looking for the average BMI or the full distribution?",
-                    "Should only active patients be included?",
-                    "Would you like to see BMI categories (underweight, normal, overweight, obese)?"
-                ]
-        elif "weight" in query:
-            questions = [
-                "Are you interested in weight changes over time?",
-                "Would you like to filter by gender?",
-                "Should only active patients be included?",
-                "Would you like to see weight relative to height (BMI)?"
+            # Hide the indicator when done
+            self._stop_ai_indicator()
+
+            # For now, we'll still use pre-defined answers
+            # In a full implementation, these would be provided by the user
+            self.clarifying_questions = questions
+            self.clarifying_answers = [
+                "I'm interested in the average values",
+                "No specific filters needed",
+                "No need to compare with other groups",
+                "Yes, please include visualizations"
             ]
-        elif "active patients" in query:
-            questions = [
-                "Do you want the total count or a breakdown by demographics?",
-                "Are you interested in how long they've been in the program?",
-                "Would you like to compare with inactive patients?",
-                "Do you need any additional metrics about active patients?"
-            ]
-        else:
-            # Default questions for any query
+
+            logger.info(
+                f"Generated {len(questions)} clarifying questions using AI")
+
+        except Exception as e:
+            # Hide the indicator in case of error
+            self._stop_ai_indicator()
+
+            logger.error(
+                f"Error generating clarifying questions: {str(e)}", exc_info=True)
+            # Fall back to rule-based questions if AI fails
+            query = self.query_text.lower()
+
+            # Default fallback questions for any query
             questions = [
                 "Would you like to filter the results by any specific criteria?",
                 "Are you looking for a time-based analysis or current data?",
@@ -694,17 +827,16 @@ class DataAnalysisAssistant(param.Parameterized):
                 "Should the results include visualizations or just data?"
             ]
 
-        self.clarifying_questions = questions
+            self.clarifying_questions = questions
+            self.clarifying_answers = [
+                "No specific filters needed",
+                "Current data is fine",
+                "No need to compare groups",
+                "Yes, include visualizations"
+            ]
 
-        # For demonstration purposes, we'll pre-set some answers
-        self.clarifying_answers = [
-            "I'm interested in the average BMI",
-            "No age filter is needed",
-            "No need to compare with other groups",
-            "Yes, only include active patients"
-        ]
-
-        logger.info(f"Generated {len(questions)} clarifying questions")
+            logger.info(
+                f"Generated {len(questions)} fallback clarifying questions")
 
     def _display_clarifying_questions(self):
         """Display the clarifying questions to the user"""
@@ -886,368 +1018,44 @@ class DataAnalysisAssistant(param.Parameterized):
         """Generate Python code for the analysis based on the query and clarifications"""
         logger.info("Generating analysis code")
 
-        query = self.query_text.lower()
-        code = ""
+        try:
+            # Show AI is thinking for intent analysis
+            self._start_ai_indicator(
+                "ChatGPT is analyzing your query intent...")
 
-        # In a real implementation, this code would be generated by an LLM
-        # For the demo, we'll generate appropriate code based on the query
+            # First, get the query intent using AI
+            intent = ai.get_query_intent(self.query_text)
 
-        # Setup imports and initial code for all analyses
-        code = """
-# Import required libraries
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+            # Update status for code generation
+            self._start_ai_indicator("ChatGPT is generating analysis code...")
 
-# Set plotting style
-plt.style.use('ggplot')
-sns.set(style="whitegrid")
+            # Get data schema for code generation
+            data_schema = get_data_schema()
 
-# Load data
-"""
+            # Generate analysis code based on intent
+            generated_code = ai.generate_analysis_code(intent, data_schema)
 
-        # Generate specific analysis code based on the query
-        if "bmi" in query:
-            if "female" in query or "women" in query:
-                code += """
-# Get all patients
-patients_df = db_query.get_all_patients()
+            # Hide the indicator when done
+            self._stop_ai_indicator()
 
-# Filter for female patients
-female_patients = patients_df[patients_df['gender'] == 'F']['id'].tolist()
-print(f"Found {len(female_patients)} female patients")
+            # Store the generated code
+            self.generated_code = generated_code
 
-# Get vitals data
-vitals_df = db_query.get_all_vitals()
+            # Store intent for reference in execution
+            self.query_intent = intent
 
-# Filter vitals for female patients
-female_vitals = vitals_df[vitals_df['patient_id'].isin(female_patients)]
-print(f"Retrieved {len(female_vitals)} vitals records for female patients")
+            logger.info("Successfully generated AI-powered analysis code")
 
-# Remove records with null BMI values
-female_vitals = female_vitals.dropna(subset=['bmi'])
-print(f"After removing null BMI values: {len(female_vitals)} records")
+        except Exception as e:
+            # Hide the indicator in case of error
+            self._stop_ai_indicator()
 
-# Check if we need to filter for active patients only (from clarification)
-active_only = True  # Based on user's clarification answer
-if active_only:
-    active_female_patients = patients_df[(patients_df['gender'] == 'F') & (patients_df['active'] == 1)]['id'].tolist()
-    female_vitals = female_vitals[female_vitals['patient_id'].isin(active_female_patients)]
-    print(f"After filtering for active patients: {len(female_vitals)} records")
+            logger.error(
+                f"Error generating AI-powered analysis code: {str(e)}", exc_info=True)
 
-# Calculate average BMI
-avg_bmi = female_vitals['bmi'].mean()
-median_bmi = female_vitals['bmi'].median()
-std_bmi = female_vitals['bmi'].std()
-
-# Get summary statistics
-bmi_stats = female_vitals['bmi'].describe()
-
-# Count unique patients
-unique_patients = female_vitals['patient_id'].nunique()
-
-print(f"Analysis based on {unique_patients} unique female patients")
-print(f"Average BMI: {avg_bmi:.2f}")
-print(f"Median BMI: {median_bmi:.2f}")
-print(f"Standard Deviation: {std_bmi:.2f}")
-
-# Create BMI distribution visualization
-plt.figure(figsize=(10, 6))
-sns.histplot(female_vitals['bmi'], kde=True, bins=15)
-plt.title('BMI Distribution for Female Patients')
-plt.xlabel('BMI')
-plt.ylabel('Count')
-plt.axvline(avg_bmi, color='red', linestyle='--', label=f'Mean: {avg_bmi:.2f}')
-plt.legend()
-"""
-            elif "male" in query or "men" in query:
-                code += """
-# Get all patients
-patients_df = db_query.get_all_patients()
-
-# Filter for male patients
-male_patients = patients_df[patients_df['gender'] == 'M']['id'].tolist()
-print(f"Found {len(male_patients)} male patients")
-
-# Get vitals data
-vitals_df = db_query.get_all_vitals()
-
-# Filter vitals for male patients
-male_vitals = vitals_df[vitals_df['patient_id'].isin(male_patients)]
-print(f"Retrieved {len(male_vitals)} vitals records for male patients")
-
-# Remove records with null BMI values
-male_vitals = male_vitals.dropna(subset=['bmi'])
-print(f"After removing null BMI values: {len(male_vitals)} records")
-
-# Check if we need to filter for active patients only (from clarification)
-active_only = True  # Based on user's clarification answer
-if active_only:
-    active_male_patients = patients_df[(patients_df['gender'] == 'M') & (patients_df['active'] == 1)]['id'].tolist()
-    male_vitals = male_vitals[male_vitals['patient_id'].isin(active_male_patients)]
-    print(f"After filtering for active patients: {len(male_vitals)} records")
-
-# Calculate average BMI
-avg_bmi = male_vitals['bmi'].mean()
-median_bmi = male_vitals['bmi'].median()
-std_bmi = male_vitals['bmi'].std()
-
-# Get summary statistics
-bmi_stats = male_vitals['bmi'].describe()
-
-# Count unique patients
-unique_patients = male_vitals['patient_id'].nunique()
-
-print(f"Analysis based on {unique_patients} unique male patients")
-print(f"Average BMI: {avg_bmi:.2f}")
-print(f"Median BMI: {median_bmi:.2f}")
-print(f"Standard Deviation: {std_bmi:.2f}")
-
-# Create BMI distribution visualization
-plt.figure(figsize=(10, 6))
-sns.histplot(male_vitals['bmi'], kde=True, bins=15)
-plt.title('BMI Distribution for Male Patients')
-plt.xlabel('BMI')
-plt.ylabel('Count')
-plt.axvline(avg_bmi, color='red', linestyle='--', label=f'Mean: {avg_bmi:.2f}')
-plt.legend()
-"""
-            else:
-                code += """
-# Get all patients
-patients_df = db_query.get_all_patients()
-
-# Get vitals data
-vitals_df = db_query.get_all_vitals()
-
-# Remove records with null BMI values
-clean_vitals = vitals_df.dropna(subset=['bmi'])
-print(f"Total records with BMI data: {len(clean_vitals)}")
-
-# Check if we need to filter for active patients only (from clarification)
-active_only = True  # Based on user's clarification answer
-if active_only:
-    active_patients = patients_df[patients_df['active'] == 1]['id'].tolist()
-    clean_vitals = clean_vitals[clean_vitals['patient_id'].isin(active_patients)]
-    print(f"After filtering for active patients: {len(clean_vitals)} records")
-
-# Calculate average BMI
-avg_bmi = clean_vitals['bmi'].mean()
-median_bmi = clean_vitals['bmi'].median()
-std_bmi = clean_vitals['bmi'].std()
-
-# Get summary statistics
-bmi_stats = clean_vitals['bmi'].describe()
-
-# Count unique patients
-unique_patients = clean_vitals['patient_id'].nunique()
-
-print(f"Analysis based on {unique_patients} unique patients")
-print(f"Average BMI: {avg_bmi:.2f}")
-print(f"Median BMI: {median_bmi:.2f}")
-print(f"Standard Deviation: {std_bmi:.2f}")
-
-# Create BMI distribution visualization
-plt.figure(figsize=(10, 6))
-sns.histplot(clean_vitals['bmi'], kde=True, bins=15)
-plt.title('BMI Distribution for All Patients')
-plt.xlabel('BMI')
-plt.ylabel('Count')
-plt.axvline(avg_bmi, color='red', linestyle='--', label=f'Mean: {avg_bmi:.2f}')
-plt.legend()
-
-# Optionally, analyze by gender
-gender_bmi = clean_vitals.merge(
-    patients_df[['id', 'gender']], 
-    left_on='patient_id', 
-    right_on='id'
-)
-
-plt.figure(figsize=(10, 6))
-sns.boxplot(x='gender', y='bmi', data=gender_bmi)
-plt.title('BMI Distribution by Gender')
-plt.xlabel('Gender')
-plt.ylabel('BMI')
-"""
-
-        elif "active patients" in query:
-            code += """
-# Get all patients
-patients_df = db_query.get_all_patients()
-
-# Count active patients
-active_patients = patients_df[patients_df['active'] == 1]
-inactive_patients = patients_df[patients_df['active'] == 0]
-
-stats = {
-    'total_patients': len(patients_df),
-    'active_patients': len(active_patients),
-    'inactive_patients': len(inactive_patients),
-    'percent_active': len(active_patients) / len(patients_df) * 100 if len(patients_df) > 0 else 0
-}
-
-# Gender breakdown if available
-if 'gender' in active_patients.columns:
-    gender_counts = active_patients['gender'].value_counts()
-    gender_stats = {gender: count for gender,
-                    count in gender_counts.items()}
-    gender_percent = {gender: count / len(active_patients) * 100
-                      for gender, count in gender_counts.items()}
-
-    stats['gender_counts'] = gender_stats
-    stats['gender_percent'] = gender_percent
-
-# Program duration if available
-if 'program_start_date' in active_patients.columns:
-    # Convert to datetime if needed
-    if not pd.api.types.is_datetime64_dtype(active_patients['program_start_date']):
-        active_patients['program_start_date'] = pd.to_datetime(
-            active_patients['program_start_date'])
-
-    # Calculate months in program
-    now = pd.Timestamp.now()
-    active_patients['months_in_program'] = (
-        (now - active_patients['program_start_date']) / pd.Timedelta(days=30)).astype(int)
-
-    duration_stats = {
-        'avg_months': active_patients['months_in_program'].mean(),
-        'median_months': active_patients['months_in_program'].median(),
-        'min_months': active_patients['months_in_program'].min(),
-        'max_months': active_patients['months_in_program'].max()
-    }
-
-    stats['duration'] = duration_stats
-
-results['stats'] = stats
-results['active_data'] = active_patients
-"""
-
-        elif "weight" in query:
-            code += """
-# Get all patients
-patients_df = db_query.get_all_patients()
-
-# Get vitals data
-vitals_df = db_query.get_all_vitals()
-
-# Filter out records with null weight values
-clean_vitals = vitals_df.dropna(subset=['weight'])
-print(f"Total records with weight data: {len(clean_vitals)}")
-
-# Calculate average weight
-avg_weight = clean_vitals['weight'].mean()
-median_weight = clean_vitals['weight'].median()
-std_weight = clean_vitals['weight'].std()
-
-# Count unique patients
-unique_patients = clean_vitals['patient_id'].nunique()
-
-print(f"Analysis based on {unique_patients} unique patients")
-print(f"Average weight: {avg_weight:.1f} lbs")
-print(f"Median weight: {median_weight:.1f} lbs")
-print(f"Standard Deviation: {std_weight:.1f} lbs")
-
-# Create weight distribution visualization
-plt.figure(figsize=(10, 6))
-sns.histplot(clean_vitals['weight'], kde=True, bins=15)
-plt.title('Weight Distribution for All Patients')
-plt.xlabel('Weight (lbs)')
-plt.ylabel('Count')
-plt.axvline(avg_weight, color='red', linestyle='--', label=f'Mean: {avg_weight:.1f}')
-plt.legend()
-
-# Analyze by gender if needed
-gender_query = False  # Based on clarification answer
-if gender_query:
-    # Merge patient data to get gender
-    gender_weight = clean_vitals.merge(
-        patients_df[['id', 'gender']], 
-        left_on='patient_id', 
-        right_on='id'
-    )
-    
-    # Calculate gender-specific statistics
-    gender_stats = gender_weight.groupby('gender')['weight'].agg(['mean', 'median', 'std', 'count'])
-    print("\\nWeight statistics by gender:")
-    print(gender_stats)
-    
-    # Visualize weight by gender
-    plt.figure(figsize=(10, 6))
-    sns.boxplot(x='gender', y='weight', data=gender_weight)
-    plt.title('Weight Distribution by Gender')
-    plt.xlabel('Gender')
-    plt.ylabel('Weight (lbs)')
-"""
-
-        else:
-            # Generic analysis for other queries
-            code += """
-# This is a placeholder for the custom analysis that would be generated
-# based on your specific query. A real implementation would use an
-# AI model to generate code tailored to your exact requirements.
-
-# For demonstration, here's a general analysis of the patient data:
-
-# Get all patients
-patients_df = db_query.get_all_patients()
-print(f"Total patients: {len(patients_df)}")
-
-# Count active vs inactive
-active_count = patients_df['active'].sum()
-print(f"Active patients: {active_count}")
-print(f"Inactive patients: {len(patients_df) - active_count}")
-
-# Analyze gender distribution if available
-if 'gender' in patients_df.columns:
-    gender_counts = patients_df['gender'].value_counts()
-    print("\\nGender distribution:")
-    print(gender_counts)
-    
-    # Visualize gender distribution
-    plt.figure(figsize=(8, 6))
-    # Create pie chart using hvplot directly with kind='pie'
-    pie_data = pd.DataFrame({
-        'Gender': ["Female" if g == "F" else "Male" for g in gender_counts.index],
-        'Count': gender_counts.values
-    })
-    gender_pie = pie_data.hvplot(
-        x='Gender',
-        y='Count',
-        kind='pie',
-        title='Patients by Gender',
-        height=300,
-        width=300,
-        legend='right'
-    )
-
-# Analyze program duration if available
-if 'program_start_date' in patients_df.columns:
-    # Convert to datetime if needed
-    if not pd.api.types.is_datetime64_dtype(patients_df['program_start_date']):
-        patients_df['program_start_date'] = pd.to_datetime(patients_df['program_start_date'])
-    
-    # Calculate months in program for active patients
-    now = pd.Timestamp.now()
-    active_patients = patients_df[patients_df['active'] == 1].copy()
-    active_patients['months_in_program'] = ((now - active_patients['program_start_date']) / pd.Timedelta(days=30)).astype(int)
-    
-    avg_months = active_patients['months_in_program'].mean()
-    
-    print(f"\\nProgram duration for active patients:")
-    print(f"  Average months in program: {avg_months:.1f}")
-    
-    # Visualize distribution of program duration
-    plt.figure(figsize=(10, 6))
-    sns.histplot(active_patients['months_in_program'], bins=12, kde=True)
-    plt.title('Distribution of Time in Program for Active Patients')
-    plt.xlabel('Months in Program')
-    plt.ylabel('Count')
-"""
-
-        # Store the generated code
-        self.generated_code = code
-        logger.info("Generated analysis code")
+            # Fall back to rule-based code generation
+            self.generated_code = self._generate_fallback_code()
+            logger.info("Generated fallback rule-based analysis code")
 
     def _display_generated_code(self):
         """Display the generated code with explanations"""
@@ -1326,23 +1134,88 @@ The code is designed to be transparent and show each step of the analysis proces
                     active_filtered = valid_bmi[valid_bmi['patient_id'].isin(
                         active_female_patients)]
 
-                    # Calculate statistics
-                    stats = {
-                        'total_female_patients': len(female_patients),
-                        'active_female_patients': len(active_female_patients),
-                        'total_records': len(filtered_vitals),
-                        'valid_bmi_records': len(valid_bmi),
-                        'active_valid_records': len(active_filtered),
-                        'avg_bmi': active_filtered['bmi'].mean() if not active_filtered.empty else None,
-                        'median_bmi': active_filtered['bmi'].median() if not active_filtered.empty else None,
-                        'std_bmi': active_filtered['bmi'].std() if not active_filtered.empty else None,
-                        'min_bmi': active_filtered['bmi'].min() if not active_filtered.empty else None,
-                        'max_bmi': active_filtered['bmi'].max() if not active_filtered.empty else None,
-                        'unique_patients': active_filtered['patient_id'].nunique() if not active_filtered.empty else 0
-                    }
+                    # Check for threshold query patterns - count patients above/below a threshold
+                    is_threshold_query = False
+                    threshold_value = None
+                    threshold_direction = None
 
-                    results['stats'] = stats
-                    results['bmi_data'] = active_filtered
+                    # Extract threshold from query
+                    if any(word in query for word in ["above", "over", "greater than", "higher than"]):
+                        threshold_direction = "above"
+                        is_threshold_query = True
+                    elif any(word in query for word in ["below", "under", "less than", "lower than"]):
+                        threshold_direction = "below"
+                        is_threshold_query = True
+
+                    # Extract numeric value from query (e.g., 30 from "BMI over 30")
+                    numbers = re.findall(r'\d+(?:\.\d+)?', query)
+                    if numbers and is_threshold_query:
+                        threshold_value = float(numbers[0])
+
+                    # Process based on query specifics
+                    if "female" in query or "women" in query:
+                        # Female BMI analysis
+                        female_patients = patients_df[patients_df['gender'] == 'F']['id'].tolist(
+                        )
+                        filtered_vitals = vitals_df[vitals_df['patient_id'].isin(
+                            female_patients)]
+                        valid_bmi = filtered_vitals.dropna(subset=['bmi'])
+
+                        # Active only filter
+                        active_female_patients = patients_df[(patients_df['gender'] == 'F') &
+                                                             (patients_df['active'] == 1)]['id'].tolist()
+                        active_filtered = valid_bmi[valid_bmi['patient_id'].isin(
+                            active_female_patients)]
+
+                        # Check if this is a threshold query
+                        if is_threshold_query and threshold_value is not None:
+                            if threshold_direction == "above":
+                                threshold_data = active_filtered[active_filtered['bmi']
+                                                                 > threshold_value]
+                                comparison_text = f"above {threshold_value}"
+                            else:
+                                threshold_data = active_filtered[active_filtered['bmi']
+                                                                 < threshold_value]
+                                comparison_text = f"below {threshold_value}"
+
+                            # Count unique patients
+                            count_above_threshold = threshold_data['patient_id'].nunique(
+                            )
+
+                            # Calculate statistics including threshold counts
+                            stats = {
+                                'total_female_patients': len(female_patients),
+                                'active_female_patients': len(active_female_patients),
+                                'total_records': len(filtered_vitals),
+                                'valid_bmi_records': len(valid_bmi),
+                                'active_valid_records': len(active_filtered),
+                                'threshold_value': threshold_value,
+                                'comparison': threshold_direction,
+                                'count_matching_threshold': count_above_threshold,
+                                'percent_matching_threshold': (count_above_threshold / active_filtered['patient_id'].nunique()) * 100 if not active_filtered.empty else 0
+                            }
+
+                            results['stats'] = stats
+                            results['bmi_data'] = active_filtered
+
+                        else:
+                            # Calculate regular statistics
+                            stats = {
+                                'total_female_patients': len(female_patients),
+                                'active_female_patients': len(active_female_patients),
+                                'total_records': len(filtered_vitals),
+                                'valid_bmi_records': len(valid_bmi),
+                                'active_valid_records': len(active_filtered),
+                                'avg_bmi': active_filtered['bmi'].mean() if not active_filtered.empty else None,
+                                'median_bmi': active_filtered['bmi'].median() if not active_filtered.empty else None,
+                                'std_bmi': active_filtered['bmi'].std() if not active_filtered.empty else None,
+                                'min_bmi': active_filtered['bmi'].min() if not active_filtered.empty else None,
+                                'max_bmi': active_filtered['bmi'].max() if not active_filtered.empty else None,
+                                'unique_patients': active_filtered['patient_id'].nunique() if not active_filtered.empty else 0
+                            }
+
+                            results['stats'] = stats
+                            results['bmi_data'] = active_filtered
 
                 elif "male" in query or "men" in query:
                     # Male BMI analysis
@@ -1572,13 +1445,60 @@ The code is designed to be transparent and show each step of the analysis proces
         query = self.query_text.lower()
 
         if "bmi" in query:
-            if ('stats' in self.intermediate_results and
-                    self.intermediate_results['stats'].get('avg_bmi') is not None):
-
+            if ('stats' in self.intermediate_results):
                 stats = self.intermediate_results['stats']
 
-                # Display basic execution steps
-                execution_steps = f"""
+                # Check if this is a threshold query
+                if 'threshold_value' in stats and 'comparison' in stats:
+                    threshold_value = stats.get('threshold_value')
+                    comparison = stats.get('comparison')
+                    count = stats.get('count_matching_threshold', 0)
+                    percent = stats.get('percent_matching_threshold', 0)
+
+                    # Display threshold execution steps
+                    comparison_text = f"{comparison} {threshold_value}"
+                    execution_steps = f"""
+**Execution Steps:**
+
+1. **Data Collection:**
+   - Total Records: {stats.get('total_records', 'N/A')}
+   - Valid BMI Records: {stats.get('valid_bmi_records', 'N/A')}
+   - Records used (after filtering): {stats.get('active_valid_records', 'N/A')}
+
+2. **Threshold Analysis:**
+   - BMI threshold: {comparison_text}
+   - Patients with BMI {comparison_text}: {count}
+   - Percentage: {percent:.1f}% of patients
+"""
+                    result_panels.append(pn.pane.Markdown(execution_steps))
+
+                    # Display BMI distribution with threshold if data is available
+                    if 'bmi_data' in self.intermediate_results and not self.intermediate_results['bmi_data'].empty:
+                        bmi_data = self.intermediate_results['bmi_data']
+
+                        # Create histogram with vertical line at threshold
+                        import hvplot.pandas
+                        bmi_hist = bmi_data['bmi'].hvplot.hist(
+                            bins=15,
+                            height=300,
+                            width=500,
+                            alpha=0.7,
+                            title=f"BMI Distribution with {comparison_text.title()} Threshold"
+                        )
+
+                        # Add vertical line for threshold
+                        threshold_line = hv.VLine(threshold_value).opts(
+                            color='red', line_width=2,
+                            line_dash='dashed'
+                        )
+
+                        combined_plot = bmi_hist * threshold_line
+                        result_panels.append(pn.pane.HoloViews(combined_plot))
+
+                elif self.intermediate_results['stats'].get('avg_bmi') is not None:
+                    # This is the regular BMI analysis display
+                    # Display basic execution steps
+                    execution_steps = f"""
 **Execution Steps:**
 
 1. **Data Collection:**
@@ -1593,33 +1513,33 @@ The code is designed to be transparent and show each step of the analysis proces
    - Standard Deviation: {stats.get('std_bmi', 'N/A'):.2f}
    - Range: {stats.get('min_bmi', 'N/A'):.1f} to {stats.get('max_bmi', 'N/A'):.1f}
 """
-                result_panels.append(pn.pane.Markdown(execution_steps))
+                    result_panels.append(pn.pane.Markdown(execution_steps))
 
-                # Add gender breakdown if available
-                if 'gender_stats' in self.intermediate_results:
-                    gender_stats = self.intermediate_results['gender_stats']
-                    gender_text = "**BMI by Gender:**\n\n"
+                    # Add gender breakdown if available
+                    if 'gender_stats' in self.intermediate_results:
+                        gender_stats = self.intermediate_results['gender_stats']
+                        gender_text = "**BMI by Gender:**\n\n"
 
-                    for gender, g_stats in gender_stats.items():
-                        gender_label = "Female" if gender == "F" else "Male"
-                        gender_text += f"- {gender_label} ({g_stats.get('count', 'N/A')} patients): "
-                        gender_text += f"Average BMI {g_stats.get('avg_bmi', 'N/A'):.2f} "
-                        gender_text += f"({g_stats.get('records', 'N/A')} records, "
-                        gender_text += f"{g_stats.get('unique_patients', 'N/A')} unique patients)\n"
+                        for gender, g_stats in gender_stats.items():
+                            gender_label = "Female" if gender == "F" else "Male"
+                            gender_text += f"- {gender_label} ({g_stats.get('count', 'N/A')} patients): "
+                            gender_text += f"Average BMI {g_stats.get('avg_bmi', 'N/A'):.2f} "
+                            gender_text += f"({g_stats.get('records', 'N/A')} records, "
+                            gender_text += f"{g_stats.get('unique_patients', 'N/A')} unique patients)\n"
 
-                    result_panels.append(pn.pane.Markdown(gender_text))
+                        result_panels.append(pn.pane.Markdown(gender_text))
 
-                # Display BMI distribution if data is available
-                if 'bmi_data' in self.intermediate_results and not self.intermediate_results['bmi_data'].empty:
-                    bmi_data = self.intermediate_results['bmi_data']
-                    bmi_hist = bmi_data['bmi'].hvplot.hist(
-                        bins=15,
-                        height=300,
-                        width=500,
-                        alpha=0.7,
-                        title="BMI Distribution"
-                    )
-                    result_panels.append(pn.pane.HoloViews(bmi_hist))
+                    # Display BMI distribution if data is available
+                    if 'bmi_data' in self.intermediate_results and not self.intermediate_results['bmi_data'].empty:
+                        bmi_data = self.intermediate_results['bmi_data']
+                        bmi_hist = bmi_data['bmi'].hvplot.hist(
+                            bins=15,
+                            height=300,
+                            width=500,
+                            alpha=0.7,
+                            title="BMI Distribution"
+                        )
+                        result_panels.append(pn.pane.HoloViews(bmi_hist))
 
         elif "active patients" in query:
             if 'stats' in self.intermediate_results:
@@ -1783,162 +1703,69 @@ The code is designed to be transparent and show each step of the analysis proces
         logger.info("Generating final results")
 
         # In a full implementation, an LLM would analyze the results and provide insights
-        # For this demo, we'll generate the insights based on the intermediate results
-
-        query = self.query_text.lower()
+        query = self.query_text
         result = {}
 
-        # Generate insights based on query type and results
-        if "bmi" in query:
-            if 'stats' in self.intermediate_results:
-                stats = self.intermediate_results['stats']
+        try:
+            # Use AI to interpret results
+            if hasattr(self, 'intermediate_results') and self.intermediate_results:
+                # Show AI is thinking
+                self._start_ai_indicator(
+                    "ChatGPT is interpreting your results...")
 
-                if "female" in query or "women" in query:
-                    target = "female patients"
-                elif "male" in query or "men" in query:
-                    target = "male patients"
-                else:
-                    target = "all patients"
+                # Prepare visualization descriptions
+                visualizations = []
+                if 'bmi_data' in self.intermediate_results:
+                    visualizations.append("BMI distribution histogram")
+                if 'gender_pie' in self.intermediate_results:
+                    visualizations.append("Gender distribution pie chart")
 
-                # Check if we have BMI data
-                if stats.get('avg_bmi') is not None:
-                    avg_bmi = stats.get('avg_bmi')
+                # Get AI interpretation of results
+                interpretation = ai.interpret_results(
+                    query, self.intermediate_results, visualizations)
 
-                    # Create BMI category descriptions
-                    bmi_category = "unknown"
-                    clinical_implications = ""
+                # Hide the indicator when done
+                self._stop_ai_indicator()
 
-                    if avg_bmi < 18.5:
-                        bmi_category = "underweight"
-                        clinical_implications = "may indicate nutritional deficiencies or other health conditions"
-                    elif avg_bmi < 25:
-                        bmi_category = "normal weight"
-                        clinical_implications = "is associated with the lowest risk of weight-related health problems"
-                    elif avg_bmi < 30:
-                        bmi_category = "overweight"
-                        clinical_implications = "indicates increased risk for heart disease, diabetes, and other conditions"
-                    elif avg_bmi < 35:
-                        bmi_category = "obesity (Class 1)"
-                        clinical_implications = "is associated with significantly higher risk of cardiovascular disease, diabetes, and metabolic syndrome"
-                    elif avg_bmi < 40:
-                        bmi_category = "obesity (Class 2)"
-                        clinical_implications = "indicates severe obesity with high risk of health complications"
-                    else:
-                        bmi_category = "extreme obesity (Class 3)"
-                        clinical_implications = "is associated with extremely high risk of serious health conditions and reduced life expectancy"
+                # Store the results
+                result['summary'] = interpretation
 
-                    # Format summary text
-                    summary = f"The average BMI for {target} is {avg_bmi:.1f}, which falls in the '{bmi_category}' category. This {clinical_implications}."
+                # Add visualizations if available
+                if 'bmi_data' in self.intermediate_results and not self.intermediate_results['bmi_data'].empty:
+                    bmi_data = self.intermediate_results['bmi_data']
 
-                    # Add distribution info if available
-                    if stats.get('std_bmi') is not None:
-                        summary += f" The standard deviation is {stats.get('std_bmi', 0):.1f}, indicating the variability in the BMI values."
+                    # Check if this is a threshold query
+                    if 'threshold_value' in self.intermediate_results.get('stats', {}):
+                        # Create BMI distribution with threshold line
+                        threshold_value = self.intermediate_results['stats']['threshold_value']
 
-                    # Add active patients context
-                    if target == "all patients":
-                        if 'gender_stats' in self.intermediate_results:
-                            gender_stats = self.intermediate_results['gender_stats']
-                            f_avg = gender_stats.get('F', {}).get('avg_bmi')
-                            m_avg = gender_stats.get('M', {}).get('avg_bmi')
-
-                            if f_avg is not None and m_avg is not None:
-                                gender_diff = abs(f_avg - m_avg)
-                                higher_gender = "female" if f_avg > m_avg else "male"
-
-                                summary += f" On average, {higher_gender} patients have a higher BMI by {gender_diff:.1f} points."
-
-                    # Add recommendation
-                    if avg_bmi >= 25:
-                        summary += " Interventions focusing on healthy diet, regular physical activity, and behavioral changes could be beneficial for this patient population."
-
-                    # Store results
-                    result['summary'] = summary
-                    result['avg_bmi'] = avg_bmi
-                    result['bmi_category'] = bmi_category
-                    result['target_population'] = target
-
-                    # Create visualization if we have the data
-                    if 'bmi_data' in self.intermediate_results and not self.intermediate_results['bmi_data'].empty:
-                        bmi_data = self.intermediate_results['bmi_data']
-
-                        # Create BMI distribution with category ranges
                         bmi_plot = bmi_data['bmi'].hvplot.hist(
                             bins=20,
                             height=400,
                             width=700,
                             alpha=0.7,
-                            title=f"BMI Distribution for {target.title()}"
+                            title=f"BMI Distribution with Threshold at {threshold_value}"
                         )
 
-                        # Store the plot
-                        result['bmi_plot'] = bmi_plot
-
-        elif "active patients" in query:
-            if 'stats' in self.intermediate_results:
-                stats = self.intermediate_results['stats']
-
-                # Generate insights about active patients
-                active_count = stats.get('active_patients', 0)
-                total_count = stats.get('total_patients', 0)
-                percent_active = stats.get('percent_active', 0)
-
-                summary = f"There are {active_count} active patients out of {total_count} total patients, representing {percent_active:.1f}% of the patient population."
-
-                # Add gender insights if available
-                if 'gender_counts' in stats:
-                    gender_text = "**2. Gender Breakdown of Active Patients:**\n\n"
-
-                    for gender, count in stats['gender_counts'].items():
-                        gender_label = "Female" if gender == "F" else "Male"
-                        percent = stats['gender_percent'].get(gender, 0)
-                        gender_text += f"- {gender_label}: {count} ({percent:.1f}%)\n"
-
-                    result['gender_text'] = gender_text
-
-                    # Add gender pie chart
-                    if 'active_data' in self.intermediate_results and 'gender' in self.intermediate_results['active_data'].columns:
-                        active_data = self.intermediate_results['active_data']
-
-                        # Create gender distribution pie chart
-                        gender_counts = active_data['gender'].value_counts()
-                        pie_data = pd.DataFrame({
-                            'Gender': ["Female" if g == "F" else "Male" for g in gender_counts.index],
-                            'Count': gender_counts.values
-                        })
-
-                        # Create pie chart using hvplot directly with kind='pie'
-                        gender_pie = pie_data.hvplot(
-                            x='Gender',
-                            y='Count',
-                            kind='pie',
-                            title="Active Patients by Gender",
-                            height=350,
-                            width=350,
-                            legend='right'
+                        # Add vertical line for threshold
+                        threshold_line = hv.VLine(threshold_value).opts(
+                            color='red', line_width=2,
+                            line_dash='dashed'
                         )
 
-                        # Store the plot
-                        result['gender_pie'] = gender_pie
+                        combined_plot = bmi_plot * threshold_line
+                        result['bmi_plot'] = combined_plot
+                    else:
+                        # Regular BMI distribution
+                        result['bmi_plot'] = bmi_data['bmi'].hvplot.hist(
+                            bins=20,
+                            height=400,
+                            width=700,
+                            alpha=0.7,
+                            title="BMI Distribution"
+                        )
 
-                # Add program duration insights if available
-                if 'duration' in stats:
-                    duration = stats['duration']
-                    avg_months = duration.get('avg_months', 0)
-
-                    summary += f" On average, active patients have been in the program for {avg_months:.1f} months."
-
-                    # Add additional insights based on duration
-                    if avg_months < 3:
-                        summary += " This is a relatively new patient cohort, suggesting recent program growth."
-                    elif avg_months > 12:
-                        summary += " This indicates strong patient retention in the program."
-
-                # Store results
-                result['summary'] = summary
-                result['active_count'] = active_count
-                result['percent_active'] = percent_active
-
-                # Create visualization if data is available
+                # Add gender pie chart if available
                 if 'active_data' in self.intermediate_results and 'gender' in self.intermediate_results['active_data'].columns:
                     active_data = self.intermediate_results['active_data']
 
@@ -1949,116 +1776,45 @@ The code is designed to be transparent and show each step of the analysis proces
                         'Count': gender_counts.values
                     })
 
-                    gender_pie = pie_data.hvplot.pie(
+                    # Create pie chart using hvplot directly
+                    gender_pie = pie_data.hvplot(
                         x='Gender',
                         y='Count',
+                        kind='pie',
+                        title="Patient Gender Distribution",
                         height=350,
                         width=350,
-                        title="Active Patients by Gender"
+                        legend='right'
                     )
 
-                    # Store the plot
                     result['gender_pie'] = gender_pie
 
-                    # Create duration histogram if available
-                    if 'months_in_program' in active_data.columns:
-                        duration_hist = active_data['months_in_program'].hvplot.hist(
-                            bins=12,
-                            height=350,
-                            width=600,
-                            alpha=0.7,
-                            title="Time in Program for Active Patients"
-                        )
+                logger.info("Generated AI interpretation of results")
 
-                        # Store the plot
-                        result['duration_hist'] = duration_hist
+            else:
+                # Fallback if no intermediate results are available
+                result['summary'] = f"Analysis complete for query: '{query}'. No detailed results available."
+                logger.warning(
+                    "No intermediate results available for AI interpretation")
 
-        elif "weight" in query:
-            if 'stats' in self.intermediate_results:
-                stats = self.intermediate_results['stats']
+        except Exception as e:
+            # Hide the indicator in case of error
+            self._stop_ai_indicator()
 
-                # Check if we have weight data
-                if stats.get('avg_weight') is not None:
-                    avg_weight = stats.get('avg_weight')
-                    unique_patients = stats.get('unique_patients', 0)
+            logger.error(
+                f"Error generating AI results interpretation: {str(e)}", exc_info=True)
 
-                    # Format summary text
-                    summary = f"The average weight of patients is {avg_weight:.1f} lbs, based on data from {unique_patients} patients."
+            # Fall back to rule-based interpretation if AI fails
+            result['summary'] = f"Analysis results for your query: '{query}'. The data has been processed and visualized according to your requirements."
 
-                    # Add gender insights if available
-                    if 'gender_stats' in self.intermediate_results:
-                        gender_stats = self.intermediate_results['gender_stats']
-                        f_avg = gender_stats.get('F', {}).get('avg_weight')
-                        m_avg = gender_stats.get('M', {}).get('avg_weight')
+            # Add basic visualizations
+            if hasattr(self, 'intermediate_results') and self.intermediate_results:
+                if 'bmi_data' in self.intermediate_results and not self.intermediate_results['bmi_data'].empty:
+                    result['bmi_plot'] = self.intermediate_results['bmi_data']['bmi'].hvplot.hist(
+                        bins=20, height=400, width=700, alpha=0.7, title="BMI Distribution"
+                    )
 
-                        if f_avg is not None and m_avg is not None:
-                            gender_diff = abs(f_avg - m_avg)
-                            summary += f" Female patients average {f_avg:.1f} lbs, while male patients average {m_avg:.1f} lbs, a difference of {gender_diff:.1f} lbs."
-
-                    # Add context about weight statistics
-                    if stats.get('std_weight') is not None:
-                        std_weight = stats.get('std_weight')
-                        summary += f" The standard deviation is {std_weight:.1f} lbs, indicating the spread of weight values in the population."
-
-                    if stats.get('min_weight') is not None and stats.get('max_weight') is not None:
-                        min_weight = stats.get('min_weight')
-                        max_weight = stats.get('max_weight')
-                        summary += f" Weights range from {min_weight:.1f} to {max_weight:.1f} lbs."
-
-                    # Store results
-                    result['summary'] = summary
-                    result['avg_weight'] = avg_weight
-                    result['unique_patients'] = unique_patients
-
-                    # Create visualization if data is available
-                    if 'weight_data' in self.intermediate_results and not self.intermediate_results['weight_data'].empty:
-                        weight_data = self.intermediate_results['weight_data']
-
-                        # Create weight distribution
-                        weight_plot = weight_data['weight'].hvplot.hist(
-                            bins=20,
-                            height=400,
-                            width=700,
-                            alpha=0.7,
-                            title="Weight Distribution (lbs)"
-                        )
-
-                        # Store the plot
-                        result['weight_plot'] = weight_plot
-
-        else:
-            # Generic summary for other queries
-            summary = f"Based on the analysis of your query '{self.query_text}', here are the key findings:"
-
-            if 'stats' in self.intermediate_results:
-                stats = self.intermediate_results['stats']
-
-                total_patients = stats.get('total_patients', 0)
-                active_patients = stats.get('active_patients', 0)
-
-                summary += f"\n\n- Total patients in the database: {total_patients}"
-                summary += f"\n- Active patients: {active_patients} ({active_patients/total_patients*100:.1f}% of total)" if total_patients > 0 else ""
-
-                # Add gender breakdown if available
-                if 'gender_counts' in stats:
-                    gender_text = "**Gender Breakdown:**\n\n"
-
-                    for gender, count in stats['gender_counts'].items():
-                        gender_label = "Female" if gender == "F" else "Male" if gender == "M" else gender
-                        percent = count / total_patients * 100 if total_patients > 0 else 0
-                        gender_text += f"- {gender_label}: {count} ({percent:.1f}%)"
-
-                    result['gender_text'] = gender_text
-
-                # Add a note about custom queries
-                summary += "\n\nFor more specific analysis, please try a more targeted query such as 'What is the average BMI of female patients?' or 'Show me the distribution of active patients by gender.'"
-
-                # Store results
-                result['summary'] = summary
-
-        # Mark that we have final results
         self.analysis_result = result
-        logger.info("Generated final results")
 
     def _display_final_results(self):
         """Display the final results with visualizations and insights"""
@@ -2166,7 +1922,10 @@ The code is designed to be transparent and show each step of the analysis proces
         # Update the UI
         self._update_saved_question_buttons()
 
-        # In a real implementation, we would persist these changes to a file or database
+        # Save changes to file
+        save_questions_to_file(self.saved_questions)
+
+        # Update status
         self._update_status(f"Deleted question: '{question['name']}'")
 
     def _save_question(self, event=None):
@@ -2200,7 +1959,10 @@ The code is designed to be transparent and show each step of the analysis proces
         # Update the sidebar with the new saved questions
         self._update_saved_question_buttons()
 
-        # In a real implementation, we would persist these changes to a file or database
+        # Save changes to file
+        save_questions_to_file(self.saved_questions)
+
+        # Update status
         self._update_status(f"Question saved as '{self.question_name}'")
         logger.info(
             f"Saved question '{self.question_name}': '{self.query_text}'")
@@ -2250,6 +2012,255 @@ The code is designed to be transparent and show each step of the analysis proces
         # Update status
         self._update_status("Reset complete. Ready for a new query.")
         logger.info("Reset completed")
+
+    def _generate_fallback_code(self):
+        """Generate fallback code when AI code generation fails"""
+        query = self.query_text.lower()
+
+        # Setup imports and initial code for all analyses
+        code = """
+# Import required libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Set plotting style
+plt.style.use('ggplot')
+sns.set(style="whitegrid")
+
+# Load data
+"""
+
+        # Generate specific analysis code based on the query
+        if "bmi" in query:
+            if "female" in query or "women" in query:
+                code += """
+# Get all patients
+patients_df = db_query.get_all_patients()
+
+# Filter for female patients
+female_patients = patients_df[patients_df['gender'] == 'F']['id'].tolist()
+print(f"Found {len(female_patients)} female patients")
+
+# Get vitals data
+vitals_df = db_query.get_all_vitals()
+
+# Filter vitals for female patients
+female_vitals = vitals_df[vitals_df['patient_id'].isin(female_patients)]
+print(f"Retrieved {len(female_vitals)} vitals records for female patients")
+
+# Remove records with null BMI values
+female_vitals = female_vitals.dropna(subset=['bmi'])
+print(f"After removing null BMI values: {len(female_vitals)} records")
+
+# Calculate BMI statistics
+avg_bmi = female_vitals['bmi'].mean()
+median_bmi = female_vitals['bmi'].median()
+std_bmi = female_vitals['bmi'].std()
+min_bmi = female_vitals['bmi'].min()
+max_bmi = female_vitals['bmi'].max()
+
+# Count records and unique patients
+total_records = len(female_vitals)
+unique_patients = female_vitals['patient_id'].nunique()
+
+print(f"Average BMI: {avg_bmi:.2f}")
+print(f"Median BMI: {median_bmi:.2f}")
+print(f"BMI Range: {min_bmi:.1f} to {max_bmi:.1f}")
+print(f"Data from {unique_patients} unique patients")
+
+# Check if this is a threshold query (BMI > X)
+# This code handles queries like "How many female patients have a BMI over 30?"
+threshold_value = 30  # Default, will be overridden if specified in query
+if "over" in "{query}" or "above" in "{query}" or "greater than" in "{query}":
+    # Try to extract the threshold from the query
+    import re
+    numbers = re.findall(r'\\d+', "{query}")
+    if numbers:
+        threshold_value = float(numbers[0])
+    
+    # Count patients above threshold
+    high_bmi = female_vitals[female_vitals['bmi'] > threshold_value]
+    high_bmi_count = high_bmi['patient_id'].nunique()
+    high_bmi_percent = high_bmi_count / unique_patients * 100 if unique_patients > 0 else 0
+    
+    print(f"Patients with BMI > {threshold_value}: {high_bmi_count} ({high_bmi_percent:.1f}%)")
+
+# Prepare results
+results = {{
+    'avg_bmi': avg_bmi,
+    'median_bmi': median_bmi,
+    'std_bmi': std_bmi,
+    'min_bmi': min_bmi,
+    'max_bmi': max_bmi,
+    'total_records': total_records,
+    'unique_patients': unique_patients
+}}
+
+# If threshold analysis was performed, include those results
+if 'high_bmi_count' in locals():
+    results['threshold_value'] = threshold_value
+    results['patients_above_threshold'] = high_bmi_count
+    results['percent_above_threshold'] = high_bmi_percent
+
+# Return the results
+results
+"""
+            else:
+                # Handle other code generation patterns here
+                code += """
+# Get patient and vitals data
+patients_df = db_query.get_all_patients()
+vitals_df = db_query.get_all_vitals()
+
+# Basic data validation
+vitals_df = vitals_df.dropna(subset=['bmi'])
+print(f"Found {len(vitals_df)} valid vitals records with BMI values")
+
+# Calculate BMI statistics
+avg_bmi = vitals_df['bmi'].mean()
+median_bmi = vitals_df['bmi'].median()
+std_bmi = vitals_df['bmi'].std()
+min_bmi = vitals_df['bmi'].min()
+max_bmi = vitals_df['bmi'].max()
+
+# Count records and unique patients
+total_records = len(vitals_df)
+unique_patients = vitals_df['patient_id'].nunique()
+
+print(f"Average BMI: {avg_bmi:.2f}")
+print(f"Median BMI: {median_bmi:.2f}")
+print(f"BMI Range: {min_bmi:.1f} to {max_bmi:.1f}")
+print(f"Data from {unique_patients} unique patients")
+
+# Return the results
+results = {{
+    'avg_bmi': avg_bmi,
+    'median_bmi': median_bmi,
+    'std_bmi': std_bmi,
+    'min_bmi': min_bmi,
+    'max_bmi': max_bmi,
+    'total_records': total_records,
+    'unique_patients': unique_patients
+}}
+
+results
+"""
+        elif "active patients" in query:
+            code += """
+# Get patient data
+patients_df = db_query.get_all_patients()
+
+# Count active and inactive patients
+active_patients = patients_df[patients_df['active'] == 1]
+inactive_patients = patients_df[patients_df['active'] == 0]
+
+total_count = len(patients_df)
+active_count = len(active_patients)
+inactive_count = len(inactive_patients)
+percent_active = active_count / total_count * 100 if total_count > 0 else 0
+
+print(f"Total patients: {total_count}")
+print(f"Active patients: {active_count} ({percent_active:.1f}%)")
+print(f"Inactive patients: {inactive_count}")
+
+# Gender breakdown of active patients
+if 'gender' in active_patients.columns:
+    gender_counts = active_patients['gender'].value_counts()
+    gender_percents = active_patients['gender'].value_counts(normalize=True) * 100
+    
+    for gender, count in gender_counts.items():
+        gender_name = "Female" if gender == "F" else "Male"
+        percent = gender_percents[gender]
+        print(f"{gender_name}: {count} ({percent:.1f}%)")
+
+# Return the results
+results = {{
+    'total_patients': total_count,
+    'active_patients': active_count,
+    'inactive_patients': inactive_count,
+    'percent_active': percent_active
+}}
+
+# Add gender breakdown if available
+if 'gender' in active_patients.columns:
+    results['gender_counts'] = {{k: int(v) for k, v in gender_counts.items()}}
+    results['gender_percents'] = {{k: float(v) for k, v in gender_percents.items()}}
+
+results
+"""
+        else:
+            # Default code for other queries
+            code += """
+# Get patient data
+patients_df = db_query.get_all_patients()
+vitals_df = db_query.get_all_vitals()
+
+# Basic patient statistics
+total_patients = len(patients_df)
+active_patients = sum(patients_df['active'] == 1)
+inactive_patients = sum(patients_df['active'] == 0)
+percent_active = active_patients / total_patients * 100 if total_patients > 0 else 0
+
+print(f"Total patients: {total_patients}")
+print(f"Active patients: {active_patients} ({percent_active:.1f}%)")
+
+# Gender breakdown if available
+if 'gender' in patients_df.columns:
+    gender_counts = patients_df['gender'].value_counts()
+    for gender, count in gender_counts.items():
+        gender_name = "Female" if gender == "F" else "Male"
+        print(f"{gender_name}: {count}")
+
+# Return basic results
+results = {{
+    'total_patients': total_patients,
+    'active_patients': active_patients,
+    'inactive_patients': inactive_patients,
+    'percent_active': percent_active
+}}
+
+results
+"""
+        return code
+
+    def _start_ai_indicator(self, base_message):
+        """Start the AI thinking indicator with animated ellipsis"""
+        # Store the base message without ellipsis
+        self.ai_base_message = base_message
+        self.ellipsis_count = 0
+
+        # Set initial message and make row visible
+        if self.ai_status_row_ref:
+            self.ai_status_row_ref.visible = True
+
+        # Update message with initial ellipsis
+        self.ai_status_text.object = f"{base_message}."
+
+        # Start animation if not already running
+        if self.ellipsis_animation is None:
+            self.ellipsis_animation = pn.state.add_periodic_callback(
+                self._animate_ellipsis, period=500  # Update every 500ms
+            )
+
+    def _animate_ellipsis(self):
+        """Update the ellipsis animation"""
+        self.ellipsis_count = (self.ellipsis_count + 1) % 4
+        dots = "." * (self.ellipsis_count + 1)
+        self.ai_status_text.object = f"{self.ai_base_message}{dots}"
+
+    def _stop_ai_indicator(self):
+        """Stop the AI thinking indicator"""
+        # Remove the periodic callback
+        if self.ellipsis_animation is not None:
+            self.ellipsis_animation.stop()
+            self.ellipsis_animation = None
+
+        # Clear the message and hide the row
+        self.ai_status_text.object = ""
+        if self.ai_status_row_ref:
+            self.ai_status_row_ref.visible = False
 
 
 def data_assistant_page():
