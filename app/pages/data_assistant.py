@@ -52,19 +52,34 @@ class DataAnalysisAssistant(param.Parameterized):
     intermediate_results = param.Dict(
         default={}, doc="Results from intermediate steps")
 
-    example_queries = param.ListSelector(default=[], objects=[
-        "How many active patients are in the program?",
-        "What is the average weight of patients?",
-        "What is the average BMI of female patients?",
-        "What is the average BMI of male patients?",
-        "Show me the distribution of BMI across all patients",
-        "Compare blood pressure values for patients with high vs. normal A1C",
-        "What percentage of patients showed improvement in their vital signs?",
-        "Which patients have not had a visit in the last 3 months?",
-    ])
+    # Replace example_queries with saved_questions
+    saved_questions = param.List(default=[], doc="List of saved questions")
+    question_name = param.String(
+        default="", doc="Name for saving the current query")
 
     def __init__(self, **params):
         super().__init__(**params)
+
+        # Initialize saved questions with some examples
+        if not self.saved_questions:
+            self.saved_questions = [
+                {"name": "Active patients count",
+                    "query": "How many active patients are in the program?"},
+                {"name": "Average patient weight",
+                    "query": "What is the average weight of patients?"},
+                {"name": "Female BMI average",
+                    "query": "What is the average BMI of female patients?"},
+                {"name": "Male BMI average",
+                    "query": "What is the average BMI of male patients?"},
+                {"name": "BMI distribution",
+                    "query": "Show me the distribution of BMI across all patients"},
+                {"name": "Blood pressure comparison",
+                    "query": "Compare blood pressure values for patients with high vs. normal A1C"},
+                {"name": "Improvement percentage",
+                    "query": "What percentage of patients showed improvement in their vital signs?"},
+                {"name": "No recent visits",
+                    "query": "Which patients have not had a visit in the last 3 months?"},
+            ]
 
         # Results display panes
         self.result_pane = pn.pane.Markdown("Enter a query to analyze data")
@@ -75,6 +90,7 @@ class DataAnalysisAssistant(param.Parameterized):
         self.status_message = "Ready to analyze data"
         self.status_display = None
         self.query_input = None
+        self.question_name_input = None
 
         # Workflow stage displays
         self.workflow_indicator = pn.pane.Markdown(
@@ -117,7 +133,7 @@ class DataAnalysisAssistant(param.Parameterized):
             5. The code will be executed with explanations
             6. Results will be shown with visualizations
             
-            **Examples:** Click on any example query below to try it out.
+            You can save questions for future use using the "Save Question" button below.
             """
         )
 
@@ -156,22 +172,17 @@ class DataAnalysisAssistant(param.Parameterized):
 
         analyze_button.on_click(on_analyze_click)
 
-        # Create example queries buttons
-        example_queries_title = pn.pane.Markdown("### Example Queries:")
-        example_buttons = []
+        # Create saved questions sidebar
+        saved_questions_title = pn.pane.Markdown("### Saved Questions:")
+        self.saved_question_buttons_container = pn.Column(
+            sizing_mode="stretch_width")
 
-        for query in self.example_queries:
-            btn = pn.widgets.Button(
-                name=query,
-                button_type="default",
-                sizing_mode="stretch_width"
-            )
-            btn.on_click(lambda event, q=query: self._use_example_query(q))
-            example_buttons.append(btn)
+        # Update the saved question buttons
+        self._update_saved_question_buttons()
 
-        example_queries_panel = pn.Column(
-            example_queries_title,
-            *example_buttons,
+        saved_questions_panel = pn.Column(
+            saved_questions_title,
+            self.saved_question_buttons_container,
             sizing_mode="stretch_width"
         )
 
@@ -193,30 +204,63 @@ class DataAnalysisAssistant(param.Parameterized):
         )
 
         # Navigation buttons
-        nav_buttons = pn.Row(
+        self.save_question_input = pn.widgets.TextInput(
+            name="Question Name",
+            placeholder="Enter a name to save this question",
+            value=self.question_name,
+            sizing_mode="stretch_width"
+        )
+
+        def update_question_name(event):
+            self.question_name = event.new
+
+        self.save_question_input.param.watch(update_question_name, 'value')
+
+        save_question_button = pn.widgets.Button(
+            name="Save Question",
+            button_type="success",
+            width=120
+        )
+        save_question_button.on_click(self._save_question)
+
+        reset_button = pn.widgets.Button(
+            name="Reset All",
+            button_type="danger",
+            width=100
+        )
+        reset_button.on_click(self._reset_all)
+
+        # Workflow navigation buttons
+        workflow_nav_buttons = pn.Row(
             self.continue_button,
             sizing_mode="stretch_width",
-            align="end"
+            align="start"
         )
 
-        # Create tabs for results, code, and visualizations
-        result_tabs = pn.Tabs(
-            ("Results", self.result_pane),
-            ("Code", self.code_display),
-            ("Visualization", self.visualization_pane),
-            dynamic=True
-        )
-
-        # Status indicator
-        self.status_display = pn.pane.Markdown(
-            f"**Status:** {self.status_message}")
-
-        # Combine everything in a layout
-        input_row = pn.Row(
-            pn.Column(self.query_input, sizing_mode="stretch_width"),
-            pn.Spacer(width=10),
-            analyze_button,
-            sizing_mode="stretch_width"
+        # Save and reset buttons
+        save_reset_panel = pn.Column(
+            pn.Row(
+                pn.pane.Markdown("### Save This Question",
+                                 margin=(0, 0, 5, 0)),
+                sizing_mode="stretch_width"
+            ),
+            pn.Row(
+                self.save_question_input,
+                pn.Spacer(width=10),
+                save_question_button,
+                sizing_mode="stretch_width"
+            ),
+            pn.Spacer(height=15),
+            pn.Row(
+                pn.Spacer(),
+                reset_button,
+                sizing_mode="stretch_width",
+                align="end"
+            ),
+            sizing_mode="stretch_width",
+            styles={"background": "#f8f9fa", "border-radius": "5px"},
+            css_classes=["card", "rounded-card"],
+            margin=(15, 15, 15, 15)
         )
 
         # Workflow panel
@@ -224,7 +268,9 @@ class DataAnalysisAssistant(param.Parameterized):
             workflow_indicators,
             pn.layout.Divider(),
             workflow_content,
-            nav_buttons,
+            workflow_nav_buttons,
+            pn.layout.Divider(),
+            save_reset_panel,
             sizing_mode="stretch_width",
             css_classes=["workflow-panel"]
         )
@@ -243,9 +289,9 @@ class DataAnalysisAssistant(param.Parameterized):
             sizing_mode="stretch_width"
         )
 
-        # Create sidebar with example queries
+        # Create sidebar with saved questions
         sidebar = pn.Column(
-            example_queries_panel,
+            saved_questions_panel,
             sizing_mode="stretch_width",
             width=300
         )
@@ -262,12 +308,12 @@ class DataAnalysisAssistant(param.Parameterized):
 
     def _use_example_query(self, query):
         """Set the query text from an example query"""
-        logger.info(f"Using example query: {query}")
-        self.query_text = query
+        logger.info(f"Using example query: {query['name']}")
+        self.query_text = query['query']
 
         # Update the input field to reflect the example query
         if self.query_input is not None:
-            self.query_input.value = query
+            self.query_input.value = query['query']
             logger.info("Updated query input field with example query")
 
         # Process the query
@@ -2056,6 +2102,154 @@ The code is designed to be transparent and show each step of the analysis proces
 
         # Reset the status and workflow for the next query
         self._update_status("Analysis complete. You can enter a new query.")
+
+    def _update_saved_question_buttons(self):
+        """Update the saved question buttons in the sidebar"""
+        # Clear existing buttons
+        self.saved_question_buttons_container.clear()
+
+        # Create a button for each saved question
+        for question in self.saved_questions:
+            # Create a container for the question button and delete button
+            question_button = pn.widgets.Button(
+                name=question["name"],
+                button_type="default",
+                sizing_mode="stretch_width"
+            )
+            # Use a partial function to avoid closure issues with lambda
+            question_button.on_click(
+                lambda event, q=question: self._use_saved_question(q))
+
+            # Create a small delete button
+            delete_button = pn.widgets.Button(
+                name="✖",
+                button_type="light",
+                width=25,
+                height=25,
+                margin=(0, 0, 0, 5),
+                styles={"color": "#dc3545", "font-size": "0.8em"}
+            )
+            delete_button.on_click(
+                lambda event, q=question: self._delete_saved_question(q))
+
+            # Add both buttons in a row
+            self.saved_question_buttons_container.append(
+                pn.Row(
+                    question_button,
+                    delete_button,
+                    sizing_mode="stretch_width",
+                    margin=(0, 0, 5, 0)
+                )
+            )
+
+    def _use_saved_question(self, question):
+        """Set the query text from a saved question"""
+        logger.info(f"Using saved question: {question}")
+        self.query_text = question["query"]
+
+        # Update the input field to reflect the saved question
+        if self.query_input is not None:
+            self.query_input.value = question["query"]
+            logger.info("Updated query input field with saved question")
+
+        # Process the query
+        self._process_query()
+
+    def _delete_saved_question(self, question):
+        """Delete a saved question from the list"""
+        logger.info(f"Deleting saved question: {question['name']}")
+
+        # Filter out the question to delete
+        self.saved_questions = [
+            q for q in self.saved_questions if q['name'] != question['name']]
+
+        # Update the UI
+        self._update_saved_question_buttons()
+
+        # In a real implementation, we would persist these changes to a file or database
+        self._update_status(f"Deleted question: '{question['name']}'")
+
+    def _save_question(self, event=None):
+        """Save the current question to the saved questions list"""
+        if not self.query_text:
+            self._update_status("Cannot save an empty question")
+            return
+
+        if not self.question_name:
+            self._update_status("Please enter a name for this question")
+            return
+
+        # Check if a question with this name already exists
+        existing_names = [q["name"] for q in self.saved_questions]
+        if self.question_name in existing_names:
+            self._update_status(
+                f"A question with name '{self.question_name}' already exists")
+            return
+
+        # Check if this question text already exists in our saved questions
+        if self.query_text in [q["query"] for q in self.saved_questions]:
+            self._update_status(
+                f"Question text already saved: '{self.query_text}'")
+            return
+
+        # Add the new question to our saved questions
+        new_saved_questions = self.saved_questions + \
+            [{"name": self.question_name, "query": self.query_text}]
+        self.saved_questions = new_saved_questions
+
+        # Update the sidebar with the new saved questions
+        self._update_saved_question_buttons()
+
+        # In a real implementation, we would persist these changes to a file or database
+        self._update_status(f"Question saved as '{self.question_name}'")
+        logger.info(
+            f"Saved question '{self.question_name}': '{self.query_text}'")
+
+        # Reset the question name input
+        if self.save_question_input is not None:
+            self.save_question_input.value = ""
+
+    def _reset_all(self, event=None):
+        """Reset the assistant to its initial state"""
+        logger.info("Resetting Data Analysis Assistant")
+
+        # Reset all state variables
+        self.query_text = ""
+        self.question_name = ""
+        self.analysis_result = {}
+        self.current_stage = self.STAGE_INITIAL
+        self.clarifying_questions = []
+        self.data_samples = {}
+        self.generated_code = ""
+        self.intermediate_results = {}
+
+        # Clear all display panes
+        self.clarifying_pane.objects = []
+        self.data_sample_pane.objects = []
+        self.code_generation_pane.objects = []
+        self.execution_pane.objects = []
+
+        # Reset result displays
+        self.result_pane.object = "Enter a query to analyze data"
+        self.code_display.object = ""
+        self.visualization_pane.object = hv.Div('')
+
+        # Reset the UI elements
+        if self.query_input is not None:
+            self.query_input.value = ""
+
+        if self.save_question_input is not None:
+            self.save_question_input.value = ""
+
+        # Disable the continue button
+        self.continue_button.disabled = True
+
+        # Reset workflow stage indicators
+        self._update_stage_indicators()
+
+        # Update status
+        self._update_status("Reset complete. Ready for a new query.")
+        logger.info("Reset completed")
 
 
 def data_assistant_page():
