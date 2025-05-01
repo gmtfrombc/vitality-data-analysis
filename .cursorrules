@@ -1,0 +1,75 @@
+# Cursor Rules File – Applied to Every AI Prompt
+
+> **Purpose**  
+> Provide always-on guidance for contributors & AI assistants working in this repo.  
+> Keep this file version-controlled so changes are transparent and reviewable.
+>
+> When reading this file, *Cursor* (or any agent) should interpret imperatives as **MUST** unless explicitly noted as MAY/SHOULD.
+
+---
+## 1. Naming Conventions
+
+| Artifact | Convention | Example |
+|----------|------------|---------|
+| Python variables & functions | `snake_case` | `get_patient_stats` |
+| Classes & Exceptions | `PascalCase` | `PatientAnalyzer` |
+| Constants / env keys | `UPPER_SNAKE` | `DEFAULT_BMI_THRESHOLD` |
+| Branches | `feat/<topic>`, `fix/<bug>`, `chore/<task>` | `feat/ai-intent` |
+| Test files | `test_<module>.py` | `test_data_assistant.py` |
+
+Additional rules:
+* **Avoid abbreviations** unless industry-standard (e.g., `BMI`, `SQL`).
+* Prefer clarity over brevity: `calculate_average_bmi()` > `avg_bmi()`.
+
+---
+## 2. State Management Guidelines
+
+1. **Stateless by default** – Functions should not mutate globals. Use return values or explicit state objects.
+2. **Panel/Param Components** – Store all reactive state in `param.Parameterized` classes.
+3. **Persistence** – Use dedicated helpers (e.g., `load_saved_questions()`) and keep file I/O isolated from UI logic.
+4. **Thread Safety** – Long-running tasks must run in threads/async with clear lifecycle hooks.
+5. **Secrets** – Never log or commit `.env` values; access via `os.getenv` only.
+
+---
+## 3. Testing Style
+
+* Framework: **pytest** with `pytest-cov` for coverage.
+* Structure: Arrange-Act-Assert.
+* File locations: `/tests/` mirrors module paths.
+* Fixtures live in `conftest.py` or nested `fixtures/` directories.
+* Use `pytest.mark.slow` for expensive tests; default CI skips them.
+* Aim for **≥ 60 %** coverage on `main` branch (tracked in WS-1 roadmap).
+* Mock external APIs (OpenAI, DB) with `pytest-mock` or `responses`.
+
+---
+## 4. Version Control & Workflow
+
+1. **Main is deployable.**  All work merges via PR; no direct pushes.
+2. **Conventional Commits** – `feat:`, `fix:`, `docs:`, etc.
+3. **Squash-merge** to keep history linear; commit message = PR title.
+4. **Secrets** – `.env`, `*.db`, and `data/*.json` containing PII **never** leave local dev without encryption.
+5. **CI** (coming soon) will lint (`black`, `flake8`), type-check (`mypy`), and run tests on every PR.
+
+---
+## 5. LLM Interaction Rules
+
+* **Prompt Engineering** – Provide full file paths and minimal context required for tasks.
+* **Tool Calls First** – Prefer search/read/edit tools over conversational guessing.
+* **Idempotent Edits** – Never overwrite unrelated code; use `// ... existing code ...` markers.
+* **No Auto-Push** – Git operations must be user-approved unless explicit permission is granted.
+* **Prompt Size** – Keep individual responses ≤ 1000 words unless analysis demands.
+
+---
+## 6. Documentation & Comments
+
+* Public APIs and complex logic **require** Google-style docstrings.
+* Inline comments sparingly; prefer self-descriptive code.
+* Update `README.md` & `ROADMAP_CANVAS.md` alongside relevant changes.
+
+---
+## 7. Meta
+* **File owner:** @gmtfr  
+* **Last updated:** <!-- AI/maintainer: timestamp on save -->
+
+---
+_End of .cursorrules_ 

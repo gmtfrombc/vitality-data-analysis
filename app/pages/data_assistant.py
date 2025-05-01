@@ -18,6 +18,7 @@ import os
 import re
 from pathlib import Path
 from app.ai_helper import ai, get_data_schema  # Fix import path
+from app.utils.sandbox import run_snippet
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -42,6 +43,7 @@ os.makedirs(os.path.dirname(SAVED_QUESTIONS_FILE), exist_ok=True)
 # - This will make saved questions persist across instances in a cloud environment
 
 # Function to load saved questions from file
+# tail -n 100 logs/ai_trace.log
 
 
 def load_saved_questions():
@@ -116,8 +118,9 @@ class DataAnalysisAssistant(param.Parameterized):
     data_samples = param.Dict(default={}, doc="Sample data to show the user")
     generated_code = param.String(
         default="", doc="Generated Python code for analysis")
-    intermediate_results = param.Dict(
-        default={}, doc="Results from intermediate steps")
+    # Use a generic Parameter to allow scalar, Series, dict, etc.
+    intermediate_results = param.Parameter(
+        default=None, doc="Results from intermediate steps (could be scalar, Series, or dict)")
 
     # Replace example_queries with saved_questions
     saved_questions = param.List(default=[], doc="List of saved questions")
@@ -464,6 +467,9 @@ class DataAnalysisAssistant(param.Parameterized):
         """Generate analysis from the query (mock implementation)"""
         query = self.query_text.lower()
 
+        # Initialize samples dict for data sample collection
+        samples = {}
+
         # Mock responses based on query types
         if "active patients" in query:
             # Mock getting active patients
@@ -623,319 +629,15 @@ class DataAnalysisAssistant(param.Parameterized):
                     "visualization": self._create_histogram(vitals_df, 'bmi', f"BMI Distribution - {count} patients")
                 }
 
+        elif "active patients" in query:
+            # Get active patients data
+            active_patients = patients_df[patients_df['active'] == 1]
+            samples['active_patients'] = active_patients.head(5)
+            samples['active_count'] = len(active_patients)
+
         else:
-            # Default response for other queries
-            self.analysis_result = {
-                "type": "text",
-                "title": "Query Analysis",
-                "description": f"Your query: '{self.query_text}' would be analyzed here with real data.",
-                "code": "# This is where the Python code to answer your query would appear\n# Based on modern AI workflow:\n# 1. Query understanding\n# 2. Data retrieval\n# 3. Analysis\n# 4. Visualization",
-                "visualization": None
-            }
-
-    def _update_results_display(self):
-        """Update the display with analysis results"""
-        result = self.analysis_result
-        logger.info(
-            f"Updating results display with result: {result.get('title')}")
-
-        # Update the results pane
-        result_text = f"""
-        ### {result.get('title', 'Analysis Results')}
-        
-        {result.get('description', 'No results available')}
-        """
-        self.result_pane.object = result_text
-        logger.info(
-            f"Results pane updated with text length: {len(result_text)}")
-
-        # Update the code display
-        code_text = f"""
-        ```python
-        {result.get('code', '# No code available')}
-        ```
-        """
-        self.code_display.object = code_text
-        logger.info(f"Code display updated with text length: {len(code_text)}")
-
-        # Update visualization
-        viz = result.get('visualization')
-        if viz is not None:
-            logger.info("Visualization found, updating visualization pane")
-            self.visualization_pane.object = viz
-        else:
-            logger.info("No visualization found, displaying placeholder")
-            self.visualization_pane.object = hv.Div(
-                'No visualization available')
-
-    def _create_count_visualization(self, count, title):
-        """Create a simple bar chart for count data"""
-        data = pd.DataFrame({'Category': ['Active'], 'Count': [count]})
-        return data.hvplot.bar(x='Category', y='Count', title=title, height=400)
-
-    def _create_histogram(self, df, column, title):
-        """Create a histogram for the specified column"""
-        return df.hvplot.hist(
-            y=column,
-            bins=10,
-            title=title,
-            height=400,
-            alpha=0.7,
-            legend=False
-        )
-
-    def _initialize_stage_indicators(self):
-        """Initialize the stage indicators for the workflow display"""
-        stages = [
-            (self.STAGE_INITIAL, "Query Understanding"),
-            (self.STAGE_CLARIFYING, "Clarification"),
-            (self.STAGE_SHOWING_DATA, "Data Preview"),
-            (self.STAGE_CODE_GENERATION, "Code Generation"),
-            (self.STAGE_EXECUTION, "Execution"),
-            (self.STAGE_RESULTS, "Results Analysis")
-        ]
-
-        for stage_id, stage_name in stages:
-            indicator = pn.pane.Markdown(
-                f"◯ {stage_name}",
-                css_classes=['workflow-stage'],
-                width=200
-            )
-            self.stage_indicators[stage_id] = indicator
-
-        # Set the initial stage
-        self._update_stage_indicators()
-
-    def _update_stage_indicators(self):
-        """Update the stage indicators based on the current stage"""
-        for stage_id, indicator in self.stage_indicators.items():
-            if stage_id < self.current_stage:
-                # Completed stage
-                indicator.object = f"✓ {indicator.object.replace('◯ ', '').replace('⦿ ', '')}"
-            elif stage_id == self.current_stage:
-                # Current stage
-                indicator.object = f"⦿ {indicator.object.replace('◯ ', '').replace('✓ ', '')}"
-            else:
-                # Future stage
-                indicator.object = f"◯ {indicator.object.replace('⦿ ', '').replace('✓ ', '')}"
-
-    def _advance_workflow(self, event=None):
-        """Advance to the next stage in the workflow"""
-        if self.current_stage < self.STAGE_RESULTS:
-            self.current_stage += 1
-            self._update_stage_indicators()
-            self._process_current_stage()
-        else:
-            # Reset workflow if we're at the end
-            self.current_stage = self.STAGE_INITIAL
-            self._update_stage_indicators()
-            self._update_status("Ready for a new query")
-
-    def _process_current_stage(self):
-        """Process the current stage of the analysis workflow"""
-        try:
-            if self.current_stage == self.STAGE_INITIAL:
-                # Initial query processing
-                self._update_status("Understanding your query...")
-                self._generate_clarifying_questions()
-                self.current_stage = self.STAGE_CLARIFYING
-                self._update_stage_indicators()
-                self._process_current_stage()
-
-            elif self.current_stage == self.STAGE_CLARIFYING:
-                # Show clarifying questions
-                self._update_status("Clarifying your question...")
-                self._display_clarifying_questions()
-
-            elif self.current_stage == self.STAGE_SHOWING_DATA:
-                # Show relevant data samples
-                self._update_status("Retrieving relevant data samples...")
-                self._retrieve_data_samples()
-                self._display_data_samples()
-
-            elif self.current_stage == self.STAGE_CODE_GENERATION:
-                # Generate code for analysis
-                self._update_status("Generating analysis code...")
-                self._generate_analysis_code()
-                self._display_generated_code()
-
-            elif self.current_stage == self.STAGE_EXECUTION:
-                # Execute the analysis
-                self._update_status("Executing analysis...")
-                self._execute_analysis()
-                self._display_execution_results()
-
-            elif self.current_stage == self.STAGE_RESULTS:
-                # Show final results and visualizations
-                self._update_status("Analyzing results...")
-                self._generate_final_results()
-                self._display_final_results()
-
-            # Enable continue button after processing (except for the last stage)
-            self.continue_button.disabled = (
-                self.current_stage == self.STAGE_RESULTS)
-
-        except Exception as e:
-            logger.error(
-                f"Error in workflow stage {self.current_stage}: {str(e)}", exc_info=True)
-            self._update_status(f"Error: {str(e)}")
-            self.current_stage = self.STAGE_INITIAL
-
-    def _generate_clarifying_questions(self):
-        """Generate clarifying questions based on the user's query"""
-        logger.info(
-            f"Generating clarifying questions for: '{self.query_text}'")
-
-        try:
-            # Show AI is thinking
-            self._start_ai_indicator(
-                "ChatGPT is generating clarifying questions...")
-
-            # Use AI helper to generate relevant clarifying questions
-            questions = ai.generate_clarifying_questions(self.query_text)
-
-            # Hide the indicator when done
-            self._stop_ai_indicator()
-
-            # For now, we'll still use pre-defined answers
-            # In a full implementation, these would be provided by the user
-            self.clarifying_questions = questions
-            self.clarifying_answers = [
-                "I'm interested in the average values",
-                "No specific filters needed",
-                "No need to compare with other groups",
-                "Yes, please include visualizations"
-            ]
-
-            logger.info(
-                f"Generated {len(questions)} clarifying questions using AI")
-
-        except Exception as e:
-            # Hide the indicator in case of error
-            self._stop_ai_indicator()
-
-            logger.error(
-                f"Error generating clarifying questions: {str(e)}", exc_info=True)
-            # Fall back to rule-based questions if AI fails
-            query = self.query_text.lower()
-
-            # Default fallback questions for any query
-            questions = [
-                "Would you like to filter the results by any specific criteria?",
-                "Are you looking for a time-based analysis or current data?",
-                "Would you like to compare different patient groups?",
-                "Should the results include visualizations or just data?"
-            ]
-
-            self.clarifying_questions = questions
-            self.clarifying_answers = [
-                "No specific filters needed",
-                "Current data is fine",
-                "No need to compare groups",
-                "Yes, include visualizations"
-            ]
-
-            logger.info(
-                f"Generated {len(questions)} fallback clarifying questions")
-
-    def _display_clarifying_questions(self):
-        """Display the clarifying questions to the user"""
-        if not self.clarifying_questions:
-            self.clarifying_pane.objects = [
-                pn.pane.Markdown("No clarifying questions needed.")
-            ]
-            return
-
-        # Create a markdown panel with questions and pre-filled answers
-        questions_md = "### Clarifying Questions\n\nTo better understand your query, I'd like to confirm a few details:\n\n"
-
-        for i, (question, answer) in enumerate(zip(self.clarifying_questions, self.clarifying_answers)):
-            questions_md += f"**Q{i+1}: {question}**  \n"
-            questions_md += f"A: {answer}  \n\n"
-
-        questions_panel = pn.pane.Markdown(questions_md)
-
-        # In a full implementation, we would have interactive widgets for each question
-        # For demonstration, we'll use static content with pre-filled answers
-
-        self.clarifying_pane.objects = [
-            questions_panel,
-            pn.pane.Markdown("*Click Continue to proceed with these answers*")
-        ]
-
-    def _retrieve_data_samples(self):
-        """Retrieve relevant data samples based on the query and clarifications"""
-        logger.info("Retrieving data samples")
-
-        query = self.query_text.lower()
-        samples = {}
-
-        try:
-            # Get patient data
-            patients_df = db_query.get_all_patients()
-
-            # Retrieve appropriate sample data based on query
-            if "bmi" in query or "weight" in query:
-                # Get vitals data for relevant samples
-                vitals_df = db_query.get_all_vitals()
-
-                # Handle gender-specific queries
-                if "female" in query or "women" in query:
-                    female_patients = patients_df[patients_df['gender'] == 'F']['id'].tolist(
-                    )
-                    filtered_vitals = vitals_df[vitals_df['patient_id'].isin(
-                        female_patients)]
-                    logger.info(
-                        f"Retrieved {len(filtered_vitals)} vitals records for female patients")
-
-                    # Get a sample of the data (first 5 rows)
-                    if not filtered_vitals.empty:
-                        samples['vitals'] = filtered_vitals.head(5)
-
-                    # Get summary statistics
-                    if "bmi" in query and "bmi" in filtered_vitals.columns:
-                        valid_bmi = filtered_vitals.dropna(subset=['bmi'])
-                        samples['bmi_stats'] = valid_bmi['bmi'].describe()
-
-                elif "male" in query or "men" in query:
-                    male_patients = patients_df[patients_df['gender'] == 'M']['id'].tolist(
-                    )
-                    filtered_vitals = vitals_df[vitals_df['patient_id'].isin(
-                        male_patients)]
-                    logger.info(
-                        f"Retrieved {len(filtered_vitals)} vitals records for male patients")
-
-                    # Get a sample of the data (first 5 rows)
-                    if not filtered_vitals.empty:
-                        samples['vitals'] = filtered_vitals.head(5)
-
-                    # Get summary statistics
-                    if "bmi" in query and "bmi" in filtered_vitals.columns:
-                        valid_bmi = filtered_vitals.dropna(subset=['bmi'])
-                        samples['bmi_stats'] = valid_bmi['bmi'].describe()
-                else:
-                    # General vitals data
-                    samples['vitals'] = vitals_df.head(5)
-
-                    # Get summary statistics for BMI if relevant
-                    if "bmi" in query and "bmi" in vitals_df.columns:
-                        valid_bmi = vitals_df.dropna(subset=['bmi'])
-                        samples['bmi_stats'] = valid_bmi['bmi'].describe()
-
-            elif "active patients" in query:
-                # Get active patients data
-                active_patients = patients_df[patients_df['active'] == 1]
-                samples['active_patients'] = active_patients.head(5)
-                samples['active_count'] = len(active_patients)
-
-            else:
-                # Default to sample of general patient data
-                samples['patients'] = patients_df.head(5)
-
-        except Exception as e:
-            logger.error(
-                f"Error retrieving data samples: {str(e)}", exc_info=True)
-            samples['error'] = str(e)
+            # Default to sample of general patient data
+            samples['patients'] = patients_df.head(5)
 
         self.data_samples = samples
         logger.info(f"Retrieved {len(samples)} data sample types")
@@ -1106,9 +808,31 @@ The code is designed to be transparent and show each step of the analysis proces
         """Execute the generated analysis code and capture results"""
         logger.info("Executing analysis")
 
-        # In a real implementation, we would execute the code in a controlled environment
-        # For this demo, we'll simulate execution with pre-calculated results
+        # Try running generated code via sandbox first
+        if self.generated_code:
+            logger.info("Running sandbox execution of generated code")
+            sandbox_results = run_snippet(self.generated_code)
+            # Handle sandbox results flexibly based on their type
+            if isinstance(sandbox_results, dict):
+                if "error" not in sandbox_results:
+                    self.intermediate_results = sandbox_results
+                    logger.info("Sandbox execution succeeded (dict result)")
+                    print("SANDBOX RAN")
+                    logger.debug("Sandbox results: %s", sandbox_results)
+                    return
+            elif sandbox_results is not None:
+                # Scalar, Series or other non-dict types are considered successful results
+                self.intermediate_results = sandbox_results
+                logger.info("Sandbox execution succeeded (non-dict result of type %s)",
+                            type(sandbox_results).__name__)
+                print("SANDBOX RAN")
+                logger.debug("Sandbox results: %s", sandbox_results)
+                return
+            # If we reach here, sandbox failed or returned an error dict
+            logger.warning(
+                "Sandbox execution failed or returned empty/error; falling back to rule-engine")
 
+        # ---- Fallback legacy rule engine ----
         query = self.query_text.lower()
         results = {}
 
@@ -1425,11 +1149,41 @@ The code is designed to be transparent and show each step of the analysis proces
         result_panels.append(pn.pane.Markdown(
             "### Analysis Execution Results\n\nHere are the step-by-step results from executing the analysis:"))
 
-        # Handle errors if any
-        if 'error' in self.intermediate_results:
+        # --- NEW ORDER OF TYPE HANDLING ---
+        # 1. If the result is a simple scalar (int, float, numpy scalar)
+        if isinstance(self.intermediate_results, (int, float, np.generic)):
+            self.execution_pane.objects = [pn.pane.Markdown(
+                f"**Result:** {float(self.intermediate_results):.2f}")]
+            return
+
+        # 2. If the result is a pandas Series
+        if isinstance(self.intermediate_results, pd.Series):
+            result_df = self.intermediate_results.reset_index()
+            self.execution_pane.objects = [
+                pn.pane.Markdown("### Result Series"),
+                pn.widgets.Tabulator(result_df, sizing_mode="stretch_width"),
+            ]
+            return
+
+        # 3. If the result is a dict-like structure, handle errors first
+        if isinstance(self.intermediate_results, dict) and 'error' in self.intermediate_results:
             result_panels.append(pn.pane.Markdown(
                 f"**Error during execution:** {self.intermediate_results['error']}"))
             self.execution_pane.objects = result_panels
+            return
+
+        # Handle simple scalar or Series results produced by sandbox
+        if isinstance(self.intermediate_results, (int, float, np.generic)):
+            self.execution_pane.objects = [pn.pane.Markdown(
+                f"**Result:** {self.intermediate_results:.2f}")]
+            return
+
+        if isinstance(self.intermediate_results, pd.Series):
+            result_df = self.intermediate_results.reset_index()
+            self.execution_pane.objects = [
+                pn.pane.Markdown("### Result Series"),
+                pn.widgets.Tabulator(result_df, sizing_mode="stretch_width"),
+            ]
             return
 
         # Display execution metadata
@@ -1691,12 +1445,12 @@ The code is designed to be transparent and show each step of the analysis proces
 
                     result_panels.append(pn.pane.Markdown(gender_text))
 
-        # Add a note about results validation
-        result_panels.append(pn.pane.Markdown(
-            "*These results show the actual data analysis findings. The next step will provide a final summary and visualization of key insights.*"))
+            # Add a note about results validation
+            result_panels.append(pn.pane.Markdown(
+                "*These results show the actual data analysis findings. The next step will provide a final summary and visualization of key insights.*"))
 
-        # Update the display
-        self.execution_pane.objects = result_panels
+            # Update the display
+            self.execution_pane.objects = result_panels
 
     def _generate_final_results(self):
         """Generate the final results summary based on the analysis"""
@@ -1705,6 +1459,17 @@ The code is designed to be transparent and show each step of the analysis proces
         # In a full implementation, an LLM would analyze the results and provide insights
         query = self.query_text
         result = {}
+
+        # Quick path: if intermediate_results is a simple scalar or Series, summarise immediately
+        if isinstance(self.intermediate_results, (int, float, np.generic)):
+            result['summary'] = f"Average change in PHQ-9: {float(self.intermediate_results):.2f} points"
+            self.analysis_result = result
+            return
+        if isinstance(self.intermediate_results, pd.Series):
+            mean_val = self.intermediate_results.mean()
+            result['summary'] = f"Average change in PHQ-9 (Series mean): {mean_val:.2f} points"
+            self.analysis_result = result
+            return
 
         try:
             # Use AI to interpret results
@@ -1728,7 +1493,10 @@ The code is designed to be transparent and show each step of the analysis proces
                 self._stop_ai_indicator()
 
                 # Store the results
-                result['summary'] = interpretation
+                if isinstance(self.intermediate_results, (int, float, np.generic)):
+                    result['summary'] = f"Average change in PHQ-9: {self.intermediate_results:.2f} points"
+                else:
+                    result['summary'] = interpretation
 
                 # Add visualizations if available
                 if 'bmi_data' in self.intermediate_results and not self.intermediate_results['bmi_data'].empty:
@@ -1983,7 +1751,7 @@ The code is designed to be transparent and show each step of the analysis proces
         self.clarifying_questions = []
         self.data_samples = {}
         self.generated_code = ""
-        self.intermediate_results = {}
+        self.intermediate_results = None
 
         # Clear all display panes
         self.clarifying_pane.objects = []
@@ -2226,41 +1994,115 @@ results
         return code
 
     def _start_ai_indicator(self, base_message):
-        """Start the AI thinking indicator with animated ellipsis"""
-        # Store the base message without ellipsis
-        self.ai_base_message = base_message
+        """Start the AI thinking indicator"""
+        logger.debug("AI indicator started: %s", base_message)
+        self.ai_status_text.object = base_message
         self.ellipsis_count = 0
-
-        # Set initial message and make row visible
-        if self.ai_status_row_ref:
-            self.ai_status_row_ref.visible = True
-
-        # Update message with initial ellipsis
-        self.ai_status_text.object = f"{base_message}."
-
-        # Start animation if not already running
-        if self.ellipsis_animation is None:
-            self.ellipsis_animation = pn.state.add_periodic_callback(
-                self._animate_ellipsis, period=500  # Update every 500ms
-            )
+        if self.ellipsis_animation:
+            self.ellipsis_animation.stop()
+        self.ellipsis_animation = pn.state.add_periodic_callback(
+            self._animate_ellipsis, period=500  # Update every 500ms
+        )
 
     def _animate_ellipsis(self):
         """Update the ellipsis animation"""
         self.ellipsis_count = (self.ellipsis_count + 1) % 4
         dots = "." * (self.ellipsis_count + 1)
-        self.ai_status_text.object = f"{self.ai_base_message}{dots}"
+        self.ai_status_text.object = f"{self.ai_status_text.object}{dots}"
 
     def _stop_ai_indicator(self):
         """Stop the AI thinking indicator"""
-        # Remove the periodic callback
-        if self.ellipsis_animation is not None:
+        logger.debug("AI indicator stopped")
+        if self.ellipsis_animation:
             self.ellipsis_animation.stop()
             self.ellipsis_animation = None
-
-        # Clear the message and hide the row
         self.ai_status_text.object = ""
         if self.ai_status_row_ref:
             self.ai_status_row_ref.visible = False
+
+    def _initialize_stage_indicators(self):
+        """Create markdown indicators for each workflow stage"""
+        stage_names = {
+            self.STAGE_INITIAL: "Initial",
+            self.STAGE_CLARIFYING: "Clarifying",
+            self.STAGE_SHOWING_DATA: "Showing Data",
+            self.STAGE_CODE_GENERATION: "Code Generation",
+            self.STAGE_EXECUTION: "Execution",
+            self.STAGE_RESULTS: "Results",
+        }
+        self.stage_indicators = {}
+        for stage_id, name in stage_names.items():
+            md = pn.pane.Markdown(f"- {name}")
+            self.stage_indicators[stage_id] = md
+        # Ensure visual reflects initial stage
+        self._update_stage_indicators()
+
+    def _update_stage_indicators(self):
+        """Update markdown to highlight current stage"""
+        for stage_id, md in self.stage_indicators.items():
+            if stage_id < self.current_stage:
+                prefix = "✅"
+            elif stage_id == self.current_stage:
+                prefix = "➡️"
+            else:
+                prefix = "•"
+            name_plain = md.object.split(maxsplit=1)[-1] if md.object else ""
+            md.object = f"{prefix} {name_plain}"
+
+    def _process_current_stage(self):
+        """Automatically progress through all workflow stages for this prototype."""
+        # Disable navigation button during automatic run
+        self.continue_button.disabled = True
+
+        try:
+            # Stage: Code Generation
+            self.current_stage = self.STAGE_CODE_GENERATION
+            self._update_stage_indicators()
+            self._generate_analysis_code()
+            self._display_generated_code()
+
+            # Stage: Execution
+            self.current_stage = self.STAGE_EXECUTION
+            self._update_stage_indicators()
+            self._execute_analysis()
+            self._display_execution_results()
+
+            # Stage: Results
+            self.current_stage = self.STAGE_RESULTS
+            self._update_stage_indicators()
+            self._generate_final_results()
+            self._display_final_results()
+
+        finally:
+            # Ensure indicators reflect final state and button remains disabled
+            self._update_stage_indicators()
+
+    def _advance_workflow(self, event=None):
+        """Advance to the next workflow stage and trigger associated actions"""
+        logger.info("Advancing workflow from stage %s", self.current_stage)
+        # Disable button to prevent double-clicks during processing
+        self.continue_button.disabled = True
+
+        if self.current_stage == self.STAGE_INITIAL:
+            # Directly jump to code generation for now
+            self.current_stage = self.STAGE_CODE_GENERATION
+            self._generate_analysis_code()
+            self._display_generated_code()
+
+        elif self.current_stage == self.STAGE_CODE_GENERATION:
+            self.current_stage = self.STAGE_EXECUTION
+            self._execute_analysis()
+            self._display_execution_results()
+
+        elif self.current_stage == self.STAGE_EXECUTION:
+            self.current_stage = self.STAGE_RESULTS
+            self._generate_final_results()
+            self._display_final_results()
+
+        # If we reached the final stage, keep button disabled; otherwise re-enable
+        if self.current_stage < self.STAGE_RESULTS:
+            self.continue_button.disabled = False
+        self._update_stage_indicators()
 
 
 def data_assistant_page():

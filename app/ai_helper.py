@@ -3,11 +3,29 @@ from openai import OpenAI
 import logging
 import json
 from dotenv import load_dotenv
+import logging.handlers
+from pathlib import Path
+from app.utils.query_intent import parse_intent_json, QueryIntent
+from pydantic import BaseModel
+from app.utils.metrics import METRIC_REGISTRY
+import re
+import db_query  # for global mapping reuse
 
 # Configure logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+log_format = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+logging.basicConfig(level=logging.INFO, format=log_format)
 logger = logging.getLogger('ai_helper')
+logger.setLevel(logging.DEBUG)
+# Ensure we also log to a dedicated file for deeper inspection
+log_dir = Path(__file__).resolve().parent.parent / 'logs'
+log_dir.mkdir(exist_ok=True)
+log_file_path = log_dir / 'ai_trace.log'
+if not any(isinstance(h, logging.FileHandler) and h.baseFilename == str(log_file_path) for h in logger.handlers):
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file_path, maxBytes=1_000_000, backupCount=3)
+    file_handler.setFormatter(logging.Formatter(log_format))
+    file_handler.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
 
 # Load environment variables
 load_dotenv()
@@ -40,20 +58,33 @@ class AIHelper:
 
         # Prepare system prompt for intent classification
         system_prompt = """
-        You are an expert medical data analyst. Analyze the user's query about patient data to determine:
+        You are an expert medical data analyst. Analyze the user's query about patient data **and return ONLY a JSON object** matching the schema described below.
+
+        SCHEMA (all keys required):
+        {
+          "analysis_type": one of [count, average, median, distribution, comparison, trend, change, sum, min, max],
+          "target_field"  : string,  # the metric/column of interest
+          "filters"      : [ {"field": string, EITHER "value": <scalar> OR "range": {"start": <val>, "end": <val>} } ],
+          "conditions"   : [ {"field": string, "operator": string, "value": <any>} ],
+          "parameters"   : { ... arbitrary additional params ... }
+        }
+
+        VALID COLUMN NAMES (use EXACTLY these; map synonyms to one of them or ask clarifying questions):
+        ["patient_id", "date", "score_type", "score_value", "gender", "age", "ethnicity", "bmi", "weight", "sbp", "dbp"]
+
+        Rules:
+        • Use a simple *value* for equality filters (gender == "F").
+        • Use a *range* dict only when the user specifies a time/number window.
+        • Do NOT output any keys other than the schema above.
+        • Respond with raw JSON – no markdown fencing.
+
+        Analyze the following natural-language question and produce the JSON intent.
         1. What type of analysis is being requested (counting, statistics, comparison, trend, threshold, etc.)
         2. What data fields are relevant (BMI, weight, blood pressure, age, gender, etc.)
         3. What filters should be applied (gender, age range, activity status, etc.)
         4. What thresholds or conditions apply (above/below a value, top N, etc.)
-        
-        Return your analysis as a structured JSON object with these fields:
-        - analysis_type: The primary type of analysis (count, average, distribution, comparison, etc.)
-        - target_field: The main data field to analyze
-        - filters: List of filters to apply
-        - conditions: Any thresholds or conditions
-        - parameters: Any additional parameters needed
-        
-        For example, the query "How many female patients have a BMI over 30?" would return:
+
+        Example – "How many female patients have a BMI over 30?":
         {
           "analysis_type": "count",
           "target_field": "bmi",
@@ -62,6 +93,8 @@ class AIHelper:
           "parameters": {}
         }
         """
+
+        logger.debug("Intent prompt: %s", system_prompt.strip())
 
         try:
             # Call OpenAI API for intent analysis
@@ -75,6 +108,18 @@ class AIHelper:
                 max_tokens=500
             )
 
+            # Log raw response for debugging
+            logger.debug("Intent raw response: %s", response)
+
+            # Log token usage if available
+            if hasattr(response, 'usage') and response.usage:
+                logger.info(
+                    "Intent tokens -> prompt: %s, completion: %s, total: %s",
+                    response.usage.prompt_tokens,
+                    response.usage.completion_tokens,
+                    response.usage.total_tokens,
+                )
+
             # Extract and parse the response
             intent_json = response.choices[0].message.content
 
@@ -86,7 +131,8 @@ class AIHelper:
                 intent_json = intent_json.split(
                     "```")[1].split("```")[0].strip()
 
-            intent = json.loads(intent_json)
+            # Validate & convert to QueryIntent
+            intent = parse_intent_json(intent_json)
             logger.info(f"Intent analysis: {intent}")
 
             return intent
@@ -109,6 +155,16 @@ class AIHelper:
         """
         logger.info(f"Generating analysis code for intent: {intent}")
 
+        # First attempt deterministic generation via metrics registry
+        deterministic_code = None
+        if isinstance(intent, QueryIntent):
+            deterministic_code = _build_code_from_intent(intent)
+
+        if deterministic_code:
+            logger.info(
+                "Using deterministic metric '%s' for code generation", intent.target_field)
+            return deterministic_code
+
         # Prepare the system prompt with information about available data
         system_prompt = f"""
         You are an expert Python developer specializing in data analysis. Generate executable Python code to analyze patient data based on the specified intent. 
@@ -116,23 +172,46 @@ class AIHelper:
         The available data schema is:
         {data_schema}
         
+        The code must use **only** the helper functions exposed in the runtime (e.g., `db_query.get_all_vitals()`, `db_query.get_all_scores()`, `db_query.get_all_patients()`).
+        Do NOT read external CSV or Excel files from disk, and do NOT attempt internet downloads.
+        
         The code should use pandas and should be clean, efficient, and well-commented. Return only the Python code, no explanations or markdown.
         
         Include proper error handling and make sure to handle edge cases like empty dataframes and missing values.
         """
 
+        logger.debug("Code-gen prompt: %s", system_prompt.strip())
+
         try:
+            # Ensure intent is JSON-serialisable string
+            if isinstance(intent, BaseModel):
+                intent_payload = json.dumps(intent.dict())
+            else:
+                intent_payload = json.dumps(intent)
+
             # Call OpenAI API for code generation
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user",
-                        "content": f"Generate Python code for this analysis intent: {json.dumps(intent)}"}
+                        "content": f"Generate Python code for this analysis intent: {intent_payload}"}
                 ],
                 temperature=0.2,  # Lower temperature for more deterministic code
                 max_tokens=1000
             )
+
+            # Log raw response for debugging
+            logger.debug("Code-gen raw response: %s", response)
+
+            # Log token usage if available
+            if hasattr(response, 'usage') and response.usage:
+                logger.info(
+                    "Code-gen tokens -> prompt: %s, completion: %s, total: %s",
+                    response.usage.prompt_tokens,
+                    response.usage.completion_tokens,
+                    response.usage.total_tokens,
+                )
 
             # Extract the code from the response
             code = response.choices[0].message.content
@@ -142,6 +221,12 @@ class AIHelper:
                 code = code.split("```python")[1].split("```")[0].strip()
             elif "```" in code:
                 code = code.split("```")[1].split("```")[0].strip()
+
+            # Safety: if the generated code tries to read CSV, reject it
+            if ".csv" in code.lower():
+                logger.warning(
+                    "LLM attempted to access CSV; falling back to deterministic template if available")
+                return """# Error: generated code attempted forbidden file access\nresults = {'error': 'Generated code tried to read CSV'}"""
 
             logger.info("Successfully generated analysis code")
 
@@ -375,6 +460,143 @@ def simplify_for_json(obj):
             return obj
         except:
             return str(obj)
+
+
+def _build_code_from_intent(intent: QueryIntent) -> str | None:
+    """Return python code string for simple intent matching a registered metric.
+
+    Currently supports analysis_type in {average, count, distribution, change}
+    if *target_field* maps directly to a metric name in the registry.
+    """
+    # Known synonyms → canonical column names
+    ALIASES = {
+        "test_date": "date",
+        "score": "score_value",
+        "scorevalue": "score_value",
+        "phq9_score": "score_value",
+        "phq_score": "score_value",
+        "sex": "gender",
+        "patient": "patient_id",
+        "assessment_type": "assessment_type",
+        "score_type": "assessment_type",
+    }
+
+    raw_name = intent.target_field.lower()
+    metric_name = re.sub(r"[^a-z0-9]+", "_", raw_name).strip("_")
+
+    # Heuristic mapping for common synonyms
+    if (
+        "phq" in metric_name
+        and (
+            "change" in metric_name
+            or "change" in intent.analysis_type
+            or "change" in str(intent.parameters).lower()
+        )
+    ):
+        metric_name = "phq9_change"
+
+    if metric_name not in METRIC_REGISTRY:
+        # Additional heuristic: PHQ-9 implied via score_type filter
+        if any(
+            f.field == "score_type" and str(f.value).upper() == "PHQ-9"
+            for f in intent.filters
+        ):
+            metric_name = "phq9_change"
+            logger.debug(
+                "Heuristic mapped to phq9_change via score_type filter")
+        else:
+            logger.debug("No deterministic metric found for '%s'", metric_name)
+            return None
+
+    # Build filter expressions from intent.filters with alias resolution
+    filter_lines: list[str] = []
+    canonical_fields: set[str] = set()
+    for f in intent.filters:
+        original = f.field
+        canonical = ALIASES.get(original.lower(), original)
+        canonical_fields.add(canonical)
+
+        if f.value is not None:
+            filter_lines.append(
+                f"df = df[df['{canonical}'] == {repr(f.value)}]")
+        elif f.range is not None:
+            start_raw = f.range['start']
+            end_raw = f.range['end']
+            # Only include if both start & end look like ISO dates
+            import re as _re
+            iso_pattern = r"^\d{4}-\d{2}-\d{2}"
+            if _re.match(iso_pattern, str(start_raw)) and _re.match(iso_pattern, str(end_raw)):
+                start = repr(start_raw)
+                end = repr(end_raw)
+                filter_lines.append(
+                    f"df = df[(df['{canonical}'] >= {start}) & (df['{canonical}'] <= {end})]"
+                )
+            else:
+                logger.debug(
+                    "Ignoring non-date range filter on %s: %s – %s", canonical, start_raw, end_raw)
+
+    demographic_fields = {fld for fld in canonical_fields if fld in {
+        "gender", "age", "ethnicity"}}
+
+    merge_lines = []
+    if demographic_fields:
+        merge_lines.append("patients_df = db_query.get_all_patients()")
+        merge_lines.append(
+            "if 'patient_id' not in df.columns and 'id' in df.columns:\n    df = df.rename(columns={'id': 'patient_id'})")
+        merge_lines.append(
+            "df = df.merge(patients_df, left_on='patient_id', right_on='id', how='left')")
+
+    code = f"""
+# Auto-generated metric analysis
+import pandas as pd
+from app.utils.metrics import get_metric
+import db_query
+
+# Load relevant table – crude heuristic
+df = (
+    db_query.get_all_mental_health()
+    if '{metric_name}' in ['phq9_change']
+    else db_query.get_all_vitals()
+)
+
+# Keep only PHQ-9 assessment rows for the metric
+if '{metric_name}' == 'phq9_change':
+    if 'assessment_type' in df.columns:
+        df = df[df['assessment_type'] == 'PHQ-9']
+    elif 'score_type' in df.columns:
+        df = df[df['score_type'] == 'PHQ-9']
+
+{chr(10).join(merge_lines)}
+
+{chr(10).join(filter_lines)}
+
+metric_func = get_metric('{metric_name}')
+# Determine correct score column if using scores table
+kwargs = {{}}
+if 'score_value' in df.columns and 'value' not in df.columns:
+    kwargs['score_col'] = 'score_value'
+elif 'score' in df.columns and 'value' not in df.columns:
+    kwargs['score_col'] = 'score'
+result_series = metric_func(df, **kwargs)
+
+# Default: use the average change across patients (NaN if no data)
+if result_series.empty:
+    import numpy as _np
+    results = _np.nan
+else:
+    results = result_series.mean()
+
+# If distribution requested, override with descriptive stats (may still be empty)
+if '{intent.analysis_type}' == 'distribution':
+    results = result_series.describe()
+
+# Fallback: guarantee 'results' variable exists
+try:
+    results
+except NameError:
+    results = result_series.mean()
+"""
+    return code
 
 
 # Create the single instance to be imported by other modules

@@ -913,3 +913,32 @@ def get_all_vitals(db_path=DB_PATH):
     """
 
     return query_dataframe(query, db_path=db_path)
+
+
+def get_all_scores(db_path=DB_PATH):
+    """Retrieve all rows from the scores table.
+
+    Args:
+        db_path: Path to the SQLite database file.
+
+    Returns
+    -------
+    DataFrame containing every record from the `scores` table.
+    """
+    query = "SELECT * FROM scores;"
+    return query_dataframe(query, db_path=db_path)
+
+
+def get_all_mental_health(db_path=DB_PATH):
+    """Retrieve all rows from the mental_health table.
+
+    Args
+    ----
+    db_path: Path to the SQLite database file.
+
+    Returns
+    -------
+    DataFrame with all mental health assessment records.
+    """
+    query = "SELECT * FROM mental_health;"
+    return query_dataframe(query, db_path=db_path)

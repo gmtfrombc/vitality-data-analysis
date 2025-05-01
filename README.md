@@ -1,106 +1,75 @@
-# Metabolic Health Patient Data Analysis Application
+# VP Data Analysis – README
 
-A comprehensive web-based application for analyzing, visualizing, and querying patient metabolic health data. This application uses Panel for interactive dashboards, SQLite for data storage, and OpenAI for AI-assisted SQL query generation.
+**Purpose:** A notebook-style web application that helps healthcare teams explore patient data with a hybrid AI + rules engine. Powered by Panel, HoloViews, SQLite, and OpenAI GPT-4.
 
-## Features
+---
+## 🚀 Vision (Why?)
+* Give non-technical stakeholders instant, trustworthy insights on patient outcomes.
+* Blend deterministic logic (for safety & reproducibility) with Large Language Models (for flexibility & speed).
+* Scale seamlessly from a local analyst's laptop to a cloud-hosted, multi-user environment.
 
-- **Dashboard**: Overview of program statistics and key metrics
-- **Patient View**: Detailed patient information with tabs for:
-  - Vital signs (weight, blood pressure)
-  - Mental health assessments
-  - Laboratory results
-  - Metabolic health scores
-- **AI SQL Assistant**: Generate SQL queries from natural language using OpenAI
+---
+## 🗺️ Roadmap (What & When?)
+The full living roadmap is tracked in **[ROADMAP_CANVAS.md](./ROADMAP_CANVAS.md)**.  
+Below is a snapshot of the current work streams:
 
-## Setup
+| ID | Work Stream | Key Next Steps |
+|----|-------------|----------------|
+| WS-1 | Stability & Refactor | Unit tests ≥ 60 % · remove duplication |
+| WS-2 | Hybrid AI Engine | Intent classification · dynamic code generation |
+| WS-3 | Data & Storage | Persist saved questions in SQLite · migrations |
+| WS-4 | UX & Viz | Responsive layout · drag-and-drop chart builder |
+| WS-5 | Cloud Deployment | Docker · CI/CD · AWS/GCP hosting |
 
-### Prerequisites
+> ❖ Legend: ✔ complete · ☐ pending · 🔄 in-progress.  
+> See the canvas for milestones, risks, and backlog.
 
-- Python 3.8+
-- SQLite
-- OpenAI API key (for AI SQL Assistant)
+---
+## 🧭 Coding Conventions (How?)
 
-### Installation
+### General
+1. **Python 3.11**; keep external deps lean (see `requirements.txt`).
+2. Follow **PEP 8** with `black` style (line length = 88).
+3. Use **type hints** (`mypy --strict`) for all new functions.
+4. Write **docstrings** (Google style) for public classes & methods.
+5. Add/extend **unit tests** in `tests/` for new logic (pytest).
 
-1. Clone the repository
-2. Create a virtual environment:
-   ```
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-3. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
-
-### Setting up OpenAI API Key
-
-For the AI SQL Assistant to work, you need to set up an OpenAI API key as an environment variable. You can use our setup script to help with this:
-
+### Project Structure (TL;DR)
 ```
-python setup_env.py
+app/            # UI & pages (Panel)
+  └── pages/
+       ├── data_assistant.py  # main assistant
+       └── patient_view.py    # patient view page
+app/ai_helper.py             # GPT-4 integration helper
+ data/                       # local assets & saved_questions.json
+ tests/                      # pytest suite (WIP)
+run.py                       # Panel server entry-point
 ```
 
-Or manually set the environment variable:
+### Commit & Branching
+* **main** = deployable head. Feature work: `feat/<topic>`; experiments: `exp/<topic>`.
+* Conventional commit messages: `feat:`, `fix:`, `chore:` …
+* Open a PR → CI runs lint + tests → review → squash-merge.
 
-- **macOS/Linux**:
-  ```
-  export OPENAI_API_KEY="your_api_key_here"
-  ```
+### LLM Usage
+* All prompts & responses routed through `app/ai_helper.py`.
+* Persist user queries (minus PII) for audit.
+* Post-process model output with rule-based checks before execution.
 
-- **Windows**:
-  ```
-  set OPENAI_API_KEY=your_api_key_here
-  ```
+---
+## ⏱️ Quick Start (Local)
+```bash
+# Install deps
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
 
-## Running the Application
+# Set your OpenAI key
+cp .env.example .env  # or echo "OPENAI_API_KEY=sk-..." >> .env
 
-To start the application:
-
-```
+# Run the app
 python run.py
 ```
+Open `http://localhost:5006` in your browser.
 
-The application will be available at http://localhost:5006 (or a similar port if 5006 is in use).
-
-## Application Structure
-
-```
-├── app/                  # Main application code
-│   ├── components/       # Reusable UI components
-│   ├── pages/            # Application pages
-│   ├── utils/            # Utility functions
-│   └── main.py           # Application entry point
-├── run.py                # Script to run the application
-├── setup_env.py          # Environment setup script
-├── patient_data.db       # SQLite database
-├── db_query.py           # Database query functions
-└── README.md             # This file
-```
-
-## Usage
-
-### Dashboard
-
-The dashboard provides an overview of patient statistics, program metrics, and trends.
-
-### Patient View
-
-1. Select a patient from the dropdown
-2. View detailed patient information across various tabs
-3. Analyze trends in health metrics through interactive visualizations
-
-### AI SQL Assistant
-
-1. Enter a natural language question about the patient data
-2. The AI will generate a SQL query to answer your question
-3. Review the generated SQL query
-4. Execute the query to see results
-
-## Example Queries for AI Assistant
-
-- "Show me all female patients with an engagement score above 80"
-- "What is the average BMI for patients over 50 years old?"
-- "List patients who have abnormal blood pressure readings (systolic > 140 or diastolic > 90)"
-- "Show me lab results for HbA1c values greater than 6.5"
-- "Find patients who have improved their mental health scores over time" 
+---
+*Last updated: <!-- AI/maintainer: timestamp on save -->* 
