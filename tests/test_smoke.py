@@ -83,6 +83,12 @@ def test_count_active_patients(monkeypatch):
         _mock_execute,
     )
 
+    # Skip clarifying-step gating so workflow reaches execution
+    monkeypatch.setattr(
+        "app.pages.data_assistant.DataAnalysisAssistant._is_low_confidence_intent",
+        lambda self, intent: False,
+    )
+
     assistant = DataAnalysisAssistant()
     assistant.query_text = "How many active patients are in the program?"
     assistant._process_query()

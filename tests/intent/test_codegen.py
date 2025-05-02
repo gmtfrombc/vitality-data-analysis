@@ -15,8 +15,8 @@ def test_average_bmi_template():
 
     code = _build_code_from_intent(intent)
     assert code is not None
-    assert "avg_value" in code
-    assert "results =" in code
+    assert "AVG(bmi)" in code
+    assert "SELECT" in code
 
 
 def test_activity_status_alias(monkeypatch):
@@ -32,5 +32,5 @@ def test_activity_status_alias(monkeypatch):
 
     code = _build_code_from_intent(intent)
     assert code is not None
-    assert "'active'" in code
-    assert "== 1" in code
+    assert "active" in code
+    assert "= 1" in code

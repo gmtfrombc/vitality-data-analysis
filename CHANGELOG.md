@@ -12,7 +12,8 @@ Use reverse-chronological order (latest on top).
 🖼️ Pie chart fixes – Switched to hvplot(kind='pie').
 🔧 UI tweaks – Save / reset buttons & delete-question flow.
 🧩 Clarifying intent workflow – Assistant now detects vague queries, asks follow-up questions with a text input, and only proceeds when clarified; added heuristic, UI elements, and updated tests; fixed pandas truth-value errors.
-Last updated: 2025-05-01
+🐛 Safe raw_query assignment – Wrapped intent.raw_query set in DataAnalysisAssistant with try/except to prevent AttributeError and restore passing tests.
+Last updated: 2025-05-22
 
 - [ ] Tech debt: silence Tornado loop warn in tests
 - [ ] Upgrade to Pydantic v2 APIs

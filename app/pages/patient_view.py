@@ -211,18 +211,19 @@ class PatientView(param.Parameterized):
             # Handle the case when the selection is a patient name
             if selected_value in patient_dict:
                 selected_id = patient_dict[selected_value]
-                print(
-                    f"Debug: Selected patient name '{selected_value}' with ID: {selected_id}"
+                logger.debug(
+                    "Selected patient name '%s' with ID %s", selected_value, selected_id
                 )
                 self.selected_patient_id = selected_id
             # Handle the case when the selection is already a patient ID
             elif selected_value in id_to_name:
-                print(f"Debug: Selected patient directly by ID: {selected_value}")
+                logger.debug("Selected patient directly by ID: %s", selected_value)
                 self.selected_patient_id = selected_value
             # The selection is neither a valid name nor ID
             else:
-                print(
-                    f"Debug: Selected value '{selected_value}' not recognized as name or ID"
+                logger.debug(
+                    "Selected value '%s' not recognized as patient name or ID",
+                    selected_value,
                 )
 
         patient_select.param.watch(on_patient_select, "value")
@@ -282,14 +283,14 @@ class PatientView(param.Parameterized):
 
     def _update_patient_data(self, *events):
         """Update the patient data when a new patient is selected"""
-        print(f"Debug: Updating patient data for ID: '{self.selected_patient_id}'")
+        logger.debug("Updating patient data for ID: %s", self.selected_patient_id)
         self.patient_data = db_query.get_patient_overview(self.selected_patient_id)
-        print(f"Debug: Patient data received: {self.patient_data}")
+        logger.debug("Patient data received: %s", self.patient_data)
 
     def create_scores_tab(self, patient_id):
-        print(f"Debug: Getting scores for patient ID: '{patient_id}'")
+        logger.debug("Getting scores for patient ID: %s", patient_id)
         scores_df = db_query.get_patient_scores(patient_id)
-        print(f"Debug: Scores data rows: {len(scores_df)}")
+        logger.debug("Scores data rows: %s", len(scores_df))
         logger.info(f"Scores data for patient {patient_id}: {len(scores_df)} rows")
 
         if not scores_df.empty:
@@ -381,11 +382,11 @@ class PatientView(param.Parameterized):
         return pn.Column(*components, sizing_mode="stretch_width")
 
     def create_vitals_tab(self, patient_id):
-        print(f"Debug: Getting vitals for patient ID: '{patient_id}'")
+        logger.debug("Getting vitals for patient ID: %s", patient_id)
         # Always get the current ID, not a cached version
         current_id = patient_id
         vitals_df = db_query.get_patient_vitals(current_id)
-        print(f"Debug: Vitals data rows: {len(vitals_df)}")
+        logger.debug("Vitals data rows: %s", len(vitals_df))
         logger.info(f"Vitals data for patient {patient_id}: {len(vitals_df)} rows")
 
         if not vitals_df.empty:
@@ -555,11 +556,11 @@ class PatientView(param.Parameterized):
             )
 
     def create_mental_health_tab(self, patient_id):
-        print(f"Debug: Getting mental health data for patient ID: '{patient_id}'")
+        logger.debug("Getting mental health data for patient ID: %s", patient_id)
         # Always get the current ID, not a cached version
         current_id = patient_id
         mh_df = db_query.get_patient_mental_health(current_id)
-        print(f"Debug: Mental health data rows: {len(mh_df)}")
+        logger.debug("Mental health data rows: %s", len(mh_df))
 
         # Get patient data for program start date
         patient_data = db_query.get_patient_overview(patient_id)

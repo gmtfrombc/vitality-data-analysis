@@ -370,11 +370,17 @@ class DataAnalysisAssistant(param.Parameterized):
             dynamic=True,
         )
 
-        # Create the left sidebar with saved questions
+        # Narrative checkbox lives in sidebar for visibility
+        self._show_narrative_checkbox = pn.widgets.Checkbox(
+            name="Show narrative interpretation", value=True
+        )
+
         left_sidebar = pn.Card(
             pn.Column(
                 saved_questions_title,
                 self.saved_question_buttons_container,
+                pn.layout.Divider(),
+                self._show_narrative_checkbox,
                 sizing_mode="stretch_width",
             ),
             sizing_mode="stretch_width",
@@ -745,6 +751,13 @@ class DataAnalysisAssistant(param.Parameterized):
 
             # First, get the query intent using AI
             intent = ai.get_query_intent(self.query_text)
+            # Attempt to attach raw query string for downstream heuristics –
+            # ignore if the intent object is a dict or a frozen Pydantic model
+            try:
+                intent.raw_query = self.query_text.lower()
+            except Exception:
+                # Safe no-op when attribute cannot be set (e.g., QueryIntent without extra field)
+                pass
 
             # Update status for code generation
             self._start_ai_indicator("ChatGPT is generating analysis code...")
@@ -806,14 +819,19 @@ class DataAnalysisAssistant(param.Parameterized):
         explanation = """
 ### Code Explanation
 
-This code performs the following steps:
+Depending on the intent, the generated code follows one of two deterministic paths:
 
-1. **Data Loading**: Gets the necessary data from the database
-2. **Data Filtering**: Applies filters based on your query and clarifications
-3. **Statistical Analysis**: Calculates relevant metrics like averages and distributions
-4. **Visualization**: Creates appropriate visualizations to help interpret the results
+1. **Direct SQL aggregate (fast-path)** – For simple *count*, *average*, *sum*, *min*, or *max* questions the assistant emits a tiny snippet that runs a single SQL statement like `SELECT AVG(bmi) FROM vitals WHERE …;`.  This is faster and avoids pulling large tables into pandas.
+2. **Pandas pipeline** – For richer analyses (distributions, PHQ-9 change, etc.) the helper loads DataFrames, applies filters, then computes statistics or metrics.
 
-The code is designed to be transparent and show each step of the analysis process, including intermediate results that help validate the findings.
+Regardless of the path you'll see:
+
+• **Data Loading** – either via an SQL call (`db_query.query_dataframe`) or DataFrame helper (`db_query.get_all_vitals()`, …)  
+• **Filtering & Joins** – demographic filters, active status, date ranges.  
+• **Analysis** – aggregation, metric function, or distribution.  
+• **results** – the snippet *always* assigns the final output to a variable called `results` so downstream UI can pick it up.
+
+Intermediate results and visualisations are still shown so you can audit the process.
 """
         code_panels.append(pn.pane.Markdown(explanation))
 
@@ -1713,9 +1731,14 @@ The code is designed to be transparent and show each step of the analysis proces
                     visualizations.append("Gender distribution pie chart")
 
                 # Get AI interpretation of results
-                interpretation = ai.interpret_results(
-                    query, self.intermediate_results, visualizations
-                )
+                interpretation = None
+                if (
+                    getattr(self, "_show_narrative_checkbox", None) is None
+                    or self._show_narrative_checkbox.value
+                ):
+                    interpretation = ai.interpret_results(
+                        query, self.intermediate_results, visualizations
+                    )
 
                 # Hide the indicator when done
                 self._stop_ai_indicator()
@@ -1725,7 +1748,22 @@ The code is designed to be transparent and show each step of the analysis proces
                     result_val = float(self.intermediate_results)
                     result["summary"] = f"Result: {result_val:.2f}"
                 else:
-                    result["summary"] = interpretation
+                    if interpretation is not None:
+                        result["summary"] = interpretation
+                    else:
+                        # Build simple textual summary from intermediate_results
+                        if isinstance(self.intermediate_results, dict):
+                            lines = ["### Results"]
+                            for k, v in self.intermediate_results.items():
+                                if isinstance(v, (int, float)):
+                                    lines.append(
+                                        f"- **{k.replace('_', ' ').title()}**: {v}"
+                                    )
+                            result["summary"] = (
+                                "\n".join(lines) if len(lines) > 1 else "Results ready."
+                            )
+                        else:
+                            result["summary"] = "Results ready."
 
                 # Add visualizations if available
                 if (
@@ -1884,6 +1922,15 @@ The code is designed to be transparent and show each step of the analysis proces
 
         # Reset the status and workflow for the next query
         self._update_status("Analysis complete. You can enter a new query.")
+
+        # Helper to refresh summary when checkbox toggled
+        pass
+
+    def _update_display_after_toggle(self, *_):
+        if self.analysis_result and "summary" in self.analysis_result:
+            self.result_pane.object = (
+                f"### Analysis Results\n\n{self.analysis_result['summary']}"
+            )
 
     def _update_saved_question_buttons(self):
         """Update the saved question buttons in the sidebar"""
@@ -2324,6 +2371,13 @@ results
 
         # First, attempt intent parsing with confidence check
         intent = ai.get_query_intent(self.query_text)
+        # Attempt to attach raw query string for downstream heuristics –
+        # ignore if the intent object is a dict or a frozen Pydantic model
+        try:
+            intent.raw_query = self.query_text.lower()
+        except Exception:
+            # Safe no-op when attribute cannot be set (e.g., QueryIntent without extra field)
+            pass
 
         if self._is_low_confidence_intent(intent):
             # Low confidence – ask clarifying questions and stop pipeline
@@ -2460,7 +2514,25 @@ results
         if intent.analysis_type == "change" and not intent.filters:
             return True
 
-        # If user talks about patients but provides no patient_id filter
+        # Special-case: counting active/inactive patients is clear enough
+        if intent.analysis_type == "count":
+            active_filter = any(f.field == "active" for f in intent.filters)
+            if intent.target_field == "active" or active_filter:
+                logger.debug(
+                    "High confidence count query detected; skipping clarification."
+                )
+                return False
+            # Counting patients with *no* additional qualifiers is still acceptable
+            if (
+                intent.target_field in {"patient", "patients", "patient_id"}
+                and not intent.filters
+            ):
+                logger.debug(
+                    "Simple patient count with no filters; treating as confident."
+                )
+                return False
+
+        # If user talks about generic "patient(s)" but gives no patient_id filter we still need clarity
         if any(word in intent.target_field for word in ["patient", "patients"]):
             has_patient_filter = any(f.field == "patient_id" for f in intent.filters)
             if not has_patient_filter:

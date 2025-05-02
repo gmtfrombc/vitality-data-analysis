@@ -705,7 +705,7 @@ def get_patient_vitals(patient_id, start_date=None, end_date=None, db_path=DB_PA
         DataFrame: Patient vitals data, ordered by date descending
     """
     patient_id = str(patient_id)
-    print(f"Debug: get_patient_vitals querying for patient_id: '{patient_id}'")
+    # logger.debug("Querying vitals for patient_id=%s", patient_id)
 
     query = "SELECT * FROM vitals WHERE patient_id = ?"
     params = [patient_id]
@@ -721,7 +721,7 @@ def get_patient_vitals(patient_id, start_date=None, end_date=None, db_path=DB_PA
     query += " ORDER BY date DESC"
 
     df = query_dataframe(query, params=tuple(params), db_path=db_path)
-    print(f"Debug: get_patient_vitals returned {len(df)} rows")
+    # logger.debug("get_patient_vitals returned %s rows", len(df))
     return df
 
 
