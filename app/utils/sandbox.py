@@ -118,6 +118,9 @@ def run_user_code(code: str) -> SandboxResult:
         "tokenize",
         "linecache",
         "inspect",
+        "warnings",
+        "_io",
+        "re",
     }
 
     def _safe_import(

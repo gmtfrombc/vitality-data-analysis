@@ -712,7 +712,84 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         return code
 
     # ------------------------------------------------------------------
-    # 3b. Median aggregate – use pandas since SQLite lacks MEDIAN function
+    # 3b. Percent change – pandas path using first and last values
+    # ------------------------------------------------------------------
+    if intent.analysis_type == "percent_change":
+        # Choose table
+        if metric_name in {"bmi", "weight", "sbp", "dbp"}:
+            table_name = "vitals"
+        elif metric_name in {"age", "score_value", "value"}:
+            table_name = (
+                "scores" if metric_name in {"score_value", "value"} else "patients"
+            )
+        else:
+            table_name = "vitals"
+
+        where_clauses: list[str] = []
+        for f in intent.filters:
+            if f.value is None:
+                continue
+            canonical = ALIASES.get(f.field.lower(), f.field)
+            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+            where_clauses.append(f"{canonical} = {val_literal}")
+
+        where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        # Assume table has 'date' column for ordering; fallback to ROWID
+        sql = (
+            f"SELECT {metric_name} FROM {table_name} {where_clause} "
+            "ORDER BY date ASC;"
+        )
+
+        code = (
+            "# Auto-generated percent-change calculation using pandas\n"
+            "from db_query import query_dataframe\nimport numpy as _np\n\n"
+            f'_df = query_dataframe("{sql}")\n'
+            f"_clean = _df['{metric_name}'].dropna()\n"
+            "if _clean.size < 2 or _clean.iloc[0] == 0:\n"
+            "    results = _np.nan\n"
+            "else:\n"
+            "    first, last = _clean.iloc[0], _clean.iloc[-1]\n"
+            "    results = float((last - first) / abs(first) * 100)\n"
+        )
+        return code
+
+    # ------------------------------------------------------------------
+    # 3d. Top-N categorical values – return dict counts
+    # ------------------------------------------------------------------
+    if intent.analysis_type == "top_n":
+        n = intent.parameters.get("n", 5) if isinstance(intent.parameters, dict) else 5
+
+        if metric_name in {"gender", "ethnicity", "assessment_type", "score_type"}:
+            table_name = (
+                "patients" if metric_name in {"gender", "ethnicity"} else "scores"
+            )
+        else:
+            table_name = "vitals"
+
+        where_clauses: list[str] = []
+        for f in intent.filters:
+            if f.value is None:
+                continue
+            canonical = ALIASES.get(f.field.lower(), f.field)
+            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+            where_clauses.append(f"{canonical} = {val_literal}")
+
+        where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        sql = f"SELECT {metric_name} FROM {table_name} {where_clause};"
+
+        code = (
+            "# Auto-generated top-N categorical counts using pandas\n"
+            "from db_query import query_dataframe\n\n"
+            f'_df = query_dataframe("{sql}")\n'
+            f"_top = _df['{metric_name}'].value_counts().nlargest({n})\n"
+            "results = _top.to_dict()\n"
+        )
+        return code
+
+    # ------------------------------------------------------------------
+    # 3e. Median aggregate – use pandas since SQLite lacks MEDIAN function
     # ------------------------------------------------------------------
     if intent.analysis_type == "median":
         # Decide table
@@ -740,16 +817,14 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         code = (
             "# Auto-generated median aggregate using pandas\n"
             "from db_query import query_dataframe\nimport numpy as _np\n\n"
-            '_df = query_dataframe("' + sql + '")\n'
-            "_clean = _df.dropna(subset=['" + metric_name + "'])\n"
-            "results = float(_clean['"
-            + metric_name
-            + "'].median()) if not _clean.empty else _np.nan\n"
+            f'_df = query_dataframe("{sql}")\n'
+            f"_clean = _df.dropna(subset=['{metric_name}'])\n"
+            f"results = float(_clean['{metric_name}'].median()) if not _clean.empty else _np.nan\n"
         )
         return code
 
     # ------------------------------------------------------------------
-    # 3c. Distribution – return histogram counts (10 bins)
+    # 3f. Distribution – return histogram counts (10 bins)
     # ------------------------------------------------------------------
     if intent.analysis_type == "distribution":
         if metric_name in {"bmi", "weight", "sbp", "dbp"}:
@@ -784,7 +859,7 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         return code
 
     # ------------------------------------------------------------------
-    # 3d. Trend – average metric per calendar month (YYYY-MM)
+    # 3g. Trend – average metric per calendar month (YYYY-MM)
     # ------------------------------------------------------------------
     if intent.analysis_type == "trend":
         # Decide table heuristically
@@ -823,6 +898,42 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
             f"_sql = '''\n{sql}\n'''\n\n"
             "_df = query_dataframe(_sql)\n"
             "results = _df.set_index('period')['result'].to_dict() if not _df.empty else {}\n"
+        )
+        return code
+
+    # ------------------------------------------------------------------
+    # 3b. Variance & Std Dev – use pandas since SQLite lacks functions
+    # ------------------------------------------------------------------
+    if intent.analysis_type in {"variance", "std_dev"}:
+        stat_func = "var" if intent.analysis_type == "variance" else "std"
+
+        if metric_name in {"bmi", "weight", "sbp", "dbp"}:
+            table_name = "vitals"
+        elif metric_name in {"age", "score_value", "value"}:
+            table_name = (
+                "scores" if metric_name in {"score_value", "value"} else "patients"
+            )
+        else:
+            table_name = "vitals"
+
+        where_clauses: list[str] = []
+        for f in intent.filters:
+            if f.value is None:
+                continue
+            canonical = ALIASES.get(f.field.lower(), f.field)
+            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+            where_clauses.append(f"{canonical} = {val_literal}")
+
+        where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        sql = f"SELECT {metric_name} FROM {table_name} {where_clause};"
+
+        code = (
+            f"# Auto-generated {intent.analysis_type} aggregate using pandas\n"
+            "from db_query import query_dataframe\nimport numpy as _np\n\n"
+            f'_df = query_dataframe("{sql}")\n'
+            f"_clean = _df.dropna(subset=['{metric_name}'])\n"
+            f"results = float(_clean['{metric_name}'].{stat_func}(ddof=1)) if not _clean.empty else _np.nan\n"
         )
         return code
 

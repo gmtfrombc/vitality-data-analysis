@@ -1,0 +1,57 @@
+- name: active_count
+  query: "How many active patients are in the program?"
+  intent:
+    analysis_type: count
+    target_field: patient_id
+    filters:
+      - field: active
+        value: 1
+    conditions: []
+    parameters: {}
+  expected: 5
+
+- name: avg_weight
+  query: "What is the average weight of patients?"
+  intent:
+    analysis_type: average
+    target_field: weight
+    filters: []
+    conditions: []
+    parameters: {}
+  expected: 76.5
+
+- name: median_bmi
+  query: "What is the median BMI of female patients?"
+  intent:
+    analysis_type: median
+    target_field: bmi
+    filters:
+      - field: gender
+        value: F
+    conditions: []
+    parameters: {}
+  expected: 29.0
+
+- name: variance_bmi
+  query: "What is the BMI variance?"
+  intent:
+    analysis_type: variance
+    target_field: bmi
+    filters: []
+    conditions: []
+    parameters: {}
+  expected: 4.0
+
+- name: top_genders
+  query: "Which 3 most common genders?"
+  intent:
+    analysis_type: top_n
+    target_field: gender
+    filters: []
+    conditions: []
+    parameters:
+      n: 3
+  expected:
+    F: 7
+    M: 5
+    Other: 2 

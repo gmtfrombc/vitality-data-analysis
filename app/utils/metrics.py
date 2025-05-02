@@ -18,6 +18,10 @@ __all__ = [
     "METRIC_REGISTRY",
     "register_metric",
     "get_metric",
+    "variance",
+    "std_dev",
+    "percent_change",
+    "top_n",
 ]
 
 # ---------------------------------------------------------------------------
@@ -156,6 +160,41 @@ def active_patient_count(
     return active[patient_id_col].nunique()
 
 
+def variance(series: pd.Series) -> float:  # noqa: D401
+    """Return sample variance of a numeric pandas Series (ddof=1)."""
+    if series.empty:
+        return float("nan")
+    return float(series.var(ddof=1))
+
+
+def std_dev(series: pd.Series) -> float:  # noqa: D401
+    """Return sample standard deviation of a numeric pandas Series (ddof=1)."""
+    if series.empty:
+        return float("nan")
+    return float(series.std(ddof=1))
+
+
+def percent_change(series: pd.Series) -> float:  # noqa: D401
+    """Return percent change between first and last non-NA value in *series*.
+
+    Formula: ((last - first) / |first|) * 100.  Returns NaN if <2 points.
+    """
+    clean = series.dropna()
+    if clean.size < 2:
+        return float("nan")
+    first, last = clean.iloc[0], clean.iloc[-1]
+    if first == 0:
+        return float("nan")
+    return float((last - first) / abs(first) * 100)
+
+
+def top_n(series: pd.Series, n: int = 5):  # noqa: D401
+    """Return the *n* largest values and their counts as a dict of value → count."""
+    if series.empty:
+        return {}
+    return dict(series.value_counts().nlargest(n))
+
+
 # ---------------------------------------------------------------------------
 # Registry utilities
 # ---------------------------------------------------------------------------
@@ -164,6 +203,10 @@ def active_patient_count(
 METRIC_REGISTRY: Dict[str, Callable[..., pd.Series]] = {
     "phq9_change": phq9_change,
     "active_patients": active_patient_count,  # deterministic patient counter
+    "variance": variance,
+    "std_dev": std_dev,
+    "percent_change": percent_change,
+    "top_n": top_n,
 }
 
 

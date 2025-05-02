@@ -65,6 +65,46 @@ def helper() -> AIHelper:  # noqa: D401 - fixture
             ),
             "strftime('%Y-%m'",  # trend SQL includes date bucket
         ),
+        (
+            QueryIntent(
+                analysis_type="variance",
+                target_field="bmi",
+                filters=[],
+                conditions=[],
+                parameters={},
+            ),
+            ".var(",  # pandas var call
+        ),
+        (
+            QueryIntent(
+                analysis_type="std_dev",
+                target_field="bmi",
+                filters=[],
+                conditions=[],
+                parameters={},
+            ),
+            ".std(",  # pandas std call
+        ),
+        (
+            QueryIntent(
+                analysis_type="percent_change",
+                target_field="bmi",
+                filters=[],
+                conditions=[],
+                parameters={},
+            ),
+            "percent-change",  # placeholder string to check description comment
+        ),
+        (
+            QueryIntent(
+                analysis_type="top_n",
+                target_field="gender",
+                filters=[],
+                conditions=[],
+                parameters={"n": 3},
+            ),
+            "value_counts().nlargest(3)",  # indicate top-n logic
+        ),
     ],
 )
 def test_sql_aggregate_templates(

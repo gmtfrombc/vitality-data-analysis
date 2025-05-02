@@ -80,6 +80,10 @@ class QueryIntent(BaseModel):
         "max",
         "average_change",
         "rate",
+        "variance",
+        "std_dev",
+        "percent_change",
+        "top_n",
     ]
     target_field: str = Field(..., description="Primary metric or column of interest")
     filters: List[Filter] = Field(default_factory=list)
