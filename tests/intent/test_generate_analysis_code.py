@@ -35,6 +35,36 @@ def helper() -> AIHelper:  # noqa: D401 - fixture
             ),
             "COUNT(*)",
         ),
+        (
+            QueryIntent(
+                analysis_type="median",
+                target_field="bmi",
+                filters=[],
+                conditions=[],
+                parameters={},
+            ),
+            "median()",
+        ),
+        (
+            QueryIntent(
+                analysis_type="distribution",
+                target_field="bmi",
+                filters=[],
+                conditions=[],
+                parameters={},
+            ),
+            "histogram",
+        ),
+        (
+            QueryIntent(
+                analysis_type="trend",
+                target_field="bmi",
+                filters=[],
+                conditions=[],
+                parameters={},
+            ),
+            "strftime('%Y-%m'",  # trend SQL includes date bucket
+        ),
     ],
 )
 def test_sql_aggregate_templates(

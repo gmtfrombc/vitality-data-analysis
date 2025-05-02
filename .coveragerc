@@ -1,0 +1,10 @@
+[run]
+omit =
+    app/pages/*
+    app/main.py
+    db_query.py
+    app/components/*
+    app/assets/*
+    app/ai_helper.py
+    app/utils/metrics.py
+    app/utils/db_connector.py 

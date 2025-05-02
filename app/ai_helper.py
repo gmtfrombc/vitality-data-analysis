@@ -712,6 +712,121 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         return code
 
     # ------------------------------------------------------------------
+    # 3b. Median aggregate – use pandas since SQLite lacks MEDIAN function
+    # ------------------------------------------------------------------
+    if intent.analysis_type == "median":
+        # Decide table
+        if metric_name in {"bmi", "weight", "sbp", "dbp"}:
+            table_name = "vitals"
+        elif metric_name in {"age", "score_value", "value"}:
+            table_name = (
+                "scores" if metric_name in {"score_value", "value"} else "patients"
+            )
+        else:
+            table_name = "vitals"
+
+        where_clauses: list[str] = []
+        for f in intent.filters:
+            if f.value is None:
+                continue
+            canonical = ALIASES.get(f.field.lower(), f.field)
+            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+            where_clauses.append(f"{canonical} = {val_literal}")
+
+        where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        sql = f"SELECT {metric_name} FROM {table_name} {where_clause};"
+
+        code = (
+            "# Auto-generated median aggregate using pandas\n"
+            "from db_query import query_dataframe\nimport numpy as _np\n\n"
+            '_df = query_dataframe("' + sql + '")\n'
+            "_clean = _df.dropna(subset=['" + metric_name + "'])\n"
+            "results = float(_clean['"
+            + metric_name
+            + "'].median()) if not _clean.empty else _np.nan\n"
+        )
+        return code
+
+    # ------------------------------------------------------------------
+    # 3c. Distribution – return histogram counts (10 bins)
+    # ------------------------------------------------------------------
+    if intent.analysis_type == "distribution":
+        if metric_name in {"bmi", "weight", "sbp", "dbp"}:
+            table_name = "vitals"
+        elif metric_name in {"age", "score_value", "value"}:
+            table_name = (
+                "scores" if metric_name in {"score_value", "value"} else "patients"
+            )
+        else:
+            table_name = "vitals"
+
+        where_clauses: list[str] = []
+        for f in intent.filters:
+            if f.value is None:
+                continue
+            canonical = ALIASES.get(f.field.lower(), f.field)
+            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+            where_clauses.append(f"{canonical} = {val_literal}")
+
+        where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        sql = f"SELECT {metric_name} FROM {table_name} {where_clause};"
+
+        code = (
+            "# Auto-generated distribution histogram (10 bins)\n"
+            "from db_query import query_dataframe\nimport numpy as _np\nimport pandas as _pd\n\n"
+            '_df = query_dataframe("' + sql + '")\n'
+            "_data = _df['" + metric_name + "'].dropna().astype(float)\n"
+            "_counts, _bin_edges = _np.histogram(_data, bins=10)\n"
+            "results = { 'bin_edges': _bin_edges.tolist(), 'counts': _counts.tolist() }\n"
+        )
+        return code
+
+    # ------------------------------------------------------------------
+    # 3d. Trend – average metric per calendar month (YYYY-MM)
+    # ------------------------------------------------------------------
+    if intent.analysis_type == "trend":
+        # Decide table heuristically
+        if metric_name in {"bmi", "weight", "sbp", "dbp"}:
+            table_name = "vitals"
+        elif metric_name in {"age", "score_value", "value"}:
+            table_name = (
+                "scores" if metric_name in {"score_value", "value"} else "patients"
+            )
+        else:
+            table_name = "vitals"
+
+        date_col = "date"  # all target tables have a date field
+
+        where_clauses: list[str] = []
+        for f in intent.filters:
+            if f.value is None:
+                continue
+            canonical = ALIASES.get(f.field.lower(), f.field)
+            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+            where_clauses.append(f"{canonical} = {val_literal}")
+
+        where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        sql = (
+            f"SELECT strftime('%Y-%m', {date_col}) AS period, AVG({metric_name}) AS result\n"
+            f"FROM {table_name}\n"
+            f"{where_clause}\n"
+            f"GROUP BY period\n"
+            f"ORDER BY period;"
+        )
+
+        code = (
+            "# Auto-generated monthly trend\n"
+            "from db_query import query_dataframe\n\n"
+            f"_sql = '''\n{sql}\n'''\n\n"
+            "_df = query_dataframe(_sql)\n"
+            "results = _df.set_index('period')['result'].to_dict() if not _df.empty else {}\n"
+        )
+        return code
+
+    # ------------------------------------------------------------------
     # 4. FALLBACK – preserve original average/distribution templates
     # ------------------------------------------------------------------
     # ... original remaining logic untouched ...

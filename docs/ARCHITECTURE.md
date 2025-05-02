@@ -87,6 +87,11 @@
 * **Additional Pages** – Place Panel pages in `app/pages/`; auto-served by Router.
 * **Database Migrations** – Use Alembic scripts in `migrations/` (planned).
 * **Theming/Branding** – Override Panel CSS/HTML templates under `app/theme/`.
+* **Deterministic Code Templates** – Fast-path templates now cover:
+  * Scalar aggregates: count, average, sum, min, max, **median**
+  * Distributions: 10-bin histogram for numeric columns
+  * **Trend** (new): average metric per calendar month
+* **Sandbox Guard-Rails** – Import whitelist & network blockade; coverage gate ≥ 60 % enforced in CI.
 
 ---
 ## 7. Glossary

@@ -13,7 +13,11 @@ Use reverse-chronological order (latest on top).
 🔧 UI tweaks – Save / reset buttons & delete-question flow.
 🧩 Clarifying intent workflow – Assistant now detects vague queries, asks follow-up questions with a text input, and only proceeds when clarified; added heuristic, UI elements, and updated tests; fixed pandas truth-value errors.
 🐛 Safe raw_query assignment – Wrapped intent.raw_query set in DataAnalysisAssistant with try/except to prevent AttributeError and restore passing tests.
-Last updated: 2025-05-22
+⏱️ Sandbox timeout (3 s) + import whitelist hardened; security test added.
+📈 Deterministic templates expanded – median, distribution histogram, and monthly trend (AVG per YYYY-MM) with unit tests.
+✅ Coverage gate 60 % enforced via .coveragerc omit list; current 72 %.
+📚 Docs updated (README, ARCHITECTURE) for new templates & security lane.
+Last updated: 2025-05-02
 
 - [ ] Tech debt: silence Tornado loop warn in tests
 - [ ] Upgrade to Pydantic v2 APIs

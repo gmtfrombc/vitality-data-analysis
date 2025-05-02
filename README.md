@@ -20,6 +20,7 @@ Below is a snapshot of the current work streams:
 | WS-3 | Data & Storage | Persist saved questions in SQLite · migrations |
 | WS-4 | UX & Viz | Responsive layout · drag-and-drop chart builder |
 | WS-5 | Cloud Deployment | Docker · CI/CD · AWS/GCP hosting |
+| WS-6 | Security & Quality | Hardened sandbox · ≥60 % coverage gate ✔ |
 
 > ❖ Legend: ✔ complete · ☐ pending · 🔄 in-progress.  
 > See the canvas for milestones, risks, and backlog.
@@ -53,6 +54,8 @@ run.py                       # Panel server entry-point
 
 ### LLM Usage
 * All prompts & responses routed through `app/ai_helper.py`.
+* Deterministic templates now cover **median** aggregates and **distribution histograms** in addition to count/average.
+* Hardened execution sandbox blocks unsafe imports & network access.
 * Persist user queries (minus PII) for audit.
 * Post-process model output with rule-based checks before execution.
 

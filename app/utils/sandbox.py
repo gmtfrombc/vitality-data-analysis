@@ -13,6 +13,8 @@ import logging
 from types import MappingProxyType
 from typing import Any, Dict, Literal
 from dataclasses import dataclass, field
+import os
+import signal
 
 import numpy as np
 import pandas as pd
@@ -42,7 +44,6 @@ _READ_ONLY_GLOBALS = MappingProxyType(
 _EXEC_GLOBALS = dict(_READ_ONLY_GLOBALS)
 
 if not logger.handlers:
-    import os
     import logging.handlers
 
     log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
@@ -92,11 +93,70 @@ def run_user_code(code: str) -> SandboxResult:
     """
     safe_locals: Dict[str, Any] = {}
 
+    # ------------------------------------------------------------------
+    # Import & network guard-rails
+    # ------------------------------------------------------------------
+    import builtins as _builtins  # local alias to avoid shadowing
+
+    # Save original import so we can restore later
+    _orig_import = _builtins.__import__
+
+    # Minimal whitelist – expand as legitimate needs grow
+    _IMPORT_WHITELIST = {
+        "pandas",
+        "numpy",
+        "np",
+        "pd",
+        "db_query",
+        "math",
+        "json",
+        "datetime",
+        "os",
+        "sys",
+        "signal",
+        "logging",
+        "tokenize",
+        "linecache",
+        "inspect",
+    }
+
+    def _safe_import(
+        name, globals=None, locals=None, fromlist=(), level=0
+    ):  # noqa: ANN001, D401 – guard
+        root_name = name.split(".")[0]
+        if root_name not in _IMPORT_WHITELIST:
+            raise ImportError(
+                f"Import of '{name}' is blocked in sandbox (only {sorted(_IMPORT_WHITELIST)})"
+            )
+        return _orig_import(name, globals, locals, fromlist, level)
+
+    # Patch builtins.__import__
+    _builtins.__import__ = _safe_import  # type: ignore[assignment]
+
+    # ------------------------------------------------------------------
+    # Execution timeout (POSIX only)
+    # ------------------------------------------------------------------
+    _HAS_ALARM = hasattr(signal, "alarm") and os.name != "nt"
+
+    if _HAS_ALARM:
+
+        def _timeout_handler(_signum, _frame):  # noqa: ANN001 – inner handler
+            raise TimeoutError("sandbox execution timed out")
+
+        _old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(3)  # three-second cap
+
     try:
         exec(code, _EXEC_GLOBALS, safe_locals)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Sandbox execution failed: %s", exc, exc_info=True)
         return SandboxResult(type="error", value=str(exc))
+    finally:
+        # Always restore the original import to avoid polluting global state
+        _builtins.__import__ = _orig_import
+        if _HAS_ALARM:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, _old_handler)
 
     if "results" not in safe_locals:
         logger.warning(
