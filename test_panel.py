@@ -11,7 +11,7 @@ pn.extension()
 layout = pn.Column(
     pn.pane.Markdown("# Panel Test"),
     pn.widgets.TextInput(name="Test Input", placeholder="Enter text here"),
-    pn.widgets.Button(name="Test Button", button_type="primary")
+    pn.widgets.Button(name="Test Button", button_type="primary"),
 )
 
 # Show the app

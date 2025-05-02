@@ -5,24 +5,17 @@ Run script for the Metabolic Health Data Analysis application.
 This script launches the Panel web application.
 """
 
-import os
-import sys
 import panel as pn
-import db_query
 from app.pages.dashboard import dashboard_page
 import app.pages.patient_view as patient_view
-import app.pages.ai_assistant as ai_assistant
 import app.pages.data_assistant as data_assistant
 import logging
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('app.log')
-    ]
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(), logging.FileHandler("app.log")],
 )
 logger = logging.getLogger(__name__)
 
@@ -37,7 +30,7 @@ def create_app():
     menu = [
         ("Dashboard", "dashboard"),
         ("Patient View", "patient_view"),
-        ("Data Analysis Assistant", "data_assistant")
+        ("Data Analysis Assistant", "data_assistant"),
     ]
 
     # Create tabs for navigation
@@ -45,7 +38,7 @@ def create_app():
         ("Dashboard", dashboard_page()),
         ("Patient View", patient_view.patient_view_page()),
         ("Data Analysis Assistant", data_assistant.data_assistant_page()),
-        dynamic=True
+        dynamic=True,
     )
 
     # Create the template
@@ -53,8 +46,8 @@ def create_app():
         title="VP Analytics Platform",
         logo="https://upload.wikimedia.org/wikipedia/commons/5/53/Vue_Dashboard.png",
         main=tabs,
-        main_max_width='1800px',
-        sidebar_width=0  # Hide sidebar initially
+        main_max_width="1800px",
+        sidebar_width=0,  # Hide sidebar initially
     )
 
     return template

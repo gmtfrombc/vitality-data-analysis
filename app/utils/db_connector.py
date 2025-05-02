@@ -35,9 +35,13 @@ class DBConnector:
         return db_query.get_patient_vitals(patient_id, start_date, end_date)
 
     @staticmethod
-    def get_patient_mental_health(patient_id, assessment_type=None, start_date=None, end_date=None):
+    def get_patient_mental_health(
+        patient_id, assessment_type=None, start_date=None, end_date=None
+    ):
         """Get mental health data for a specific patient"""
-        return db_query.get_patient_mental_health(patient_id, assessment_type, start_date, end_date)
+        return db_query.get_patient_mental_health(
+            patient_id, assessment_type, start_date, end_date
+        )
 
     @staticmethod
     def get_patient_labs(patient_id, test_name=None):

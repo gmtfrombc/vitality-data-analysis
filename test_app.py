@@ -11,8 +11,7 @@ import db_query
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -21,23 +20,21 @@ logger = logging.getLogger(__name__)
 
 def simple_patient_view():
     patients_df = db_query.get_all_patients()
-    active_patients = patients_df[patients_df['active'] == 1]
+    active_patients = patients_df[patients_df["active"] == 1]
 
     # Create a simple table to display patients
     table = pn.widgets.Tabulator(
-        active_patients[['id', 'first_name',
-                         'last_name', 'gender', 'birth_date']],
+        active_patients[["id", "first_name", "last_name", "gender", "birth_date"]],
         show_index=False,
-        sizing_mode='stretch_width'
+        sizing_mode="stretch_width",
     )
 
     # Create a simple layout
     layout = pn.Column(
         pn.pane.Markdown("# Patient Overview"),
-        pn.pane.Markdown(
-            "This is a simplified view showing active patients only."),
+        pn.pane.Markdown("This is a simplified view showing active patients only."),
         table,
-        sizing_mode='stretch_width'
+        sizing_mode="stretch_width",
     )
 
     return layout
@@ -52,25 +49,17 @@ if __name__ == "__main__":
         ("Dashboard", dashboard_page()),
         ("Simple Patient View", simple_patient_view()),
         ("AI Assistant", ai_assistant_page()),
-        sizing_mode='stretch_width'
+        sizing_mode="stretch_width",
     )
 
     # Create a simple header
     header = pn.pane.Markdown(
         "# VP Analytics Platform",
-        styles={
-            'background-color': '#054471',
-            'color': 'white',
-            'padding': '10px'
-        }
+        styles={"background-color": "#054471", "color": "white", "padding": "10px"},
     )
 
     # Create a simple app layout
-    app = pn.Column(
-        header,
-        tabs,
-        sizing_mode='stretch_width'
-    )
+    app = pn.Column(header, tabs, sizing_mode="stretch_width")
 
     # Start the server
     logger.info("Starting simplified test app")

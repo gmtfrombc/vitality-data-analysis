@@ -1,10 +1,10 @@
 import sqlite3
 import pandas as pd
 
-conn = sqlite3.connect('patient_data.db')
+conn = sqlite3.connect("patient_data.db")
 
 # Identify patients with weight loss by comparing first and last weights
-query = '''
+query = """
 WITH first_weights AS (
     SELECT patient_id, date, weight
     FROM vitals
@@ -48,7 +48,7 @@ WHERE
 ORDER BY 
     percent_loss DESC
 LIMIT 20;
-'''
+"""
 
 # Execute and print the results
 results = pd.read_sql_query(query, conn)
@@ -56,10 +56,9 @@ print(f"Found {len(results)} patients with weight loss over 6+ months:")
 print(results.to_string())
 
 # Check for patients with 10%+ weight loss
-weight_loss_patients = results[results['percent_loss'] >= 10]
+weight_loss_patients = results[results["percent_loss"] >= 10]
 print(f"\nPatients with 10%+ weight loss: {len(weight_loss_patients)}")
 if not weight_loss_patients.empty:
-    print(weight_loss_patients[[
-          'id', 'first_weight', 'last_weight', 'percent_loss']])
+    print(weight_loss_patients[["id", "first_weight", "last_weight", "percent_loss"]])
 
 conn.close()

@@ -1,8 +1,7 @@
 import sqlite3
-import pandas as pd
 
 # Connect to the database
-conn = sqlite3.connect('patient_data.db')
+conn = sqlite3.connect("patient_data.db")
 
 # Check patients table schema
 print("Patients Table Schema:")

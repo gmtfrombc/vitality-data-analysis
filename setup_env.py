@@ -9,16 +9,15 @@ and stores them in a .env file.
 import os
 import sys
 import subprocess
-import platform
 from pathlib import Path
 import re
 
 
 def print_header():
     """Print header text"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("  METABOLIC HEALTH DATA ANALYSIS - ENVIRONMENT SETUP")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
 
 def setup_openai_key():
@@ -38,17 +37,17 @@ def setup_openai_key():
             match = re.search(r'OPENAI_API_KEY="?([^"\n]+)"?', content)
             if match:
                 env_key = match.group(1)
-                if not current_key:  # Set env var if only in file but not in environment
+                if (
+                    not current_key
+                ):  # Set env var if only in file but not in environment
                     os.environ["OPENAI_API_KEY"] = env_key
                     current_key = env_key
-                print(
-                    f"Found API key in .env file (ending with ...{env_key[-4:]})")
+                print(f"Found API key in .env file (ending with ...{env_key[-4:]})")
 
     if current_key:
-        print(
-            f"OpenAI API key is currently set (ending with ...{current_key[-4:]})")
+        print(f"OpenAI API key is currently set (ending with ...{current_key[-4:]})")
         change = input("Would you like to change it? (y/n): ").lower()
-        if change != 'y':
+        if change != "y":
             return
 
     # Get API key from user
@@ -72,7 +71,10 @@ def setup_openai_key():
         # Update or add OPENAI_API_KEY
         if "OPENAI_API_KEY" in env_content:
             env_content = re.sub(
-                r'OPENAI_API_KEY="?[^"\n]+"?', f'OPENAI_API_KEY="{api_key}"', env_content)
+                r'OPENAI_API_KEY="?[^"\n]+"?',
+                f'OPENAI_API_KEY="{api_key}"',
+                env_content,
+            )
         else:
             if env_content and not env_content.endswith("\n"):
                 env_content += "\n"
@@ -110,9 +112,8 @@ def setup_openai_key():
 
 def run_application():
     """Ask if user wants to run the application"""
-    run_app = input(
-        "\nWould you like to run the application now? (y/n): ").lower()
-    if run_app == 'y':
+    run_app = input("\nWould you like to run the application now? (y/n): ").lower()
+    if run_app == "y":
         print("\nStarting the application...\n")
         try:
             subprocess.run([sys.executable, "run.py"])

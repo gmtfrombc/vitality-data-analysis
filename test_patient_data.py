@@ -1,12 +1,11 @@
 import sqlite3
-import pandas as pd
 
 # Connect to the database
-conn = sqlite3.connect('patient_data.db')
+conn = sqlite3.connect("patient_data.db")
 cursor = conn.cursor()
 
 # Test for patient with ID 2 (from sample data)
-test_id = '2'
+test_id = "2"
 print(f"Testing data for patient ID: {test_id}")
 
 # Get patient info
@@ -29,8 +28,7 @@ else:
 
 # Get mental health data
 print("\nMental health data:")
-cursor.execute(
-    "SELECT * FROM mental_health WHERE patient_id = ? LIMIT 5", (test_id,))
+cursor.execute("SELECT * FROM mental_health WHERE patient_id = ? LIMIT 5", (test_id,))
 mh = cursor.fetchall()
 if mh:
     for m in mh:
@@ -40,8 +38,7 @@ else:
 
 # Get lab results
 print("\nLab results:")
-cursor.execute(
-    "SELECT * FROM lab_results WHERE patient_id = ? LIMIT 5", (test_id,))
+cursor.execute("SELECT * FROM lab_results WHERE patient_id = ? LIMIT 5", (test_id,))
 labs = cursor.fetchall()
 if labs:
     for l in labs:

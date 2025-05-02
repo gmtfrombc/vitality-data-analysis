@@ -21,6 +21,23 @@ __all__ = [
 ]
 
 # ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+
+def assert_columns(df: pd.DataFrame, *cols: str) -> None:  # noqa: D401
+    """Raise a clear error if *df* is missing any of *cols*.
+
+    A small safety guard that replaces obscure ``KeyError`` traces with an
+    explicit message like *"DataFrame missing columns: patient_id"*.
+    """
+
+    missing = [c for c in cols if c not in df.columns]
+    if missing:
+        raise KeyError(f"DataFrame missing required columns: {', '.join(missing)}")
+
+
+# ---------------------------------------------------------------------------
 # Metric implementations
 # ---------------------------------------------------------------------------
 
@@ -32,8 +49,7 @@ def phq9_change(
     score_col: str = "value",
     date_col: str = "date",
     baseline_window: Tuple[int, int] = (0, 30),  # days relative to enrolment
-    followup_window: Tuple[int, int] = (
-        150, 210),  # 6 months ± 1 month in days
+    followup_window: Tuple[int, int] = (150, 210),  # 6 months ± 1 month in days
     enrolment_dates: pd.Series | None = None,
 ) -> pd.Series:
     """Return the change in PHQ-9 score between baseline and follow-up per patient.
@@ -111,16 +127,33 @@ def phq9_change(
 
     # Final fallback: if still empty, use earliest vs latest measurement per patient
     if change.empty:
-        first_scores = df.sort_values(date_col).groupby(
-            patient_col)[score_col].first()
-        last_scores = df.sort_values(date_col).groupby(
-            patient_col)[score_col].last()
+        first_scores = df.sort_values(date_col).groupby(patient_col)[score_col].first()
+        last_scores = df.sort_values(date_col).groupby(patient_col)[score_col].last()
         universal_change = last_scores - first_scores
         universal_change = universal_change.dropna()
         universal_change.name = "phq9_change"
         change = universal_change
 
     return change
+
+
+def active_patient_count(
+    df: pd.DataFrame,
+    *,
+    patient_id_col: str = "id",
+    active_col: str = "active",
+) -> int:
+    """Return the number of *active* patients.
+
+    A patient is considered active when ``df[active_col] == 1``.  The function
+    counts *unique* patients to avoid double-counting in case the DataFrame
+    already contains joined data.
+    """
+
+    assert_columns(df, patient_id_col, active_col)
+
+    active = df[df[active_col] == 1]
+    return active[patient_id_col].nunique()
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +163,7 @@ def phq9_change(
 
 METRIC_REGISTRY: Dict[str, Callable[..., pd.Series]] = {
     "phq9_change": phq9_change,
+    "active_patients": active_patient_count,  # deterministic patient counter
 }
 
 

@@ -39,28 +39,24 @@ class Filter(BaseModel):
         if (self.value is None and self.range is None) or (
             self.value is not None and self.range is not None
         ):
-            raise ValueError(
-                "Provide exactly one of `value` or `range` in a Filter")
+            raise ValueError("Provide exactly one of `value` or `range` in a Filter")
         if self.range is not None:
             if not (
                 isinstance(self.range, dict)
                 and set(self.range.keys()) >= {"start", "end"}
             ):
-                raise ValueError(
-                    "`range` must be a dict with 'start' and 'end' keys")
+                raise ValueError("`range` must be a dict with 'start' and 'end' keys")
         return self
 
 
 class Condition(BaseModel):
     """An operator-based condition, e.g. bmi > 30 or date within ±30 days."""
 
-    field: str = Field(...,
-                       description="Column / attribute the condition applies to")
-    operator: Literal[">", "<", ">=", "<=", "==", "!=", "in", "within", "between"] = Field(
-        ..., description="Logical operator to apply"
+    field: str = Field(..., description="Column / attribute the condition applies to")
+    operator: Literal[">", "<", ">=", "<=", "==", "!=", "in", "within", "between"] = (
+        Field(..., description="Logical operator to apply")
     )
-    value: Any = Field(...,
-                       description="Comparison value (or list / tuple for ranges)")
+    value: Any = Field(..., description="Comparison value (or list / tuple for ranges)")
 
 
 # ---------------------------------------------------------------------------
@@ -85,8 +81,7 @@ class QueryIntent(BaseModel):
         "average_change",
         "rate",
     ]
-    target_field: str = Field(...,
-                              description="Primary metric or column of interest")
+    target_field: str = Field(..., description="Primary metric or column of interest")
     filters: List[Filter] = Field(default_factory=list)
     conditions: List[Condition] = Field(default_factory=list)
     parameters: Dict[str, Any] = Field(default_factory=dict)
@@ -96,7 +91,8 @@ class QueryIntent(BaseModel):
         """Ensure mandatory pieces for certain analysis types are present."""
         if self.analysis_type == "comparison" and len(self.filters) < 1:
             raise ValueError(
-                "comparison analysis requires at least one filter criterion")
+                "comparison analysis requires at least one filter criterion"
+            )
         return self
 
     # Convenience helpers -------------------------------------------------
@@ -106,7 +102,9 @@ class QueryIntent(BaseModel):
         return next((f for f in self.filters if f.field == field), None)
 
     def has_condition(self, field: str, operator: str) -> bool:
-        return any(c for c in self.conditions if c.field == field and c.operator == operator)
+        return any(
+            c for c in self.conditions if c.field == field and c.operator == operator
+        )
 
 
 # ---------------------------------------------------------------------------

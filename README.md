@@ -72,4 +72,22 @@ python run.py
 Open `http://localhost:5006` in your browser.
 
 ---
+## 🧪 Testing & Continuous Integration
+
+Our safety-net is a minimal but important **pytest** suite + GitHub Actions workflow.
+
+```
+# Fast smoke tests (< 5 s)
+pytest -m smoke
+
+# Full suite with coverage
+pytest --cov --cov-branch
+```
+
+Notes:
+* Pre-commit hooks (`black`, `ruff`) run automatically before each commit (`pre-commit install` one-time).
+* CI fails if branch coverage drops below the level on `main`.
+* Add or extend tests whenever you fix a bug or create new helpers—e.g., histogram helper raises `ValueError` when column missing.
+
+---
 *Last updated: <!-- AI/maintainer: timestamp on save -->* 

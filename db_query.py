@@ -11,8 +11,9 @@ import pandas as pd
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 DB_PATH = "patient_data.db"
@@ -98,12 +99,7 @@ def validate_patient_data(data):
     Returns:
         tuple: (is_valid, error_message)
     """
-    required_fields = [
-        "first_name",
-        "last_name",
-        "birth_date",
-        "gender"
-    ]
+    required_fields = ["first_name", "last_name", "birth_date", "gender"]
 
     # Check required fields
     for field in required_fields:
@@ -131,7 +127,7 @@ def create_patient(data, db_path=DB_PATH):
         return None
 
     # Make sure we have an ID and it's a string (TEXT)
-    if 'id' not in data:
+    if "id" not in data:
         # Get max ID from the database and increment
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
@@ -141,10 +137,10 @@ def create_patient(data, db_path=DB_PATH):
 
         # Create new ID
         new_id = str(int(max_id) + 1) if max_id else "1"
-        data['id'] = new_id
+        data["id"] = new_id
     else:
         # Ensure ID is stored as a string
-        data['id'] = str(data['id'])
+        data["id"] = str(data["id"])
 
     columns = ", ".join(data.keys())
     placeholders = ", ".join("?" for _ in data)
@@ -160,7 +156,7 @@ def create_patient(data, db_path=DB_PATH):
         conn.commit()
 
         # Return the ID we inserted
-        inserted_id = data['id']
+        inserted_id = data["id"]
 
         # Verify the insertion worked
         verification_query = "SELECT COUNT(*) FROM patients WHERE id = ?"
@@ -205,8 +201,7 @@ def update_patient(patient_id, updates, db_path=DB_PATH):
     # First check if patient exists
     check_df = get_patient_by_id(patient_id, db_path)
     if check_df.empty:
-        logger.error(
-            f"Cannot update patient {patient_id} - patient does not exist")
+        logger.error(f"Cannot update patient {patient_id} - patient does not exist")
         return False
 
     set_clause = ", ".join(f"{column} = ?" for column in updates.keys())
@@ -223,7 +218,8 @@ def update_patient(patient_id, updates, db_path=DB_PATH):
 
         if rows_affected == 0:
             logger.warning(
-                f"Update did not affect any rows for patient ID: {patient_id}")
+                f"Update did not affect any rows for patient ID: {patient_id}"
+            )
             conn.rollback()
             return False
 
@@ -257,8 +253,7 @@ def delete_patient(patient_id, db_path=DB_PATH):
     # First check if patient exists
     check_df = get_patient_by_id(patient_id, db_path)
     if check_df.empty:
-        logger.error(
-            f"Cannot delete patient {patient_id} - patient does not exist")
+        logger.error(f"Cannot delete patient {patient_id} - patient does not exist")
         return False
 
     query = "DELETE FROM patients WHERE id = ?;"
@@ -267,14 +262,14 @@ def delete_patient(patient_id, db_path=DB_PATH):
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
-        logger.debug(
-            f"Executing delete: {query} with patient_id: {patient_id}")
+        logger.debug(f"Executing delete: {query} with patient_id: {patient_id}")
         cur.execute(query, (patient_id,))
         rows_affected = cur.rowcount
 
         if rows_affected == 0:
             logger.warning(
-                f"Delete did not affect any rows for patient ID: {patient_id}")
+                f"Delete did not affect any rows for patient ID: {patient_id}"
+            )
             conn.rollback()
             return False
 
@@ -335,7 +330,7 @@ if __name__ == "__main__":
             "gender": "M",
             "ethnicity": "Not Hispanic or Latino",
             "engagement_score": 85,
-            "program_start_date": "2023-04-01 00:00:00"
+            "program_start_date": "2023-04-01 00:00:00",
         }
         inserted_id = create_patient(new_patient)
 
@@ -349,8 +344,7 @@ if __name__ == "__main__":
 
             # Update the patient record
             print("\nUpdating patient...")
-            update_status = update_patient(
-                inserted_id, {"engagement_score": 90})
+            update_status = update_patient(inserted_id, {"engagement_score": 90})
             print(f"Update Successful: {update_status}")
 
             if update_status:
@@ -369,7 +363,8 @@ if __name__ == "__main__":
                 verify_df = get_patient_by_id(inserted_id)
                 if verify_df.empty:
                     print(
-                        f"Confirmed: Patient {inserted_id} no longer exists in the database")
+                        f"Confirmed: Patient {inserted_id} no longer exists in the database"
+                    )
         else:
             print("Failed to insert new patient")
     except Exception as e:
@@ -395,68 +390,71 @@ def get_program_stats(db_path=DB_PATH):
     try:
         # Total patients
         cursor.execute("SELECT COUNT(*) FROM patients")
-        stats['total_patients'] = cursor.fetchone()[0]
+        stats["total_patients"] = cursor.fetchone()[0]
 
         # Gender distribution
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT gender, COUNT(*) as count 
             FROM patients 
             GROUP BY gender
-        """)
-        stats['gender_distribution'] = {row[0]: row[1]
-                                        for row in cursor.fetchall()}
+        """
+        )
+        stats["gender_distribution"] = {row[0]: row[1] for row in cursor.fetchall()}
 
         # Ethnicity distribution
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT ethnicity, COUNT(*) as count 
             FROM patients 
             GROUP BY ethnicity
-        """)
-        stats['ethnicity_distribution'] = {
-            row[0]: row[1] for row in cursor.fetchall()}
+        """
+        )
+        stats["ethnicity_distribution"] = {row[0]: row[1] for row in cursor.fetchall()}
 
         # Engagement score statistics
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT 
                 AVG(engagement_score) as avg_score,
                 MIN(engagement_score) as min_score,
                 MAX(engagement_score) as max_score
             FROM patients
             WHERE engagement_score IS NOT NULL
-        """)
+        """
+        )
         row = cursor.fetchone()
-        stats['engagement_scores'] = {
-            'avg': row[0],
-            'min': row[1],
-            'max': row[2]
-        }
+        stats["engagement_scores"] = {"avg": row[0], "min": row[1], "max": row[2]}
 
         # Vital sign averages
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT 
                 AVG(weight) as avg_weight,
                 AVG(bmi) as avg_bmi,
                 AVG(sbp) as avg_sbp,
                 AVG(dbp) as avg_dbp
             FROM vitals
-        """)
+        """
+        )
         row = cursor.fetchone()
-        stats['vitals_averages'] = {
-            'weight': row[0],
-            'bmi': row[1],
-            'sbp': row[2],
-            'dbp': row[3]
+        stats["vitals_averages"] = {
+            "weight": row[0],
+            "bmi": row[1],
+            "sbp": row[2],
+            "dbp": row[3],
         }
 
         # Mental health averages by assessment type
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT 
                 assessment_type, AVG(score) as avg_score
             FROM mental_health
             GROUP BY assessment_type
-        """)
-        stats['mental_health_averages'] = {
-            row[0]: row[1] for row in cursor.fetchall()}
+        """
+        )
+        stats["mental_health_averages"] = {row[0]: row[1] for row in cursor.fetchall()}
 
     except sqlite3.Error as e:
         logger.error(f"Error getting program stats: {e}")
@@ -468,7 +466,7 @@ def get_program_stats(db_path=DB_PATH):
 
 def get_patient_overview(patient_id, db_path=DB_PATH):
     """
-    Get a comprehensive overview of a patient, including demographics, 
+    Get a comprehensive overview of a patient, including demographics,
     latest metrics, and status.
 
     Args:
@@ -489,15 +487,15 @@ def get_patient_overview(patient_id, db_path=DB_PATH):
     latest_vitals = {}
     if not vitals_df.empty:
         # Get most recent vitals
-        vitals_df = vitals_df.sort_values('date', ascending=False)
+        vitals_df = vitals_df.sort_values("date", ascending=False)
         latest_row = vitals_df.iloc[0]
         latest_vitals = {
-            'date': latest_row['date'],
-            'weight': latest_row['weight'],
-            'height': latest_row['height'],
-            'bmi': latest_row['bmi'],
-            'systolic': latest_row['sbp'],
-            'diastolic': latest_row['dbp']
+            "date": latest_row["date"],
+            "weight": latest_row["weight"],
+            "height": latest_row["height"],
+            "bmi": latest_row["bmi"],
+            "systolic": latest_row["sbp"],
+            "diastolic": latest_row["dbp"],
         }
 
     # Get latest labs (A1C, etc.)
@@ -505,29 +503,29 @@ def get_patient_overview(patient_id, db_path=DB_PATH):
     latest_labs = {}
     if not labs_df.empty:
         # Get most recent of each test type
-        labs_df = labs_df.sort_values('date', ascending=False)
-        for test in ['A1C', 'HDL', 'LDL', 'Triglycerides', 'Glucose']:
-            test_rows = labs_df[labs_df['test_name'] == test]
+        labs_df = labs_df.sort_values("date", ascending=False)
+        for test in ["A1C", "HDL", "LDL", "Triglycerides", "Glucose"]:
+            test_rows = labs_df[labs_df["test_name"] == test]
             if not test_rows.empty:
                 latest_row = test_rows.iloc[0]
                 latest_labs[test] = {
-                    'date': latest_row['date'],
-                    'value': latest_row['value'],
-                    'unit': latest_row['unit']
+                    "date": latest_row["date"],
+                    "value": latest_row["value"],
+                    "unit": latest_row["unit"],
                 }
 
     # Get latest scores
     scores_df = get_patient_scores(patient_id, db_path=db_path)
     latest_scores = {}
     if not scores_df.empty:
-        scores_df = scores_df.sort_values('date', ascending=False)
-        for score_type in scores_df['score_type'].unique():
-            type_rows = scores_df[scores_df['score_type'] == score_type]
+        scores_df = scores_df.sort_values("date", ascending=False)
+        for score_type in scores_df["score_type"].unique():
+            type_rows = scores_df[scores_df["score_type"] == score_type]
             if not type_rows.empty:
                 latest_row = type_rows.iloc[0]
                 latest_scores[score_type] = {
-                    'date': latest_row['date'],
-                    'value': latest_row['score_value']
+                    "date": latest_row["date"],
+                    "value": latest_row["score_value"],
                 }
 
     # Get visit metrics
@@ -536,12 +534,12 @@ def get_patient_overview(patient_id, db_path=DB_PATH):
     if not visit_df.empty:
         visit_row = visit_df.iloc[0]
         visit_metrics = {
-            'provider_visits': visit_row['provider_visits'],
-            'health_coach_visits': visit_row['health_coach_visits'],
-            'cancelled_visits': visit_row['cancelled_visits'],
-            'no_show_visits': visit_row['no_show_visits'],
-            'rescheduled_visits': visit_row['rescheduled_visits'],
-            'last_updated': visit_row['last_updated']
+            "provider_visits": visit_row["provider_visits"],
+            "health_coach_visits": visit_row["health_coach_visits"],
+            "cancelled_visits": visit_row["cancelled_visits"],
+            "no_show_visits": visit_row["no_show_visits"],
+            "rescheduled_visits": visit_row["rescheduled_visits"],
+            "last_updated": visit_row["last_updated"],
         }
 
     # Format the patient data as a dictionary
@@ -550,26 +548,26 @@ def get_patient_overview(patient_id, db_path=DB_PATH):
 
     # Convert boolean fields to Yes/No format
     bool_fields = {
-        'active': 'Active Status',
-        'etoh': 'ETOH',
-        'tobacco': 'Tobacco',
-        'glp1_full': 'On GLP-1'
+        "active": "Active Status",
+        "etoh": "ETOH",
+        "tobacco": "Tobacco",
+        "glp1_full": "On GLP-1",
     }
 
     formatted_bools = {}
     for field, label in bool_fields.items():
         if field in demographics:
             value = demographics.get(field, 0)
-            formatted_bools[label] = 'Yes' if value == 1 else 'No'
+            formatted_bools[label] = "Yes" if value == 1 else "No"
 
     # Combine all data
     overview = {
-        'demographics': demographics,
-        'formatted_bools': formatted_bools,
-        'latest_vitals': latest_vitals,
-        'latest_labs': latest_labs,
-        'latest_scores': latest_scores,
-        'visit_metrics': visit_metrics
+        "demographics": demographics,
+        "formatted_bools": formatted_bools,
+        "latest_vitals": latest_vitals,
+        "latest_labs": latest_labs,
+        "latest_scores": latest_scores,
+        "visit_metrics": visit_metrics,
     }
 
     return overview
@@ -589,15 +587,15 @@ def find_patients_with_abnormal_values(db_path=DB_PATH):
 
     # Define normal ranges for different measurements
     normal_ranges = {
-        'glucose_level': (70, 99),   # mg/dL
-        'a1c': (4.0, 5.6),           # %
-        'total_cholesterol': (0, 200),  # mg/dL
-        'ldl': (0, 100),             # mg/dL
-        'hdl': (40, 999),            # mg/dL (higher is better)
-        'triglycerides': (0, 150),   # mg/dL
-        'sbp': (90, 120),            # mmHg
-        'dbp': (60, 80),             # mmHg
-        'bmi': (18.5, 24.9)          # kg/m²
+        "glucose_level": (70, 99),  # mg/dL
+        "a1c": (4.0, 5.6),  # %
+        "total_cholesterol": (0, 200),  # mg/dL
+        "ldl": (0, 100),  # mg/dL
+        "hdl": (40, 999),  # mg/dL (higher is better)
+        "triglycerides": (0, 150),  # mg/dL
+        "sbp": (90, 120),  # mmHg
+        "dbp": (60, 80),  # mmHg
+        "bmi": (18.5, 24.9),  # kg/m²
     }
 
     try:
@@ -606,22 +604,25 @@ def find_patients_with_abnormal_values(db_path=DB_PATH):
         lab_columns = []
 
         for measure, (low, high) in normal_ranges.items():
-            if measure in ['sbp', 'dbp', 'bmi']:  # These are in vitals table
+            if measure in ["sbp", "dbp", "bmi"]:  # These are in vitals table
                 continue
 
             lab_conditions.append(
-                f"(lab_results.test_name = '{measure}' AND (lab_results.value < {low} OR lab_results.value > {high}))")
+                f"(lab_results.test_name = '{measure}' AND (lab_results.value < {low} OR lab_results.value > {high}))"
+            )
             lab_columns.append(
-                f"MAX(CASE WHEN lab_results.test_name = '{measure}' THEN lab_results.value END) AS {measure}")
+                f"MAX(CASE WHEN lab_results.test_name = '{measure}' THEN lab_results.value END) AS {measure}"
+            )
 
         # Construct query parts for vital signs outside normal ranges
         vital_conditions = []
         vital_columns = []
 
         for measure, (low, high) in normal_ranges.items():
-            if measure in ['sbp', 'dbp', 'bmi']:
+            if measure in ["sbp", "dbp", "bmi"]:
                 vital_conditions.append(
-                    f"(vitals.{measure} < {low} OR vitals.{measure} > {high})")
+                    f"(vitals.{measure} < {low} OR vitals.{measure} > {high})"
+                )
                 vital_columns.append(f"vitals.{measure}")
 
         # Build query for abnormal lab values
@@ -675,8 +676,12 @@ def find_patients_with_abnormal_values(db_path=DB_PATH):
             return lab_df
         else:
             # Merge on patient_id, keeping all rows from both dataframes
-            result_df = pd.merge(lab_df, vital_df, on=[
-                                 'patient_id', 'first_name', 'last_name', 'gender', 'age'], how='outer')
+            result_df = pd.merge(
+                lab_df,
+                vital_df,
+                on=["patient_id", "first_name", "last_name", "gender", "age"],
+                how="outer",
+            )
             return result_df
 
     except (sqlite3.Error, pd.errors.DatabaseError) as e:
@@ -720,7 +725,9 @@ def get_patient_vitals(patient_id, start_date=None, end_date=None, db_path=DB_PA
     return df
 
 
-def get_patient_mental_health(patient_id, start_date=None, end_date=None, db_path=DB_PATH):
+def get_patient_mental_health(
+    patient_id, start_date=None, end_date=None, db_path=DB_PATH
+):
     """
     Get mental health assessments for a specific patient, optionally filtered by date range.
 
@@ -820,7 +827,7 @@ def get_most_recent_labs(patient_id, db_path=DB_PATH):
 
 def get_patient_scores(patient_id, start_date=None, end_date=None, db_path=DB_PATH):
     """
-    Get metabolic health scores (vitality_score and heart_fit_score) for a specific patient, 
+    Get metabolic health scores (vitality_score and heart_fit_score) for a specific patient,
     optionally filtered by date range.
 
     Args:

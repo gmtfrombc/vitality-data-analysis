@@ -7,32 +7,35 @@ This page provides interactive data analysis capabilities using natural language
 import panel as pn
 import param
 import pandas as pd
-import hvplot.pandas
 import holoviews as hv
 import numpy as np
 import logging
 import db_query
-import sys
 import json
 import os
 import re
-from pathlib import Path
 from app.ai_helper import ai, get_data_schema  # Fix import path
 from app.utils.sandbox import run_snippet
+from app.utils.plots import histogram  # new helper
+from app.utils.query_intent import QueryIntent
 
 # Configure logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger('data_assistant')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger("data_assistant")
 
 # Initialize rendering backend for HoloViews plots
-hv.extension('bokeh')
-pn.extension('tabulator')
-pn.extension('plotly')
+hv.extension("bokeh")
+pn.extension("tabulator")
+pn.extension("plotly")
 
 # Define the path for storing saved questions
-SAVED_QUESTIONS_FILE = os.path.join(os.path.dirname(os.path.dirname(
-    os.path.dirname(__file__))), 'data', 'saved_questions.json')
+SAVED_QUESTIONS_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "data",
+    "saved_questions.json",
+)
 
 # Ensure the data directory exists
 os.makedirs(os.path.dirname(SAVED_QUESTIONS_FILE), exist_ok=True)
@@ -50,34 +53,51 @@ def load_saved_questions():
     """Load saved questions from a JSON file"""
     if os.path.exists(SAVED_QUESTIONS_FILE):
         try:
-            with open(SAVED_QUESTIONS_FILE, 'r') as f:
+            with open(SAVED_QUESTIONS_FILE, "r") as f:
                 saved_questions = json.load(f)
                 logger.info(
-                    f"Loaded {len(saved_questions)} saved questions from {SAVED_QUESTIONS_FILE}")
+                    f"Loaded {len(saved_questions)} saved questions from {SAVED_QUESTIONS_FILE}"
+                )
                 return saved_questions
         except Exception as e:
-            logger.error(
-                f"Error loading saved questions: {str(e)}", exc_info=True)
+            logger.error(f"Error loading saved questions: {str(e)}", exc_info=True)
 
     # Return default questions if file doesn't exist or has an error
     return [
-        {"name": "Active patients count",
-            "query": "How many active patients are in the program?"},
-        {"name": "Average patient weight",
-            "query": "What is the average weight of patients?"},
-        {"name": "Female BMI average",
-            "query": "What is the average BMI of female patients?"},
-        {"name": "Male BMI average",
-            "query": "What is the average BMI of male patients?"},
-        {"name": "BMI distribution",
-            "query": "Show me the distribution of BMI across all patients"},
-        {"name": "Blood pressure comparison",
-            "query": "Compare blood pressure values for patients with high vs. normal A1C"},
-        {"name": "Improvement percentage",
-            "query": "What percentage of patients showed improvement in their vital signs?"},
-        {"name": "No recent visits",
-            "query": "Which patients have not had a visit in the last 3 months?"},
+        {
+            "name": "Active patients count",
+            "query": "How many active patients are in the program?",
+        },
+        {
+            "name": "Average patient weight",
+            "query": "What is the average weight of patients?",
+        },
+        {
+            "name": "Female BMI average",
+            "query": "What is the average BMI of female patients?",
+        },
+        {
+            "name": "Male BMI average",
+            "query": "What is the average BMI of male patients?",
+        },
+        {
+            "name": "BMI distribution",
+            "query": "Show me the distribution of BMI across all patients",
+        },
+        {
+            "name": "Blood pressure comparison",
+            "query": "Compare blood pressure values for patients with high vs. normal A1C",
+        },
+        {
+            "name": "Improvement percentage",
+            "query": "What percentage of patients showed improvement in their vital signs?",
+        },
+        {
+            "name": "No recent visits",
+            "query": "Which patients have not had a visit in the last 3 months?",
+        },
     ]
+
 
 # Function to save questions to file
 
@@ -85,10 +105,9 @@ def load_saved_questions():
 def save_questions_to_file(questions):
     """Save questions to a JSON file"""
     try:
-        with open(SAVED_QUESTIONS_FILE, 'w') as f:
+        with open(SAVED_QUESTIONS_FILE, "w") as f:
             json.dump(questions, f, indent=2)
-        logger.info(
-            f"Saved {len(questions)} questions to {SAVED_QUESTIONS_FILE}")
+        logger.info(f"Saved {len(questions)} questions to {SAVED_QUESTIONS_FILE}")
         return True
     except Exception as e:
         logger.error(f"Error saving questions: {str(e)}", exc_info=True)
@@ -110,22 +129,24 @@ class DataAnalysisAssistant(param.Parameterized):
     STAGE_RESULTS = 5
 
     current_stage = param.Integer(
-        default=STAGE_INITIAL, doc="Current stage in the analysis workflow")
+        default=STAGE_INITIAL, doc="Current stage in the analysis workflow"
+    )
 
     # Data for the workflow stages
     clarifying_questions = param.List(
-        default=[], doc="List of questions to clarify user intent")
+        default=[], doc="List of questions to clarify user intent"
+    )
     data_samples = param.Dict(default={}, doc="Sample data to show the user")
-    generated_code = param.String(
-        default="", doc="Generated Python code for analysis")
+    generated_code = param.String(default="", doc="Generated Python code for analysis")
     # Use a generic Parameter to allow scalar, Series, dict, etc.
     intermediate_results = param.Parameter(
-        default=None, doc="Results from intermediate steps (could be scalar, Series, or dict)")
+        default=None,
+        doc="Results from intermediate steps (could be scalar, Series, or dict)",
+    )
 
     # Replace example_queries with saved_questions
     saved_questions = param.List(default=[], doc="List of saved questions")
-    question_name = param.String(
-        default="", doc="Name for saving the current query")
+    question_name = param.String(default="", doc="Name for saving the current query")
 
     def __init__(self, **params):
         super().__init__(**params)
@@ -137,11 +158,12 @@ class DataAnalysisAssistant(param.Parameterized):
         # Results display panes
         self.result_pane = pn.pane.Markdown("Enter a query to analyze data")
         self.code_display = pn.pane.Markdown("")
-        self.visualization_pane = pn.pane.HoloViews(hv.Div(''))
+        self.visualization_pane = pn.pane.HoloViews(hv.Div(""))
 
         # AI progress indicator (simple text-based approach)
         self.ai_status_text = pn.pane.Markdown(
-            "", styles={"color": "#0066cc", "font-weight": "bold"})
+            "", styles={"color": "#0066cc", "font-weight": "bold"}
+        )
 
         # Setup for animated ellipsis
         self.ai_status_row_ref = None  # Will hold reference to the status row
@@ -150,14 +172,12 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Status and interaction
         self.status_message = "Ready to analyze data"
-        self.status_display = pn.pane.Markdown(
-            f"**Status:** {self.status_message}")
+        self.status_display = pn.pane.Markdown(f"**Status:** {self.status_message}")
         self.query_input = None
         self.question_name_input = None
 
         # Workflow stage displays
-        self.workflow_indicator = pn.pane.Markdown(
-            "### Analysis Workflow Status")
+        self.workflow_indicator = pn.pane.Markdown("### Analysis Workflow Status")
         self.stage_indicators = {}
 
         # Interactive components for each stage
@@ -168,10 +188,7 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Buttons for workflow navigation
         self.continue_button = pn.widgets.Button(
-            name="Continue",
-            button_type="primary",
-            disabled=True,
-            width=100
+            name="Continue", button_type="primary", disabled=True, width=100
         )
         self.continue_button.on_click(self._advance_workflow)
 
@@ -183,7 +200,8 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Create title and description
         title = pn.pane.Markdown(
-            "# Data Analysis Assistant", sizing_mode="stretch_width")
+            "# Data Analysis Assistant", sizing_mode="stretch_width"
+        )
         description = pn.pane.Markdown(
             """
             Ask questions about your patient data in natural language and get visualized insights.
@@ -206,7 +224,7 @@ class DataAnalysisAssistant(param.Parameterized):
             placeholder="e.g., What is the average BMI of active patients?",
             value=self.query_text,
             rows=3,
-            sizing_mode="stretch_width"
+            sizing_mode="stretch_width",
         )
 
         # Add a watcher to update the query_text parameter when the input changes
@@ -214,20 +232,16 @@ class DataAnalysisAssistant(param.Parameterized):
             self.query_text = event.new
             logger.info(f"Query text updated to: {self.query_text}")
 
-        self.query_input.param.watch(update_query_text, 'value')
+        self.query_input.param.watch(update_query_text, "value")
 
         # Analyze button
         analyze_button = pn.widgets.Button(
-            name="Analyze",
-            button_type="primary",
-            sizing_mode="fixed",
-            width=100
+            name="Analyze", button_type="primary", sizing_mode="fixed", width=100
         )
 
         # Update the button click handler to use the current input value
         def on_analyze_click(event):
-            logger.info(
-                f"Analyze button clicked with query: {self.query_text}")
+            logger.info(f"Analyze button clicked with query: {self.query_text}")
             # Reset workflow and start from the beginning
             self.current_stage = self.STAGE_INITIAL
             self._update_stage_indicators()
@@ -237,9 +251,7 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Create saved questions sidebar
         saved_questions_title = pn.pane.Markdown("### Saved Questions:")
-        self.saved_question_buttons_container = pn.Column(
-            sizing_mode="stretch_width"
-        )
+        self.saved_question_buttons_container = pn.Column(sizing_mode="stretch_width")
 
         # Update the saved question buttons
         self._update_saved_question_buttons()
@@ -247,9 +259,8 @@ class DataAnalysisAssistant(param.Parameterized):
         # Workflow progress display
         workflow_indicators = pn.Column(
             self.workflow_indicator,
-            *[indicator for _,
-                indicator in sorted(self.stage_indicators.items())],
-            sizing_mode="stretch_width"
+            *[indicator for _, indicator in sorted(self.stage_indicators.items())],
+            sizing_mode="stretch_width",
         )
 
         # Stage-specific content panels
@@ -258,7 +269,7 @@ class DataAnalysisAssistant(param.Parameterized):
             self.data_sample_pane,
             self.code_generation_pane,
             self.execution_pane,
-            sizing_mode="stretch_width"
+            sizing_mode="stretch_width",
         )
 
         # Navigation buttons
@@ -266,71 +277,58 @@ class DataAnalysisAssistant(param.Parameterized):
             name="Question Name",
             placeholder="Enter a name to save this question",
             value=self.question_name,
-            sizing_mode="stretch_width"
+            sizing_mode="stretch_width",
         )
 
         def update_question_name(event):
             self.question_name = event.new
 
-        self.save_question_input.param.watch(update_question_name, 'value')
+        self.save_question_input.param.watch(update_question_name, "value")
 
         save_question_button = pn.widgets.Button(
-            name="Save Question",
-            button_type="success",
-            width=120
+            name="Save Question", button_type="success", width=120
         )
         save_question_button.on_click(self._save_question)
 
         reset_button = pn.widgets.Button(
-            name="Reset All",
-            button_type="danger",
-            width=100
+            name="Reset All", button_type="danger", width=100
         )
         reset_button.on_click(self._reset_all)
 
         # Workflow navigation buttons
         workflow_nav_buttons = pn.Row(
-            self.continue_button,
-            sizing_mode="stretch_width",
-            align="start"
+            self.continue_button, sizing_mode="stretch_width", align="start"
         )
 
         # Save and reset buttons
         save_reset_panel = pn.Column(
             pn.Row(
-                pn.pane.Markdown("### Save This Question",
-                                 margin=(0, 0, 5, 0)),
-                sizing_mode="stretch_width"
+                pn.pane.Markdown("### Save This Question", margin=(0, 0, 5, 0)),
+                sizing_mode="stretch_width",
             ),
             pn.Row(
                 self.save_question_input,
                 pn.Spacer(width=10),
                 save_question_button,
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             ),
             pn.Spacer(height=15),
-            pn.Row(
-                pn.Spacer(),
-                reset_button,
-                sizing_mode="stretch_width",
-                align="end"
-            ),
+            pn.Row(pn.Spacer(), reset_button, sizing_mode="stretch_width", align="end"),
             sizing_mode="stretch_width",
             styles={"background": "#f8f9fa", "border-radius": "5px"},
             css_classes=["card", "rounded-card"],
-            margin=(15, 15, 15, 15)
+            margin=(15, 15, 15, 15),
         )
 
         # Status indicator
-        self.status_display = pn.pane.Markdown(
-            f"**Status:** {self.status_message}")
+        self.status_display = pn.pane.Markdown(f"**Status:** {self.status_message}")
 
         # Combine everything in a layout
         input_row = pn.Row(
             pn.Column(self.query_input, sizing_mode="stretch_width"),
             pn.Spacer(width=10),
             analyze_button,
-            sizing_mode="stretch_width"
+            sizing_mode="stretch_width",
         )
 
         # Workflow panel
@@ -342,7 +340,7 @@ class DataAnalysisAssistant(param.Parameterized):
             pn.layout.Divider(),
             save_reset_panel,
             sizing_mode="stretch_width",
-            css_classes=["workflow-panel"]
+            css_classes=["workflow-panel"],
         )
 
         # AI processing indicator with prominent styling
@@ -356,9 +354,9 @@ class DataAnalysisAssistant(param.Parameterized):
                 "padding": "8px",
                 "margin-top": "10px",
                 "margin-bottom": "10px",
-                "border": "1px solid #cce5ff"
+                "border": "1px solid #cce5ff",
             },
-            visible=False  # Initially hidden until needed
+            visible=False,  # Initially hidden until needed
         )
 
         # Store reference to the status row for animation control
@@ -369,7 +367,7 @@ class DataAnalysisAssistant(param.Parameterized):
             ("Results", self.result_pane),
             ("Code", self.code_display),
             ("Visualization", self.visualization_pane),
-            dynamic=True
+            dynamic=True,
         )
 
         # Create the left sidebar with saved questions
@@ -377,11 +375,11 @@ class DataAnalysisAssistant(param.Parameterized):
             pn.Column(
                 saved_questions_title,
                 self.saved_question_buttons_container,
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             ),
             sizing_mode="stretch_width",
             title="Saved Questions",
-            collapsed=False
+            collapsed=False,
         )
 
         # Create the main content area
@@ -396,14 +394,14 @@ class DataAnalysisAssistant(param.Parameterized):
             ai_status_row,  # Add AI status indicator after workflow panel
             pn.layout.Divider(),
             result_tabs,
-            sizing_mode="stretch_width"
+            sizing_mode="stretch_width",
         )
 
         # Simplified layout with responsive sizes
         layout = pn.Row(
             pn.Column(left_sidebar, width=300),
             pn.Column(main_content_area, margin=(0, 10, 0, 20)),
-            sizing_mode="stretch_width"
+            sizing_mode="stretch_width",
         )
 
         return layout
@@ -411,11 +409,11 @@ class DataAnalysisAssistant(param.Parameterized):
     def _use_example_query(self, query):
         """Set the query text from an example query"""
         logger.info(f"Using example query: {query['name']}")
-        self.query_text = query['query']
+        self.query_text = query["query"]
 
         # Update the input field to reflect the example query
         if self.query_input is not None:
-            self.query_input.value = query['query']
+            self.query_input.value = query["query"]
             logger.info("Updated query input field with example query")
 
         # Process the query
@@ -447,7 +445,7 @@ class DataAnalysisAssistant(param.Parameterized):
         # Reset result displays
         self.result_pane.object = "Enter a query to analyze data"
         self.code_display.object = ""
-        self.visualization_pane.object = hv.Div('')
+        self.visualization_pane.object = hv.Div("")
 
         try:
             # Set up workflow
@@ -474,7 +472,7 @@ class DataAnalysisAssistant(param.Parameterized):
         if "active patients" in query:
             # Mock getting active patients
             patients_df = db_query.get_all_patients()
-            active_count = len(patients_df[patients_df['active'] == 1])
+            active_count = len(patients_df[patients_df["active"] == 1])
 
             # Store the result
             self.analysis_result = {
@@ -483,7 +481,9 @@ class DataAnalysisAssistant(param.Parameterized):
                 "title": "Active Patients",
                 "description": f"There are {active_count} active patients in the program.",
                 "code": "# Python code to count active patients\npatients_df = db_query.get_all_patients()\nactive_count = len(patients_df[patients_df['active'] == 1])",
-                "visualization": self._create_count_visualization(active_count, "Active Patients")
+                "visualization": self._create_count_visualization(
+                    active_count, "Active Patients"
+                ),
             }
 
         elif "average weight" in query:
@@ -494,25 +494,23 @@ class DataAnalysisAssistant(param.Parameterized):
             if "female" in query or "women" in query:
                 logger.info("Filtering for female patients")
                 patients_df = db_query.get_all_patients()
-                female_patients = patients_df[patients_df['gender'] == 'F']['id'].tolist(
-                )
-                vitals_df = vitals_df[vitals_df['patient_id'].isin(
-                    female_patients)]
+                female_patients = patients_df[patients_df["gender"] == "F"][
+                    "id"
+                ].tolist()
+                vitals_df = vitals_df[vitals_df["patient_id"].isin(female_patients)]
                 title = "Average Weight (Female Patients)"
             elif "male" in query or "men" in query:
                 logger.info("Filtering for male patients")
                 patients_df = db_query.get_all_patients()
-                male_patients = patients_df[patients_df['gender'] == 'M']['id'].tolist(
-                )
-                vitals_df = vitals_df[vitals_df['patient_id'].isin(
-                    male_patients)]
+                male_patients = patients_df[patients_df["gender"] == "M"]["id"].tolist()
+                vitals_df = vitals_df[vitals_df["patient_id"].isin(male_patients)]
                 title = "Average Weight (Male Patients)"
             else:
                 title = "Average Weight (All Patients)"
 
             # Calculate average
-            avg_weight = round(vitals_df['weight'].mean(), 1)
-            count = len(vitals_df['patient_id'].unique())
+            avg_weight = round(vitals_df["weight"].mean(), 1)
+            count = len(vitals_df["patient_id"].unique())
 
             # Generate code string based on the filters
             if "female" in query or "women" in query:
@@ -528,7 +526,9 @@ class DataAnalysisAssistant(param.Parameterized):
                 "title": title,
                 "description": f"The average weight is {avg_weight} lbs, based on data from {count} patients.",
                 "code": code_str,
-                "visualization": self._create_histogram(vitals_df, 'weight', f"Weight Distribution (lbs) - {count} patients")
+                "visualization": self._create_histogram(
+                    vitals_df, "weight", f"Weight Distribution (lbs) - {count} patients"
+                ),
             }
 
         elif "bmi" in query:
@@ -536,7 +536,7 @@ class DataAnalysisAssistant(param.Parameterized):
             vitals_df = db_query.get_all_vitals()
 
             # Filter only records with valid BMI values
-            vitals_df = vitals_df.dropna(subset=['bmi'])
+            vitals_df = vitals_df.dropna(subset=["bmi"])
 
             # Check for threshold query patterns - count patients above/below a threshold
             is_threshold_query = False
@@ -544,15 +544,20 @@ class DataAnalysisAssistant(param.Parameterized):
             threshold_direction = None
 
             # Extract threshold from query
-            if any(word in query for word in ["above", "over", "greater than", "higher than"]):
+            if any(
+                word in query
+                for word in ["above", "over", "greater than", "higher than"]
+            ):
                 threshold_direction = "above"
                 is_threshold_query = True
-            elif any(word in query for word in ["below", "under", "less than", "lower than"]):
+            elif any(
+                word in query for word in ["below", "under", "less than", "lower than"]
+            ):
                 threshold_direction = "below"
                 is_threshold_query = True
 
             # Extract numeric value from query (e.g., 30 from "BMI over 30")
-            numbers = re.findall(r'\d+(?:\.\d+)?', query)
+            numbers = re.findall(r"\d+(?:\.\d+)?", query)
             if numbers and is_threshold_query:
                 threshold_value = float(numbers[0])
 
@@ -560,21 +565,19 @@ class DataAnalysisAssistant(param.Parameterized):
             if "female" in query or "women" in query:
                 logger.info("Filtering BMI for female patients")
                 patients_df = db_query.get_all_patients()
-                female_patients = patients_df[patients_df['gender'] == 'F']['id'].tolist(
-                )
+                female_patients = patients_df[patients_df["gender"] == "F"][
+                    "id"
+                ].tolist()
                 logger.info(f"Found {len(female_patients)} female patients")
-                vitals_df = vitals_df[vitals_df['patient_id'].isin(
-                    female_patients)]
+                vitals_df = vitals_df[vitals_df["patient_id"].isin(female_patients)]
                 title = "BMI Distribution (Female Patients)"
                 filtered_desc = "female patients"
             elif "male" in query or "men" in query:
                 logger.info("Filtering BMI for male patients")
                 patients_df = db_query.get_all_patients()
-                male_patients = patients_df[patients_df['gender'] == 'M']['id'].tolist(
-                )
+                male_patients = patients_df[patients_df["gender"] == "M"]["id"].tolist()
                 logger.info(f"Found {len(male_patients)} male patients")
-                vitals_df = vitals_df[vitals_df['patient_id'].isin(
-                    male_patients)]
+                vitals_df = vitals_df[vitals_df["patient_id"].isin(male_patients)]
                 title = "BMI Distribution (Male Patients)"
                 filtered_desc = "male patients"
             else:
@@ -585,33 +588,33 @@ class DataAnalysisAssistant(param.Parameterized):
             if is_threshold_query and threshold_value is not None:
                 # Count-based threshold query
                 if threshold_direction == "above":
-                    threshold_data = vitals_df[vitals_df['bmi']
-                                               > threshold_value]
-                    comparison_text = f"above {threshold_value}"
+                    threshold_data = vitals_df[vitals_df["bmi"] > threshold_value]
+                    # variable unused; placeholder to satisfy linter
+                    _ = f"above {threshold_value}"
                 else:
-                    threshold_data = vitals_df[vitals_df['bmi']
-                                               < threshold_value]
-                    comparison_text = f"below {threshold_value}"
+                    threshold_data = vitals_df[vitals_df["bmi"] < threshold_value]
+                    _ = f"below {threshold_value}"
 
                 # Count unique patients
-                count = threshold_data['patient_id'].nunique()
+                count = threshold_data["patient_id"].nunique()
 
                 # Store the result
                 self.analysis_result = {
                     "type": "count",
                     "value": count,
-                    "title": f"Patients with BMI {comparison_text}",
-                    "description": f"There are {count} {filtered_desc} with a BMI {comparison_text}.",
-                    "code": f"# Python code to count patients with BMI {comparison_text}\nvitals_df = db_query.get_all_vitals()\nvitals_df = vitals_df.dropna(subset=['bmi'])\n\n# Filter for patients with BMI {comparison_text}\nthreshold_data = vitals_df[vitals_df['bmi'] {'>' if threshold_direction == 'above' else '<'} {threshold_value}]\n\n# Count unique patients\ncount = threshold_data['patient_id'].nunique()",
-                    "visualization": self._create_histogram(vitals_df, 'bmi', f"BMI Distribution - {filtered_desc}")
+                    "title": f"Patients with BMI {threshold_direction} {threshold_value}",
+                    "description": f"There are {count} {filtered_desc} with a BMI {threshold_direction} {threshold_value}.",
+                    "code": f"# Python code to count patients with BMI {threshold_direction} {threshold_value}\nvitals_df = db_query.get_all_vitals()\nvitals_df = vitals_df.dropna(subset=['bmi'])\n\n# Filter for patients with BMI {threshold_direction} {threshold_value}\nthreshold_data = vitals_df[vitals_df['bmi'] {'>' if threshold_direction == 'above' else '<'} {threshold_value}]\n\n# Count unique patients\ncount = threshold_data['patient_id'].nunique()",
+                    "visualization": self._create_histogram(
+                        vitals_df, "bmi", f"BMI Distribution - {filtered_desc}"
+                    ),
                 }
             else:
                 # Standard BMI analysis (average and distribution)
                 # Calculate statistics
-                logger.info(
-                    f"Calculating BMI stats based on {len(vitals_df)} records")
-                avg_bmi = round(vitals_df['bmi'].mean(), 1)
-                count = len(vitals_df['patient_id'].unique())
+                logger.info(f"Calculating BMI stats based on {len(vitals_df)} records")
+                avg_bmi = round(vitals_df["bmi"].mean(), 1)
+                count = len(vitals_df["patient_id"].unique())
 
                 # Generate code string based on the filters
                 if "female" in query or "women" in query:
@@ -626,18 +629,20 @@ class DataAnalysisAssistant(param.Parameterized):
                     "title": title,
                     "description": f"The average BMI for {filtered_desc} is {avg_bmi}, based on data from {count} patients.",
                     "code": code_str,
-                    "visualization": self._create_histogram(vitals_df, 'bmi', f"BMI Distribution - {count} patients")
+                    "visualization": self._create_histogram(
+                        vitals_df, "bmi", f"BMI Distribution - {count} patients"
+                    ),
                 }
 
         elif "active patients" in query:
             # Get active patients data
-            active_patients = patients_df[patients_df['active'] == 1]
-            samples['active_patients'] = active_patients.head(5)
-            samples['active_count'] = len(active_patients)
+            active_patients = patients_df[patients_df["active"] == 1]
+            samples["active_patients"] = active_patients.head(5)
+            samples["active_count"] = len(active_patients)
 
         else:
             # Default to sample of general patient data
-            samples['patients'] = patients_df.head(5)
+            samples["patients"] = patients_df.head(5)
 
         self.data_samples = samples
         logger.info(f"Retrieved {len(samples)} data sample types")
@@ -654,64 +659,78 @@ class DataAnalysisAssistant(param.Parameterized):
         sample_panels = []
 
         # Header
-        sample_panels.append(pn.pane.Markdown(
-            "### Data Samples\n\nHere are some relevant data samples to help with your analysis:"))
+        sample_panels.append(
+            pn.pane.Markdown(
+                "### Data Samples\n\nHere are some relevant data samples to help with your analysis:"
+            )
+        )
 
         # Display samples based on what was retrieved
-        if 'error' in self.data_samples:
-            sample_panels.append(pn.pane.Markdown(
-                f"**Error retrieving samples:** {self.data_samples['error']}"))
+        if "error" in self.data_samples:
+            sample_panels.append(
+                pn.pane.Markdown(
+                    f"**Error retrieving samples:** {self.data_samples['error']}"
+                )
+            )
 
-        if 'vitals' in self.data_samples:
+        if "vitals" in self.data_samples:
             sample_panels.append(pn.pane.Markdown("#### Vitals Data Sample:"))
-            sample_panels.append(pn.widgets.Tabulator(
-                self.data_samples['vitals'],
-                pagination='remote',
-                page_size=5,
-                sizing_mode='stretch_width'
-            ))
+            sample_panels.append(
+                pn.widgets.Tabulator(
+                    self.data_samples["vitals"],
+                    pagination="remote",
+                    page_size=5,
+                    sizing_mode="stretch_width",
+                )
+            )
 
-        if 'bmi_stats' in self.data_samples:
+        if "bmi_stats" in self.data_samples:
             # Convert the Series to a more display-friendly format
-            bmi_stats = self.data_samples['bmi_stats']
-            stats_df = pd.DataFrame({
-                'Statistic': bmi_stats.index,
-                'Value': bmi_stats.values.round(2)
-            })
+            bmi_stats = self.data_samples["bmi_stats"]
+            stats_df = pd.DataFrame(
+                {"Statistic": bmi_stats.index, "Value": bmi_stats.values.round(2)}
+            )
 
             sample_panels.append(pn.pane.Markdown("#### BMI Statistics:"))
-            sample_panels.append(pn.widgets.Tabulator(
-                stats_df,
-                sizing_mode='stretch_width'
-            ))
+            sample_panels.append(
+                pn.widgets.Tabulator(stats_df, sizing_mode="stretch_width")
+            )
 
-        if 'active_patients' in self.data_samples:
-            sample_panels.append(pn.pane.Markdown(
-                "#### Active Patients Sample:"))
-            sample_panels.append(pn.widgets.Tabulator(
-                self.data_samples['active_patients'],
-                pagination='remote',
-                page_size=5,
-                sizing_mode='stretch_width'
-            ))
+        if "active_patients" in self.data_samples:
+            sample_panels.append(pn.pane.Markdown("#### Active Patients Sample:"))
+            sample_panels.append(
+                pn.widgets.Tabulator(
+                    self.data_samples["active_patients"],
+                    pagination="remote",
+                    page_size=5,
+                    sizing_mode="stretch_width",
+                )
+            )
 
-            if 'active_count' in self.data_samples:
-                sample_panels.append(pn.pane.Markdown(
-                    f"**Total Active Patients:** {self.data_samples['active_count']}"))
+            if "active_count" in self.data_samples:
+                sample_panels.append(
+                    pn.pane.Markdown(
+                        f"**Total Active Patients:** {self.data_samples['active_count']}"
+                    )
+                )
 
-        if 'patients' in self.data_samples:
-            sample_panels.append(pn.pane.Markdown(
-                "#### General Patient Data:"))
-            sample_panels.append(pn.widgets.Tabulator(
-                self.data_samples['patients'],
-                pagination='remote',
-                page_size=5,
-                sizing_mode='stretch_width'
-            ))
+        if "patients" in self.data_samples:
+            sample_panels.append(pn.pane.Markdown("#### General Patient Data:"))
+            sample_panels.append(
+                pn.widgets.Tabulator(
+                    self.data_samples["patients"],
+                    pagination="remote",
+                    page_size=5,
+                    sizing_mode="stretch_width",
+                )
+            )
 
         # Add a note about the data
-        sample_panels.append(pn.pane.Markdown(
-            "*These samples represent a small subset of the data that will be used for analysis.*"))
+        sample_panels.append(
+            pn.pane.Markdown(
+                "*These samples represent a small subset of the data that will be used for analysis.*"
+            )
+        )
 
         # Update the display
         self.data_sample_pane.objects = sample_panels
@@ -722,8 +741,7 @@ class DataAnalysisAssistant(param.Parameterized):
 
         try:
             # Show AI is thinking for intent analysis
-            self._start_ai_indicator(
-                "ChatGPT is analyzing your query intent...")
+            self._start_ai_indicator("ChatGPT is analyzing your query intent...")
 
             # First, get the query intent using AI
             intent = ai.get_query_intent(self.query_text)
@@ -753,7 +771,8 @@ class DataAnalysisAssistant(param.Parameterized):
             self._stop_ai_indicator()
 
             logger.error(
-                f"Error generating AI-powered analysis code: {str(e)}", exc_info=True)
+                f"Error generating AI-powered analysis code: {str(e)}", exc_info=True
+            )
 
             # Fall back to rule-based code generation
             self.generated_code = self._generate_fallback_code()
@@ -773,15 +792,15 @@ class DataAnalysisAssistant(param.Parameterized):
         code_panels = []
 
         # Header
-        code_panels.append(pn.pane.Markdown(
-            "### Generated Analysis Code\n\nBased on your query and clarifications, I've generated the following Python code to analyze the data:"))
+        code_panels.append(
+            pn.pane.Markdown(
+                "### Generated Analysis Code\n\nBased on your query and clarifications, I've generated the following Python code to analyze the data:"
+            )
+        )
 
         # Display code in a syntax-highlighted panel using markdown code block
         code_md = f"```python\n{self.generated_code}\n```"
-        code_panels.append(pn.pane.Markdown(
-            code_md,
-            sizing_mode='stretch_width'
-        ))
+        code_panels.append(pn.pane.Markdown(code_md, sizing_mode="stretch_width"))
 
         # Add explanations
         explanation = """
@@ -823,14 +842,17 @@ The code is designed to be transparent and show each step of the analysis proces
             elif sandbox_results is not None:
                 # Scalar, Series or other non-dict types are considered successful results
                 self.intermediate_results = sandbox_results
-                logger.info("Sandbox execution succeeded (non-dict result of type %s)",
-                            type(sandbox_results).__name__)
+                logger.info(
+                    "Sandbox execution succeeded (non-dict result of type %s)",
+                    type(sandbox_results).__name__,
+                )
                 print("SANDBOX RAN")
                 logger.debug("Sandbox results: %s", sandbox_results)
                 return
             # If we reach here, sandbox failed or returned an error dict
             logger.warning(
-                "Sandbox execution failed or returned empty/error; falling back to rule-engine")
+                "Sandbox execution failed or returned empty/error; falling back to rule-engine"
+            )
 
         # ---- Fallback legacy rule engine ----
         query = self.query_text.lower()
@@ -846,17 +868,21 @@ The code is designed to be transparent and show each step of the analysis proces
                 # BMI analysis
                 if "female" in query or "women" in query:
                     # Female BMI analysis
-                    female_patients = patients_df[patients_df['gender'] == 'F']['id'].tolist(
-                    )
-                    filtered_vitals = vitals_df[vitals_df['patient_id'].isin(
-                        female_patients)]
-                    valid_bmi = filtered_vitals.dropna(subset=['bmi'])
+                    female_patients = patients_df[patients_df["gender"] == "F"][
+                        "id"
+                    ].tolist()
+                    filtered_vitals = vitals_df[
+                        vitals_df["patient_id"].isin(female_patients)
+                    ]
+                    valid_bmi = filtered_vitals.dropna(subset=["bmi"])
 
                     # Active only filter
-                    active_female_patients = patients_df[(patients_df['gender'] == 'F') &
-                                                         (patients_df['active'] == 1)]['id'].tolist()
-                    active_filtered = valid_bmi[valid_bmi['patient_id'].isin(
-                        active_female_patients)]
+                    active_female_patients = patients_df[
+                        (patients_df["gender"] == "F") & (patients_df["active"] == 1)
+                    ]["id"].tolist()
+                    active_filtered = valid_bmi[
+                        valid_bmi["patient_id"].isin(active_female_patients)
+                    ]
 
                     # Check for threshold query patterns - count patients above/below a threshold
                     is_threshold_query = False
@@ -864,265 +890,424 @@ The code is designed to be transparent and show each step of the analysis proces
                     threshold_direction = None
 
                     # Extract threshold from query
-                    if any(word in query for word in ["above", "over", "greater than", "higher than"]):
+                    if any(
+                        word in query
+                        for word in ["above", "over", "greater than", "higher than"]
+                    ):
                         threshold_direction = "above"
                         is_threshold_query = True
-                    elif any(word in query for word in ["below", "under", "less than", "lower than"]):
+                    elif any(
+                        word in query
+                        for word in ["below", "under", "less than", "lower than"]
+                    ):
                         threshold_direction = "below"
                         is_threshold_query = True
 
                     # Extract numeric value from query (e.g., 30 from "BMI over 30")
-                    numbers = re.findall(r'\d+(?:\.\d+)?', query)
+                    numbers = re.findall(r"\d+(?:\.\d+)?", query)
                     if numbers and is_threshold_query:
                         threshold_value = float(numbers[0])
 
                     # Process based on query specifics
                     if "female" in query or "women" in query:
                         # Female BMI analysis
-                        female_patients = patients_df[patients_df['gender'] == 'F']['id'].tolist(
-                        )
-                        filtered_vitals = vitals_df[vitals_df['patient_id'].isin(
-                            female_patients)]
-                        valid_bmi = filtered_vitals.dropna(subset=['bmi'])
+                        female_patients = patients_df[patients_df["gender"] == "F"][
+                            "id"
+                        ].tolist()
+                        filtered_vitals = vitals_df[
+                            vitals_df["patient_id"].isin(female_patients)
+                        ]
+                        valid_bmi = filtered_vitals.dropna(subset=["bmi"])
 
                         # Active only filter
-                        active_female_patients = patients_df[(patients_df['gender'] == 'F') &
-                                                             (patients_df['active'] == 1)]['id'].tolist()
-                        active_filtered = valid_bmi[valid_bmi['patient_id'].isin(
-                            active_female_patients)]
+                        active_female_patients = patients_df[
+                            (patients_df["gender"] == "F")
+                            & (patients_df["active"] == 1)
+                        ]["id"].tolist()
+                        active_filtered = valid_bmi[
+                            valid_bmi["patient_id"].isin(active_female_patients)
+                        ]
 
                         # Check if this is a threshold query
                         if is_threshold_query and threshold_value is not None:
                             if threshold_direction == "above":
-                                threshold_data = active_filtered[active_filtered['bmi']
-                                                                 > threshold_value]
-                                comparison_text = f"above {threshold_value}"
+                                threshold_data = active_filtered[
+                                    active_filtered["bmi"] > threshold_value
+                                ]
+                                # variable unused; placeholder to satisfy linter
+                                _ = f"above {threshold_value}"
                             else:
-                                threshold_data = active_filtered[active_filtered['bmi']
-                                                                 < threshold_value]
+                                threshold_data = active_filtered[
+                                    active_filtered["bmi"] < threshold_value
+                                ]
                                 comparison_text = f"below {threshold_value}"
 
                             # Count unique patients
-                            count_above_threshold = threshold_data['patient_id'].nunique(
-                            )
+                            count_above_threshold = threshold_data[
+                                "patient_id"
+                            ].nunique()
 
                             # Calculate statistics including threshold counts
                             stats = {
-                                'total_female_patients': len(female_patients),
-                                'active_female_patients': len(active_female_patients),
-                                'total_records': len(filtered_vitals),
-                                'valid_bmi_records': len(valid_bmi),
-                                'active_valid_records': len(active_filtered),
-                                'threshold_value': threshold_value,
-                                'comparison': threshold_direction,
-                                'count_matching_threshold': count_above_threshold,
-                                'percent_matching_threshold': (count_above_threshold / active_filtered['patient_id'].nunique()) * 100 if not active_filtered.empty else 0
+                                "total_female_patients": len(female_patients),
+                                "active_female_patients": len(active_female_patients),
+                                "total_records": len(filtered_vitals),
+                                "valid_bmi_records": len(valid_bmi),
+                                "active_valid_records": len(active_filtered),
+                                "threshold_value": threshold_value,
+                                "comparison": threshold_direction,
+                                "count_matching_threshold": count_above_threshold,
+                                "percent_matching_threshold": (
+                                    (
+                                        count_above_threshold
+                                        / active_filtered["patient_id"].nunique()
+                                    )
+                                    * 100
+                                    if not active_filtered.empty
+                                    else 0
+                                ),
                             }
 
-                            results['stats'] = stats
-                            results['bmi_data'] = active_filtered
+                            results["stats"] = stats
+                            results["bmi_data"] = active_filtered
 
                         else:
                             # Calculate regular statistics
                             stats = {
-                                'total_female_patients': len(female_patients),
-                                'active_female_patients': len(active_female_patients),
-                                'total_records': len(filtered_vitals),
-                                'valid_bmi_records': len(valid_bmi),
-                                'active_valid_records': len(active_filtered),
-                                'avg_bmi': active_filtered['bmi'].mean() if not active_filtered.empty else None,
-                                'median_bmi': active_filtered['bmi'].median() if not active_filtered.empty else None,
-                                'std_bmi': active_filtered['bmi'].std() if not active_filtered.empty else None,
-                                'min_bmi': active_filtered['bmi'].min() if not active_filtered.empty else None,
-                                'max_bmi': active_filtered['bmi'].max() if not active_filtered.empty else None,
-                                'unique_patients': active_filtered['patient_id'].nunique() if not active_filtered.empty else 0
+                                "total_female_patients": len(female_patients),
+                                "active_female_patients": len(active_female_patients),
+                                "total_records": len(filtered_vitals),
+                                "valid_bmi_records": len(valid_bmi),
+                                "active_valid_records": len(active_filtered),
+                                "avg_bmi": (
+                                    active_filtered["bmi"].mean()
+                                    if not active_filtered.empty
+                                    else None
+                                ),
+                                "median_bmi": (
+                                    active_filtered["bmi"].median()
+                                    if not active_filtered.empty
+                                    else None
+                                ),
+                                "std_bmi": (
+                                    active_filtered["bmi"].std()
+                                    if not active_filtered.empty
+                                    else None
+                                ),
+                                "min_bmi": (
+                                    active_filtered["bmi"].min()
+                                    if not active_filtered.empty
+                                    else None
+                                ),
+                                "max_bmi": (
+                                    active_filtered["bmi"].max()
+                                    if not active_filtered.empty
+                                    else None
+                                ),
+                                "unique_patients": (
+                                    active_filtered["patient_id"].nunique()
+                                    if not active_filtered.empty
+                                    else 0
+                                ),
                             }
 
-                            results['stats'] = stats
-                            results['bmi_data'] = active_filtered
+                            results["stats"] = stats
+                            results["bmi_data"] = active_filtered
 
                 elif "male" in query or "men" in query:
                     # Male BMI analysis
-                    male_patients = patients_df[patients_df['gender'] == 'M']['id'].tolist(
-                    )
-                    filtered_vitals = vitals_df[vitals_df['patient_id'].isin(
-                        male_patients)]
-                    valid_bmi = filtered_vitals.dropna(subset=['bmi'])
+                    male_patients = patients_df[patients_df["gender"] == "M"][
+                        "id"
+                    ].tolist()
+                    filtered_vitals = vitals_df[
+                        vitals_df["patient_id"].isin(male_patients)
+                    ]
+                    valid_bmi = filtered_vitals.dropna(subset=["bmi"])
 
                     # Active only filter
-                    active_male_patients = patients_df[(patients_df['gender'] == 'M') &
-                                                       (patients_df['active'] == 1)]['id'].tolist()
-                    active_filtered = valid_bmi[valid_bmi['patient_id'].isin(
-                        active_male_patients)]
+                    active_male_patients = patients_df[
+                        (patients_df["gender"] == "M") & (patients_df["active"] == 1)
+                    ]["id"].tolist()
+                    active_filtered = valid_bmi[
+                        valid_bmi["patient_id"].isin(active_male_patients)
+                    ]
 
                     # Calculate statistics
                     stats = {
-                        'total_male_patients': len(male_patients),
-                        'active_male_patients': len(active_male_patients),
-                        'total_records': len(filtered_vitals),
-                        'valid_bmi_records': len(valid_bmi),
-                        'active_valid_records': len(active_filtered),
-                        'avg_bmi': active_filtered['bmi'].mean() if not active_filtered.empty else None,
-                        'median_bmi': active_filtered['bmi'].median() if not active_filtered.empty else None,
-                        'std_bmi': active_filtered['bmi'].std() if not active_filtered.empty else None,
-                        'min_bmi': active_filtered['bmi'].min() if not active_filtered.empty else None,
-                        'max_bmi': active_filtered['bmi'].max() if not active_filtered.empty else None,
-                        'unique_patients': active_filtered['patient_id'].nunique() if not active_filtered.empty else 0
+                        "total_male_patients": len(male_patients),
+                        "active_male_patients": len(active_male_patients),
+                        "total_records": len(filtered_vitals),
+                        "valid_bmi_records": len(valid_bmi),
+                        "active_valid_records": len(active_filtered),
+                        "avg_bmi": (
+                            active_filtered["bmi"].mean()
+                            if not active_filtered.empty
+                            else None
+                        ),
+                        "median_bmi": (
+                            active_filtered["bmi"].median()
+                            if not active_filtered.empty
+                            else None
+                        ),
+                        "std_bmi": (
+                            active_filtered["bmi"].std()
+                            if not active_filtered.empty
+                            else None
+                        ),
+                        "min_bmi": (
+                            active_filtered["bmi"].min()
+                            if not active_filtered.empty
+                            else None
+                        ),
+                        "max_bmi": (
+                            active_filtered["bmi"].max()
+                            if not active_filtered.empty
+                            else None
+                        ),
+                        "unique_patients": (
+                            active_filtered["patient_id"].nunique()
+                            if not active_filtered.empty
+                            else 0
+                        ),
                     }
 
-                    results['stats'] = stats
-                    results['bmi_data'] = active_filtered
+                    results["stats"] = stats
+                    results["bmi_data"] = active_filtered
 
                 else:
                     # General BMI analysis
-                    valid_bmi = vitals_df.dropna(subset=['bmi'])
+                    valid_bmi = vitals_df.dropna(subset=["bmi"])
 
                     # Active only filter
-                    active_patients = patients_df[patients_df['active'] == 1]['id'].tolist(
-                    )
-                    active_filtered = valid_bmi[valid_bmi['patient_id'].isin(
-                        active_patients)]
+                    active_patients = patients_df[patients_df["active"] == 1][
+                        "id"
+                    ].tolist()
+                    active_filtered = valid_bmi[
+                        valid_bmi["patient_id"].isin(active_patients)
+                    ]
 
                     # Calculate statistics
                     stats = {
-                        'total_patients': len(patients_df),
-                        'active_patients': len(active_patients),
-                        'total_records': len(vitals_df),
-                        'valid_bmi_records': len(valid_bmi),
-                        'active_valid_records': len(active_filtered),
-                        'avg_bmi': active_filtered['bmi'].mean() if not active_filtered.empty else None,
-                        'median_bmi': active_filtered['bmi'].median() if not active_filtered.empty else None,
-                        'std_bmi': active_filtered['bmi'].std() if not active_filtered.empty else None,
-                        'min_bmi': active_filtered['bmi'].min() if not active_filtered.empty else None,
-                        'max_bmi': active_filtered['bmi'].max() if not active_filtered.empty else None,
-                        'unique_patients': active_filtered['patient_id'].nunique() if not active_filtered.empty else 0
+                        "total_patients": len(patients_df),
+                        "active_patients": len(active_patients),
+                        "total_records": len(vitals_df),
+                        "valid_bmi_records": len(valid_bmi),
+                        "active_valid_records": len(active_filtered),
+                        "avg_bmi": (
+                            active_filtered["bmi"].mean()
+                            if not active_filtered.empty
+                            else None
+                        ),
+                        "median_bmi": (
+                            active_filtered["bmi"].median()
+                            if not active_filtered.empty
+                            else None
+                        ),
+                        "std_bmi": (
+                            active_filtered["bmi"].std()
+                            if not active_filtered.empty
+                            else None
+                        ),
+                        "min_bmi": (
+                            active_filtered["bmi"].min()
+                            if not active_filtered.empty
+                            else None
+                        ),
+                        "max_bmi": (
+                            active_filtered["bmi"].max()
+                            if not active_filtered.empty
+                            else None
+                        ),
+                        "unique_patients": (
+                            active_filtered["patient_id"].nunique()
+                            if not active_filtered.empty
+                            else 0
+                        ),
                     }
 
                     # Calculate by gender
                     gender_stats = {}
-                    for gender in ['F', 'M']:
-                        gender_patients = patients_df[(patients_df['gender'] == gender) &
-                                                      (patients_df['active'] == 1)]['id'].tolist()
-                        gender_filtered = valid_bmi[valid_bmi['patient_id'].isin(
-                            gender_patients)]
+                    for gender in ["F", "M"]:
+                        gender_patients = patients_df[
+                            (patients_df["gender"] == gender)
+                            & (patients_df["active"] == 1)
+                        ]["id"].tolist()
+                        gender_filtered = valid_bmi[
+                            valid_bmi["patient_id"].isin(gender_patients)
+                        ]
 
                         gender_stats[gender] = {
-                            'count': len(gender_patients),
-                            'avg_bmi': gender_filtered['bmi'].mean() if not gender_filtered.empty else None,
-                            'records': len(gender_filtered),
-                            'unique_patients': gender_filtered['patient_id'].nunique() if not gender_filtered.empty else 0
+                            "count": len(gender_patients),
+                            "avg_bmi": (
+                                gender_filtered["bmi"].mean()
+                                if not gender_filtered.empty
+                                else None
+                            ),
+                            "records": len(gender_filtered),
+                            "unique_patients": (
+                                gender_filtered["patient_id"].nunique()
+                                if not gender_filtered.empty
+                                else 0
+                            ),
                         }
 
-                    results['stats'] = stats
-                    results['gender_stats'] = gender_stats
-                    results['bmi_data'] = active_filtered
+                    results["stats"] = stats
+                    results["gender_stats"] = gender_stats
+                    results["bmi_data"] = active_filtered
 
             elif "active patients" in query:
                 # Active patients analysis
-                active_patients = patients_df[patients_df['active'] == 1]
-                inactive_patients = patients_df[patients_df['active'] == 0]
+                active_patients = patients_df[patients_df["active"] == 1]
+                inactive_patients = patients_df[patients_df["active"] == 0]
 
                 stats = {
-                    'total_patients': len(patients_df),
-                    'active_patients': len(active_patients),
-                    'inactive_patients': len(inactive_patients),
-                    'percent_active': len(active_patients) / len(patients_df) * 100 if len(patients_df) > 0 else 0
+                    "total_patients": len(patients_df),
+                    "active_patients": len(active_patients),
+                    "inactive_patients": len(inactive_patients),
+                    "percent_active": (
+                        len(active_patients) / len(patients_df) * 100
+                        if len(patients_df) > 0
+                        else 0
+                    ),
                 }
 
                 # Gender breakdown if available
-                if 'gender' in active_patients.columns:
-                    gender_counts = active_patients['gender'].value_counts()
-                    gender_stats = {gender: count for gender,
-                                    count in gender_counts.items()}
-                    gender_percent = {gender: count / len(active_patients) * 100
-                                      for gender, count in gender_counts.items()}
+                if "gender" in active_patients.columns:
+                    gender_counts = active_patients["gender"].value_counts()
+                    gender_stats = {
+                        gender: count for gender, count in gender_counts.items()
+                    }
+                    gender_percent = {
+                        gender: count / len(active_patients) * 100
+                        for gender, count in gender_counts.items()
+                    }
 
-                    stats['gender_counts'] = gender_stats
-                    stats['gender_percent'] = gender_percent
+                    stats["gender_counts"] = gender_stats
+                    stats["gender_percent"] = gender_percent
 
                 # Program duration if available
-                if 'program_start_date' in active_patients.columns:
+                if "program_start_date" in active_patients.columns:
                     # Convert to datetime if needed
-                    if not pd.api.types.is_datetime64_dtype(active_patients['program_start_date']):
-                        active_patients['program_start_date'] = pd.to_datetime(
-                            active_patients['program_start_date'])
+                    if not pd.api.types.is_datetime64_dtype(
+                        active_patients["program_start_date"]
+                    ):
+                        active_patients["program_start_date"] = pd.to_datetime(
+                            active_patients["program_start_date"]
+                        )
 
                     # Calculate months in program
                     now = pd.Timestamp.now()
-                    active_patients['months_in_program'] = (
-                        (now - active_patients['program_start_date']) / pd.Timedelta(days=30)).astype(int)
+                    active_patients["months_in_program"] = (
+                        (now - active_patients["program_start_date"])
+                        / pd.Timedelta(days=30)
+                    ).astype(int)
 
                     duration_stats = {
-                        'avg_months': active_patients['months_in_program'].mean(),
-                        'median_months': active_patients['months_in_program'].median(),
-                        'min_months': active_patients['months_in_program'].min(),
-                        'max_months': active_patients['months_in_program'].max()
+                        "avg_months": active_patients["months_in_program"].mean(),
+                        "median_months": active_patients["months_in_program"].median(),
+                        "min_months": active_patients["months_in_program"].min(),
+                        "max_months": active_patients["months_in_program"].max(),
                     }
 
-                    stats['duration'] = duration_stats
+                    stats["duration"] = duration_stats
 
-                results['stats'] = stats
-                results['active_data'] = active_patients
+                results["stats"] = stats
+                results["active_data"] = active_patients
 
             elif "weight" in query:
                 # Weight analysis
-                valid_weight = vitals_df.dropna(subset=['weight'])
+                valid_weight = vitals_df.dropna(subset=["weight"])
 
                 # Overall stats
                 stats = {
-                    'total_records': len(vitals_df),
-                    'valid_records': len(valid_weight),
-                    'avg_weight': valid_weight['weight'].mean() if not valid_weight.empty else None,
-                    'median_weight': valid_weight['weight'].median() if not valid_weight.empty else None,
-                    'std_weight': valid_weight['weight'].std() if not valid_weight.empty else None,
-                    'min_weight': valid_weight['weight'].min() if not valid_weight.empty else None,
-                    'max_weight': valid_weight['weight'].max() if not valid_weight.empty else None,
-                    'unique_patients': valid_weight['patient_id'].nunique() if not valid_weight.empty else 0
+                    "total_records": len(vitals_df),
+                    "valid_records": len(valid_weight),
+                    "avg_weight": (
+                        valid_weight["weight"].mean()
+                        if not valid_weight.empty
+                        else None
+                    ),
+                    "median_weight": (
+                        valid_weight["weight"].median()
+                        if not valid_weight.empty
+                        else None
+                    ),
+                    "std_weight": (
+                        valid_weight["weight"].std() if not valid_weight.empty else None
+                    ),
+                    "min_weight": (
+                        valid_weight["weight"].min() if not valid_weight.empty else None
+                    ),
+                    "max_weight": (
+                        valid_weight["weight"].max() if not valid_weight.empty else None
+                    ),
+                    "unique_patients": (
+                        valid_weight["patient_id"].nunique()
+                        if not valid_weight.empty
+                        else 0
+                    ),
                 }
 
                 # By gender if needed
                 gender_stats = {}
-                for gender in ['F', 'M']:
-                    gender_patients = patients_df[patients_df['gender'] == gender]['id'].tolist(
-                    )
-                    gender_filtered = valid_weight[valid_weight['patient_id'].isin(
-                        gender_patients)]
+                for gender in ["F", "M"]:
+                    gender_patients = patients_df[patients_df["gender"] == gender][
+                        "id"
+                    ].tolist()
+                    gender_filtered = valid_weight[
+                        valid_weight["patient_id"].isin(gender_patients)
+                    ]
 
                     gender_stats[gender] = {
-                        'avg_weight': gender_filtered['weight'].mean() if not gender_filtered.empty else None,
-                        'records': len(gender_filtered),
-                        'unique_patients': gender_filtered['patient_id'].nunique() if not gender_filtered.empty else 0
+                        "avg_weight": (
+                            gender_filtered["weight"].mean()
+                            if not gender_filtered.empty
+                            else None
+                        ),
+                        "records": len(gender_filtered),
+                        "unique_patients": (
+                            gender_filtered["patient_id"].nunique()
+                            if not gender_filtered.empty
+                            else 0
+                        ),
                     }
 
-                results['stats'] = stats
-                results['gender_stats'] = gender_stats
-                results['weight_data'] = valid_weight
+                results["stats"] = stats
+                results["gender_stats"] = gender_stats
+                results["weight_data"] = valid_weight
 
             else:
                 # General analysis
                 stats = {
-                    'total_patients': len(patients_df),
-                    'active_patients': sum(patients_df['active'] == 1),
-                    'inactive_patients': sum(patients_df['active'] == 0),
-                    'percent_active': sum(patients_df['active'] == 1) / len(patients_df) * 100 if len(patients_df) > 0 else 0
+                    "total_patients": len(patients_df),
+                    "active_patients": sum(patients_df["active"] == 1),
+                    "inactive_patients": sum(patients_df["active"] == 0),
+                    "percent_active": (
+                        sum(patients_df["active"] == 1) / len(patients_df) * 100
+                        if len(patients_df) > 0
+                        else 0
+                    ),
                 }
 
                 # Gender breakdown if available
-                if 'gender' in patients_df.columns:
-                    gender_counts = patients_df['gender'].value_counts()
-                    gender_stats = {gender: count for gender,
-                                    count in gender_counts.items()}
+                if "gender" in patients_df.columns:
+                    gender_counts = patients_df["gender"].value_counts()
+                    gender_stats = {
+                        gender: count for gender, count in gender_counts.items()
+                    }
 
-                    stats['gender_counts'] = gender_stats
+                    stats["gender_counts"] = gender_stats
 
-                results['stats'] = stats
-                results['patient_data'] = patients_df
+                results["stats"] = stats
+                results["patient_data"] = patients_df
 
             # Store execution time for realism
             import datetime
-            results['execution_time'] = datetime.datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S")
-            results['execution_duration'] = "0.42 seconds"  # Mock value
+
+            results["execution_time"] = datetime.datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            results["execution_duration"] = "0.42 seconds"  # Mock value
 
             # Store the results
             self.intermediate_results = results
@@ -1130,11 +1315,18 @@ The code is designed to be transparent and show each step of the analysis proces
 
         except Exception as e:
             logger.error(f"Error executing analysis: {str(e)}", exc_info=True)
-            self.intermediate_results = {'error': str(e)}
+            self.intermediate_results = {"error": str(e)}
 
     def _display_execution_results(self):
         """Display the results of the code execution with intermediate steps"""
-        if not self.intermediate_results:
+        # Safely detect "empty" results without triggering pandas truth-value errors
+        no_results = False
+        if self.intermediate_results is None:
+            no_results = True
+        elif isinstance(self.intermediate_results, dict | list):
+            no_results = len(self.intermediate_results) == 0
+
+        if no_results:
             self.execution_pane.objects = [
                 pn.pane.Markdown("No execution results available.")
             ]
@@ -1146,14 +1338,18 @@ The code is designed to be transparent and show each step of the analysis proces
         result_panels = []
 
         # Header
-        result_panels.append(pn.pane.Markdown(
-            "### Analysis Execution Results\n\nHere are the step-by-step results from executing the analysis:"))
+        result_panels.append(
+            pn.pane.Markdown(
+                "### Analysis Execution Results\n\nHere are the step-by-step results from executing the analysis:"
+            )
+        )
 
         # --- NEW ORDER OF TYPE HANDLING ---
         # 1. If the result is a simple scalar (int, float, numpy scalar)
         if isinstance(self.intermediate_results, (int, float, np.generic)):
-            self.execution_pane.objects = [pn.pane.Markdown(
-                f"**Result:** {float(self.intermediate_results):.2f}")]
+            self.execution_pane.objects = [
+                pn.pane.Markdown(f"**Result:** {float(self.intermediate_results):.2f}")
+            ]
             return
 
         # 2. If the result is a pandas Series
@@ -1166,16 +1362,23 @@ The code is designed to be transparent and show each step of the analysis proces
             return
 
         # 3. If the result is a dict-like structure, handle errors first
-        if isinstance(self.intermediate_results, dict) and 'error' in self.intermediate_results:
-            result_panels.append(pn.pane.Markdown(
-                f"**Error during execution:** {self.intermediate_results['error']}"))
+        if (
+            isinstance(self.intermediate_results, dict)
+            and "error" in self.intermediate_results
+        ):
+            result_panels.append(
+                pn.pane.Markdown(
+                    f"**Error during execution:** {self.intermediate_results['error']}"
+                )
+            )
             self.execution_pane.objects = result_panels
             return
 
         # Handle simple scalar or Series results produced by sandbox
         if isinstance(self.intermediate_results, (int, float, np.generic)):
-            self.execution_pane.objects = [pn.pane.Markdown(
-                f"**Result:** {self.intermediate_results:.2f}")]
+            self.execution_pane.objects = [
+                pn.pane.Markdown(f"**Result:** {self.intermediate_results:.2f}")
+            ]
             return
 
         if isinstance(self.intermediate_results, pd.Series):
@@ -1187,7 +1390,7 @@ The code is designed to be transparent and show each step of the analysis proces
             return
 
         # Display execution metadata
-        if 'execution_time' in self.intermediate_results:
+        if "execution_time" in self.intermediate_results:
             metadata = f"""
 **Execution Details:**
 - Time: {self.intermediate_results.get('execution_time', 'Unknown')}
@@ -1199,15 +1402,15 @@ The code is designed to be transparent and show each step of the analysis proces
         query = self.query_text.lower()
 
         if "bmi" in query:
-            if ('stats' in self.intermediate_results):
-                stats = self.intermediate_results['stats']
+            if "stats" in self.intermediate_results:
+                stats = self.intermediate_results["stats"]
 
                 # Check if this is a threshold query
-                if 'threshold_value' in stats and 'comparison' in stats:
-                    threshold_value = stats.get('threshold_value')
-                    comparison = stats.get('comparison')
-                    count = stats.get('count_matching_threshold', 0)
-                    percent = stats.get('percent_matching_threshold', 0)
+                if "threshold_value" in stats and "comparison" in stats:
+                    threshold_value = stats.get("threshold_value")
+                    comparison = stats.get("comparison")
+                    count = stats.get("count_matching_threshold", 0)
+                    percent = stats.get("percent_matching_threshold", 0)
 
                     # Display threshold execution steps
                     comparison_text = f"{comparison} {threshold_value}"
@@ -1227,29 +1430,29 @@ The code is designed to be transparent and show each step of the analysis proces
                     result_panels.append(pn.pane.Markdown(execution_steps))
 
                     # Display BMI distribution with threshold if data is available
-                    if 'bmi_data' in self.intermediate_results and not self.intermediate_results['bmi_data'].empty:
-                        bmi_data = self.intermediate_results['bmi_data']
+                    if (
+                        "bmi_data" in self.intermediate_results
+                        and not self.intermediate_results["bmi_data"].empty
+                    ):
+                        bmi_data = self.intermediate_results["bmi_data"]
 
                         # Create histogram with vertical line at threshold
-                        import hvplot.pandas
-                        bmi_hist = bmi_data['bmi'].hvplot.hist(
+                        bmi_hist = histogram(
+                            bmi_data,
+                            "bmi",
                             bins=15,
-                            height=300,
-                            width=500,
-                            alpha=0.7,
-                            title=f"BMI Distribution with {comparison_text.title()} Threshold"
+                            title=f"BMI Distribution with {comparison_text.title()} Threshold",
                         )
 
                         # Add vertical line for threshold
                         threshold_line = hv.VLine(threshold_value).opts(
-                            color='red', line_width=2,
-                            line_dash='dashed'
+                            color="red", line_width=2, line_dash="dashed"
                         )
 
                         combined_plot = bmi_hist * threshold_line
                         result_panels.append(pn.pane.HoloViews(combined_plot))
 
-                elif self.intermediate_results['stats'].get('avg_bmi') is not None:
+                elif self.intermediate_results["stats"].get("avg_bmi") is not None:
                     # This is the regular BMI analysis display
                     # Display basic execution steps
                     execution_steps = f"""
@@ -1270,34 +1473,38 @@ The code is designed to be transparent and show each step of the analysis proces
                     result_panels.append(pn.pane.Markdown(execution_steps))
 
                     # Add gender breakdown if available
-                    if 'gender_stats' in self.intermediate_results:
-                        gender_stats = self.intermediate_results['gender_stats']
+                    if "gender_stats" in self.intermediate_results:
+                        gender_stats = self.intermediate_results["gender_stats"]
                         gender_text = "**BMI by Gender:**\n\n"
 
                         for gender, g_stats in gender_stats.items():
                             gender_label = "Female" if gender == "F" else "Male"
                             gender_text += f"- {gender_label} ({g_stats.get('count', 'N/A')} patients): "
-                            gender_text += f"Average BMI {g_stats.get('avg_bmi', 'N/A'):.2f} "
+                            gender_text += (
+                                f"Average BMI {g_stats.get('avg_bmi', 'N/A'):.2f} "
+                            )
                             gender_text += f"({g_stats.get('records', 'N/A')} records, "
                             gender_text += f"{g_stats.get('unique_patients', 'N/A')} unique patients)\n"
 
                         result_panels.append(pn.pane.Markdown(gender_text))
 
                     # Display BMI distribution if data is available
-                    if 'bmi_data' in self.intermediate_results and not self.intermediate_results['bmi_data'].empty:
-                        bmi_data = self.intermediate_results['bmi_data']
-                        bmi_hist = bmi_data['bmi'].hvplot.hist(
+                    if (
+                        "bmi_data" in self.intermediate_results
+                        and not self.intermediate_results["bmi_data"].empty
+                    ):
+                        bmi_data = self.intermediate_results["bmi_data"]
+                        bmi_hist = histogram(
+                            bmi_data,
+                            "bmi",
                             bins=15,
-                            height=300,
-                            width=500,
-                            alpha=0.7,
-                            title="BMI Distribution"
+                            title="BMI Distribution",
                         )
                         result_panels.append(pn.pane.HoloViews(bmi_hist))
 
         elif "active patients" in query:
-            if 'stats' in self.intermediate_results:
-                stats = self.intermediate_results['stats']
+            if "stats" in self.intermediate_results:
+                stats = self.intermediate_results["stats"]
 
                 # Display basic counts
                 counts_text = f"""
@@ -1312,42 +1519,47 @@ The code is designed to be transparent and show each step of the analysis proces
                 result_panels.append(pn.pane.Markdown(counts_text))
 
                 # Gender breakdown if available
-                if 'gender_counts' in stats:
+                if "gender_counts" in stats:
                     gender_text = "**2. Gender Breakdown of Active Patients:**\n\n"
 
-                    for gender, count in stats['gender_counts'].items():
+                    for gender, count in stats["gender_counts"].items():
                         gender_label = "Female" if gender == "F" else "Male"
-                        percent = stats['gender_percent'].get(gender, 0)
+                        percent = stats["gender_percent"].get(gender, 0)
                         gender_text += f"- {gender_label}: {count} ({percent:.1f}%)\n"
 
                     result_panels.append(pn.pane.Markdown(gender_text))
 
                     # Add gender pie chart
-                    if 'active_data' in self.intermediate_results and 'gender' in self.intermediate_results['active_data'].columns:
-                        active_data = self.intermediate_results['active_data']
-                        gender_counts = active_data['gender'].value_counts()
+                    if (
+                        "active_data" in self.intermediate_results
+                        and "gender" in self.intermediate_results["active_data"].columns
+                    ):
+                        active_data = self.intermediate_results["active_data"]
+                        gender_counts = active_data["gender"].value_counts()
 
                         # Create a more display-friendly DataFrame
-                        pie_data = pd.DataFrame({
-                            'Gender': ["Female" if g == "F" else "Male" for g in gender_counts.index],
-                            'Count': gender_counts.values
-                        })
+                        pie_data = pd.DataFrame(
+                            {
+                                "Gender": [
+                                    "Female" if g == "F" else "Male"
+                                    for g in gender_counts.index
+                                ],
+                                "Count": gender_counts.values,
+                            }
+                        )
 
-                        # Create pie chart using hvplot directly with kind='pie'
-                        gender_pie = pie_data.hvplot(
-                            x='Gender',
-                            y='Count',
-                            kind='pie',
+                        gender_series = pie_data.set_index("Gender")["Count"]
+                        gender_pie = gender_series.hvplot.pie(
                             title="Active Patients by Gender",
                             height=300,
                             width=300,
-                            legend='right'
+                            legend="right",
                         )
                         result_panels.append(pn.pane.HoloViews(gender_pie))
 
                 # Program duration if available
-                if 'duration' in stats:
-                    duration = stats['duration']
+                if "duration" in stats:
+                    duration = stats["duration"]
                     duration_text = f"""
 **3. Program Duration for Active Patients:**
    - Average Months in Program: {duration.get('avg_months', 'N/A'):.1f}
@@ -1357,23 +1569,27 @@ The code is designed to be transparent and show each step of the analysis proces
                     result_panels.append(pn.pane.Markdown(duration_text))
 
                     # Add duration histogram if data is available
-                    if ('active_data' in self.intermediate_results and
-                            'months_in_program' in self.intermediate_results['active_data'].columns):
-                        active_data = self.intermediate_results['active_data']
-                        duration_hist = active_data['months_in_program'].hvplot.hist(
+                    if (
+                        "active_data" in self.intermediate_results
+                        and "months_in_program"
+                        in self.intermediate_results["active_data"].columns
+                    ):
+                        active_data = self.intermediate_results["active_data"]
+                        duration_hist = histogram(
+                            active_data,
+                            "months_in_program",
                             bins=12,
-                            height=300,
-                            width=500,
-                            alpha=0.7,
-                            title="Distribution of Months in Program (Active Patients)"
+                            title="Distribution of Months in Program (Active Patients)",
                         )
                         result_panels.append(pn.pane.HoloViews(duration_hist))
 
         elif "weight" in query:
-            if ('stats' in self.intermediate_results and
-                    self.intermediate_results['stats'].get('avg_weight') is not None):
+            if (
+                "stats" in self.intermediate_results
+                and self.intermediate_results["stats"].get("avg_weight") is not None
+            ):
 
-                stats = self.intermediate_results['stats']
+                stats = self.intermediate_results["stats"]
 
                 # Display basic execution steps
                 execution_steps = f"""
@@ -1393,8 +1609,8 @@ The code is designed to be transparent and show each step of the analysis proces
                 result_panels.append(pn.pane.Markdown(execution_steps))
 
                 # Add gender breakdown if available
-                if 'gender_stats' in self.intermediate_results:
-                    gender_stats = self.intermediate_results['gender_stats']
+                if "gender_stats" in self.intermediate_results:
+                    gender_stats = self.intermediate_results["gender_stats"]
                     gender_text = "**Weight by Gender:**\n\n"
 
                     for gender, g_stats in gender_stats.items():
@@ -1407,21 +1623,23 @@ The code is designed to be transparent and show each step of the analysis proces
                     result_panels.append(pn.pane.Markdown(gender_text))
 
                 # Display weight distribution if data is available
-                if 'weight_data' in self.intermediate_results and not self.intermediate_results['weight_data'].empty:
-                    weight_data = self.intermediate_results['weight_data']
-                    weight_hist = weight_data['weight'].hvplot.hist(
+                if (
+                    "weight_data" in self.intermediate_results
+                    and not self.intermediate_results["weight_data"].empty
+                ):
+                    weight_data = self.intermediate_results["weight_data"]
+                    weight_hist = histogram(
+                        weight_data,
+                        "weight",
                         bins=15,
-                        height=300,
-                        width=500,
-                        alpha=0.7,
-                        title="Weight Distribution (lbs)"
+                        title="Weight Distribution (lbs)",
                     )
                     result_panels.append(pn.pane.HoloViews(weight_hist))
 
         else:
             # Generic execution results
-            if 'stats' in self.intermediate_results:
-                stats = self.intermediate_results['stats']
+            if "stats" in self.intermediate_results:
+                stats = self.intermediate_results["stats"]
 
                 basic_stats = f"""
 **General Analysis Results:**
@@ -1433,21 +1651,30 @@ The code is designed to be transparent and show each step of the analysis proces
                 result_panels.append(pn.pane.Markdown(basic_stats))
 
                 # Gender breakdown if available
-                if 'gender_counts' in stats:
+                if "gender_counts" in stats:
                     gender_text = "**Gender Breakdown:**\n\n"
 
-                    for gender, count in stats['gender_counts'].items():
-                        gender_label = "Female" if gender == "F" else "Male" if gender == "M" else gender
-                        percent = count / \
-                            stats['total_patients'] * \
-                            100 if stats['total_patients'] > 0 else 0
+                    for gender, count in stats["gender_counts"].items():
+                        gender_label = (
+                            "Female"
+                            if gender == "F"
+                            else "Male" if gender == "M" else gender
+                        )
+                        percent = (
+                            count / stats["total_patients"] * 100
+                            if stats["total_patients"] > 0
+                            else 0
+                        )
                         gender_text += f"- {gender_label}: {count} ({percent:.1f}%)"
 
                     result_panels.append(pn.pane.Markdown(gender_text))
 
             # Add a note about results validation
-            result_panels.append(pn.pane.Markdown(
-                "*These results show the actual data analysis findings. The next step will provide a final summary and visualization of key insights.*"))
+            result_panels.append(
+                pn.pane.Markdown(
+                    "*These results show the actual data analysis findings. The next step will provide a final summary and visualization of key insights.*"
+                )
+            )
 
             # Update the display
             self.execution_pane.objects = result_panels
@@ -1462,124 +1689,149 @@ The code is designed to be transparent and show each step of the analysis proces
 
         # Quick path: if intermediate_results is a simple scalar or Series, summarise immediately
         if isinstance(self.intermediate_results, (int, float, np.generic)):
-            result['summary'] = f"Average change in PHQ-9: {float(self.intermediate_results):.2f} points"
+            result_val = float(self.intermediate_results)
+            result["summary"] = f"Result: {result_val:.2f}"
             self.analysis_result = result
             return
         if isinstance(self.intermediate_results, pd.Series):
             mean_val = self.intermediate_results.mean()
-            result['summary'] = f"Average change in PHQ-9 (Series mean): {mean_val:.2f} points"
+            result["summary"] = f"Series mean: {mean_val:.2f}"
             self.analysis_result = result
             return
 
         try:
             # Use AI to interpret results
-            if hasattr(self, 'intermediate_results') and self.intermediate_results:
+            if self.intermediate_results is not None:
                 # Show AI is thinking
-                self._start_ai_indicator(
-                    "ChatGPT is interpreting your results...")
+                self._start_ai_indicator("ChatGPT is interpreting your results...")
 
                 # Prepare visualization descriptions
                 visualizations = []
-                if 'bmi_data' in self.intermediate_results:
+                if "bmi_data" in self.intermediate_results:
                     visualizations.append("BMI distribution histogram")
-                if 'gender_pie' in self.intermediate_results:
+                if "gender_pie" in self.intermediate_results:
                     visualizations.append("Gender distribution pie chart")
 
                 # Get AI interpretation of results
                 interpretation = ai.interpret_results(
-                    query, self.intermediate_results, visualizations)
+                    query, self.intermediate_results, visualizations
+                )
 
                 # Hide the indicator when done
                 self._stop_ai_indicator()
 
                 # Store the results
                 if isinstance(self.intermediate_results, (int, float, np.generic)):
-                    result['summary'] = f"Average change in PHQ-9: {self.intermediate_results:.2f} points"
+                    result_val = float(self.intermediate_results)
+                    result["summary"] = f"Result: {result_val:.2f}"
                 else:
-                    result['summary'] = interpretation
+                    result["summary"] = interpretation
 
                 # Add visualizations if available
-                if 'bmi_data' in self.intermediate_results and not self.intermediate_results['bmi_data'].empty:
-                    bmi_data = self.intermediate_results['bmi_data']
+                if (
+                    "bmi_data" in self.intermediate_results
+                    and not self.intermediate_results["bmi_data"].empty
+                ):
+                    bmi_data = self.intermediate_results["bmi_data"]
 
                     # Check if this is a threshold query
-                    if 'threshold_value' in self.intermediate_results.get('stats', {}):
+                    if "threshold_value" in self.intermediate_results.get("stats", {}):
                         # Create BMI distribution with threshold line
-                        threshold_value = self.intermediate_results['stats']['threshold_value']
+                        threshold_value = self.intermediate_results["stats"][
+                            "threshold_value"
+                        ]
 
-                        bmi_plot = bmi_data['bmi'].hvplot.hist(
+                        bmi_plot = histogram(
+                            bmi_data,
+                            "bmi",
                             bins=20,
-                            height=400,
-                            width=700,
-                            alpha=0.7,
-                            title=f"BMI Distribution with Threshold at {threshold_value}"
+                            title=f"BMI Distribution with Threshold at {threshold_value}",
                         )
 
                         # Add vertical line for threshold
                         threshold_line = hv.VLine(threshold_value).opts(
-                            color='red', line_width=2,
-                            line_dash='dashed'
+                            color="red", line_width=2, line_dash="dashed"
                         )
 
                         combined_plot = bmi_plot * threshold_line
-                        result['bmi_plot'] = combined_plot
+                        result["bmi_plot"] = combined_plot
                     else:
                         # Regular BMI distribution
-                        result['bmi_plot'] = bmi_data['bmi'].hvplot.hist(
+                        result["bmi_plot"] = histogram(
+                            bmi_data,
+                            "bmi",
                             bins=20,
-                            height=400,
-                            width=700,
-                            alpha=0.7,
-                            title="BMI Distribution"
+                            title="BMI Distribution",
                         )
 
                 # Add gender pie chart if available
-                if 'active_data' in self.intermediate_results and 'gender' in self.intermediate_results['active_data'].columns:
-                    active_data = self.intermediate_results['active_data']
+                if (
+                    "active_data" in self.intermediate_results
+                    and "gender" in self.intermediate_results["active_data"].columns
+                ):
+                    active_data = self.intermediate_results["active_data"]
 
                     # Create gender distribution pie chart
-                    gender_counts = active_data['gender'].value_counts()
-                    pie_data = pd.DataFrame({
-                        'Gender': ["Female" if g == "F" else "Male" for g in gender_counts.index],
-                        'Count': gender_counts.values
-                    })
+                    gender_counts = active_data["gender"].value_counts()
+                    pie_data = pd.DataFrame(
+                        {
+                            "Gender": [
+                                "Female" if g == "F" else "Male"
+                                for g in gender_counts.index
+                            ],
+                            "Count": gender_counts.values,
+                        }
+                    )
 
                     # Create pie chart using hvplot directly
                     gender_pie = pie_data.hvplot(
-                        x='Gender',
-                        y='Count',
-                        kind='pie',
+                        x="Gender",
+                        y="Count",
+                        kind="pie",
                         title="Patient Gender Distribution",
                         height=350,
                         width=350,
-                        legend='right'
+                        legend="right",
                     )
 
-                    result['gender_pie'] = gender_pie
+                    result["gender_pie"] = gender_pie
 
                 logger.info("Generated AI interpretation of results")
 
             else:
                 # Fallback if no intermediate results are available
-                result['summary'] = f"Analysis complete for query: '{query}'. No detailed results available."
+                result["summary"] = (
+                    f"Analysis complete for query: '{query}'. No detailed results available."
+                )
                 logger.warning(
-                    "No intermediate results available for AI interpretation")
+                    "No intermediate results available for AI interpretation"
+                )
 
         except Exception as e:
             # Hide the indicator in case of error
             self._stop_ai_indicator()
 
             logger.error(
-                f"Error generating AI results interpretation: {str(e)}", exc_info=True)
+                f"Error generating AI results interpretation: {str(e)}", exc_info=True
+            )
 
             # Fall back to rule-based interpretation if AI fails
-            result['summary'] = f"Analysis results for your query: '{query}'. The data has been processed and visualized according to your requirements."
+            result["summary"] = (
+                f"Analysis results for your query: '{query}'. The data has been processed and visualized according to your requirements."
+            )
 
             # Add basic visualizations
-            if hasattr(self, 'intermediate_results') and self.intermediate_results:
-                if 'bmi_data' in self.intermediate_results and not self.intermediate_results['bmi_data'].empty:
-                    result['bmi_plot'] = self.intermediate_results['bmi_data']['bmi'].hvplot.hist(
-                        bins=20, height=400, width=700, alpha=0.7, title="BMI Distribution"
+            if self.intermediate_results is not None:
+                if (
+                    "bmi_data" in self.intermediate_results
+                    and not self.intermediate_results["bmi_data"].empty
+                ):
+                    bmi_df = self.intermediate_results["bmi_data"]
+                    result["bmi_plot"] = histogram(
+                        bmi_df,
+                        "bmi",
+                        bins=20,
+                        title="BMI Distribution",
                     )
 
         self.analysis_result = result
@@ -1587,13 +1839,15 @@ The code is designed to be transparent and show each step of the analysis proces
     def _display_final_results(self):
         """Display the final results with visualizations and insights"""
         if not self.analysis_result:
-            self.result_pane.object = "No analysis results available. Please enter a query."
+            self.result_pane.object = (
+                "No analysis results available. Please enter a query."
+            )
             return
 
         logger.info("Displaying final results")
 
         # Create a markdown panel with the results
-        if 'summary' in self.analysis_result:
+        if "summary" in self.analysis_result:
             results_md = f"### Analysis Results\n\n{self.analysis_result['summary']}"
             self.result_pane.object = results_md
 
@@ -1601,28 +1855,32 @@ The code is designed to be transparent and show each step of the analysis proces
         viz = None
 
         # Extract the appropriate visualization based on query type
-        if 'bmi_plot' in self.analysis_result:
-            viz = self.analysis_result['bmi_plot']
-        elif 'gender_pie' in self.analysis_result and 'duration_hist' in self.analysis_result:
+        if "bmi_plot" in self.analysis_result:
+            viz = self.analysis_result["bmi_plot"]
+        elif (
+            "gender_pie" in self.analysis_result
+            and "duration_hist" in self.analysis_result
+        ):
             # Combine multiple plots
             viz = pn.Column(
-                self.analysis_result['gender_pie'],
-                self.analysis_result['duration_hist'],
-                sizing_mode='stretch_width'
+                self.analysis_result["gender_pie"],
+                self.analysis_result["duration_hist"],
+                sizing_mode="stretch_width",
             )
-        elif 'gender_pie' in self.analysis_result:
-            viz = self.analysis_result['gender_pie']
-        elif 'duration_hist' in self.analysis_result:
-            viz = self.analysis_result['duration_hist']
-        elif 'weight_plot' in self.analysis_result:
-            viz = self.analysis_result['weight_plot']
+        elif "gender_pie" in self.analysis_result:
+            viz = self.analysis_result["gender_pie"]
+        elif "duration_hist" in self.analysis_result:
+            viz = self.analysis_result["duration_hist"]
+        elif "weight_plot" in self.analysis_result:
+            viz = self.analysis_result["weight_plot"]
 
         # Update the visualization pane if we have a visualization
         if viz is not None:
             self.visualization_pane.object = viz
         else:
             self.visualization_pane.object = hv.Div(
-                'No visualization available for this query')
+                "No visualization available for this query"
+            )
 
         # Reset the status and workflow for the next query
         self._update_status("Analysis complete. You can enter a new query.")
@@ -1638,11 +1896,12 @@ The code is designed to be transparent and show each step of the analysis proces
             question_button = pn.widgets.Button(
                 name=question["name"],
                 button_type="default",
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             )
             # Use a partial function to avoid closure issues with lambda
             question_button.on_click(
-                lambda event, q=question: self._use_saved_question(q))
+                lambda event, q=question: self._use_saved_question(q)
+            )
 
             # Create a small delete button
             delete_button = pn.widgets.Button(
@@ -1651,10 +1910,11 @@ The code is designed to be transparent and show each step of the analysis proces
                 width=25,
                 height=25,
                 margin=(0, 0, 0, 5),
-                styles={"color": "#dc3545", "font-size": "0.8em"}
+                styles={"color": "#dc3545", "font-size": "0.8em"},
             )
             delete_button.on_click(
-                lambda event, q=question: self._delete_saved_question(q))
+                lambda event, q=question: self._delete_saved_question(q)
+            )
 
             # Add both buttons in a row
             self.saved_question_buttons_container.append(
@@ -1662,7 +1922,7 @@ The code is designed to be transparent and show each step of the analysis proces
                     question_button,
                     delete_button,
                     sizing_mode="stretch_width",
-                    margin=(0, 0, 5, 0)
+                    margin=(0, 0, 5, 0),
                 )
             )
 
@@ -1685,7 +1945,8 @@ The code is designed to be transparent and show each step of the analysis proces
 
         # Filter out the question to delete
         self.saved_questions = [
-            q for q in self.saved_questions if q['name'] != question['name']]
+            q for q in self.saved_questions if q["name"] != question["name"]
+        ]
 
         # Update the UI
         self._update_saved_question_buttons()
@@ -1710,18 +1971,19 @@ The code is designed to be transparent and show each step of the analysis proces
         existing_names = [q["name"] for q in self.saved_questions]
         if self.question_name in existing_names:
             self._update_status(
-                f"A question with name '{self.question_name}' already exists")
+                f"A question with name '{self.question_name}' already exists"
+            )
             return
 
         # Check if this question text already exists in our saved questions
         if self.query_text in [q["query"] for q in self.saved_questions]:
-            self._update_status(
-                f"Question text already saved: '{self.query_text}'")
+            self._update_status(f"Question text already saved: '{self.query_text}'")
             return
 
         # Add the new question to our saved questions
-        new_saved_questions = self.saved_questions + \
-            [{"name": self.question_name, "query": self.query_text}]
+        new_saved_questions = self.saved_questions + [
+            {"name": self.question_name, "query": self.query_text}
+        ]
         self.saved_questions = new_saved_questions
 
         # Update the sidebar with the new saved questions
@@ -1732,8 +1994,7 @@ The code is designed to be transparent and show each step of the analysis proces
 
         # Update status
         self._update_status(f"Question saved as '{self.question_name}'")
-        logger.info(
-            f"Saved question '{self.question_name}': '{self.query_text}'")
+        logger.info(f"Saved question '{self.question_name}': '{self.query_text}'")
 
         # Reset the question name input
         if self.save_question_input is not None:
@@ -1762,7 +2023,7 @@ The code is designed to be transparent and show each step of the analysis proces
         # Reset result displays
         self.result_pane.object = "Enter a query to analyze data"
         self.code_display.object = ""
-        self.visualization_pane.object = hv.Div('')
+        self.visualization_pane.object = hv.Div("")
 
         # Reset the UI elements
         if self.query_input is not None:
@@ -1998,6 +2259,8 @@ results
         logger.debug("AI indicator started: %s", base_message)
         self.ai_status_text.object = base_message
         self.ellipsis_count = 0
+        # Store the original base message so we can rebuild the string without endlessly appending dots
+        self._ai_base_message = base_message
         if self.ellipsis_animation:
             self.ellipsis_animation.stop()
         self.ellipsis_animation = pn.state.add_periodic_callback(
@@ -2008,7 +2271,10 @@ results
         """Update the ellipsis animation"""
         self.ellipsis_count = (self.ellipsis_count + 1) % 4
         dots = "." * (self.ellipsis_count + 1)
-        self.ai_status_text.object = f"{self.ai_status_text.object}{dots}"
+        # Re-build the status string from the original message rather than appending.
+        # This prevents the string from growing indefinitely which could cause UI slow-downs.
+        base_msg = getattr(self, "_ai_base_message", "")
+        self.ai_status_text.object = f"{base_msg}{dots}"
 
     def _stop_ai_indicator(self):
         """Stop the AI thinking indicator"""
@@ -2017,6 +2283,8 @@ results
             self.ellipsis_animation.stop()
             self.ellipsis_animation = None
         self.ai_status_text.object = ""
+        # Reset base message to avoid stale references
+        self._ai_base_message = ""
         if self.ai_status_row_ref:
             self.ai_status_row_ref.visible = False
 
@@ -2053,6 +2321,22 @@ results
         """Automatically progress through all workflow stages for this prototype."""
         # Disable navigation button during automatic run
         self.continue_button.disabled = True
+
+        # First, attempt intent parsing with confidence check
+        intent = ai.get_query_intent(self.query_text)
+
+        if self._is_low_confidence_intent(intent):
+            # Low confidence – ask clarifying questions and stop pipeline
+            self.clarifying_questions = ai.generate_clarifying_questions(
+                self.query_text
+            )
+            self.current_stage = self.STAGE_CLARIFYING
+            self._display_clarifying_questions()
+            self._update_stage_indicators()
+            return
+
+        # Store confident intent for later deterministic generation
+        self.query_intent = intent
 
         try:
             # Stage: Code Generation
@@ -2103,6 +2387,86 @@ results
         if self.current_stage < self.STAGE_RESULTS:
             self.continue_button.disabled = False
         self._update_stage_indicators()
+
+    # ------------------------------------------------------------------
+    # Clarification helper
+    # ------------------------------------------------------------------
+
+    def _display_clarifying_questions(self):
+        """Show clarifying questions returned by the AI helper."""
+
+        if not self.clarifying_questions:
+            self.clarifying_pane.objects = [
+                pn.pane.Markdown(
+                    "I need a bit more detail to proceed; could you rephrase your question?"
+                )
+            ]
+            return
+
+        md_list = "\n".join(f"* {q}" for q in self.clarifying_questions)
+
+        clarification_input = pn.widgets.TextAreaInput(
+            placeholder="Type extra details here and click Submit…",
+            rows=3,
+            sizing_mode="stretch_width",
+        )
+
+        submit_btn = pn.widgets.Button(
+            name="Submit Details", button_type="primary", width=140
+        )
+
+        def _submit(event=None):
+            extra = clarification_input.value.strip()
+            if not extra:
+                return
+            # Merge extra detail into original query text
+            self.query_text = f"{self.query_text}  {extra}"
+            # Reflect in the main input box so user sees full query
+            if self.query_input is not None:
+                self.query_input.value = self.query_text
+
+            # Reset pipeline and re-run
+            clarification_input.value = ""
+            self.current_stage = self.STAGE_INITIAL
+            self._update_stage_indicators()
+            self._process_query()
+
+        submit_btn.on_click(_submit)
+
+        self.clarifying_pane.objects = [
+            pn.pane.Markdown("### I need a quick clarification:"),
+            pn.pane.Markdown(md_list),
+            pn.layout.Divider(),
+            clarification_input,
+            pn.Row(submit_btn, sizing_mode="stretch_width"),
+        ]
+
+    @staticmethod
+    def _is_low_confidence_intent(intent):
+        """Return True when *intent* is too generic and needs clarification."""
+
+        # If parsing already failed → low confidence
+        if isinstance(intent, dict):
+            return True
+
+        assert isinstance(intent, QueryIntent)
+
+        # Generic target fields offer no real metric information
+        GENERIC_TARGETS = {"score_value", "value"}
+        if intent.target_field in GENERIC_TARGETS:
+            return True
+
+        # If analysis_type is change but no conditions/filters specified
+        if intent.analysis_type == "change" and not intent.filters:
+            return True
+
+        # If user talks about patients but provides no patient_id filter
+        if any(word in intent.target_field for word in ["patient", "patients"]):
+            has_patient_filter = any(f.field == "patient_id" for f in intent.filters)
+            if not has_patient_filter:
+                return True
+
+        return False
 
 
 def data_assistant_page():

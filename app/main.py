@@ -8,14 +8,11 @@ import logging
 from app.pages.ai_assistant import AIAssistant
 from app.pages.patient_view import PatientView
 from app.pages.dashboard import Dashboard
-import hvplot.pandas
 import holoviews as hv
-import param
 import panel as pn
 import db_query
 import sys
 from pathlib import Path
-import os
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -29,44 +26,46 @@ sys.path.append(str(Path(__file__).parent.parent))
 # Load Panel extensions for better visualization
 
 # Initialize Panel with all extensions at once (more reliable than separate calls)
-pn.extension('tabulator', sizing_mode="stretch_width")
-hv.extension('bokeh')
+pn.extension("tabulator", sizing_mode="stretch_width")
+hv.extension("bokeh")
 
 # Set theme to a valid option
-pn.config.theme = 'dark'
+pn.config.theme = "dark"
 
 # Import page modules
 
 # Create the main layout
 
 # Set up logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger('metabolic_health_app')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger("metabolic_health_app")
 
 
 def create_app():
     # Create sidebar with navigation
     def sidebar():
         menu = pn.widgets.RadioButtonGroup(
-            options=['Dashboard', 'Patient View', 'AI Assistant'],
-            button_type='primary'
+            options=["Dashboard", "Patient View", "AI Assistant"], button_type="primary"
         )
 
         logo = pn.pane.Markdown("# MHP Data Analysis")
 
-        return pn.Column(
-            logo,
-            pn.layout.Divider(),
-            pn.Row(pn.pane.Markdown("### Navigation")),
+        return (
+            pn.Column(
+                logo,
+                pn.layout.Divider(),
+                pn.Row(pn.pane.Markdown("### Navigation")),
+                menu,
+                pn.layout.Divider(),
+                pn.Row(pn.pane.Markdown("### Database Info")),
+                pn.pane.Markdown(f"**Patients:** {len(db_query.get_all_patients())}"),
+                sizing_mode="fixed",
+                width=300,
+            ),
             menu,
-            pn.layout.Divider(),
-            pn.Row(pn.pane.Markdown(f"### Database Info")),
-            pn.pane.Markdown(
-                f"**Patients:** {len(db_query.get_all_patients())}"),
-            sizing_mode='fixed',
-            width=300
-        ), menu
+        )
 
     # Create the pages
     dashboard = Dashboard()
@@ -79,11 +78,11 @@ def create_app():
     # Create main content area that changes with menu selection
     @pn.depends(menu.param.value)
     def get_content(page):
-        if page == 'Dashboard':
+        if page == "Dashboard":
             return dashboard.view()
-        elif page == 'Patient View':
+        elif page == "Patient View":
             return patient_view.view()
-        elif page == 'AI Assistant':
+        elif page == "AI Assistant":
             return ai_assistant.view()
         else:
             return pn.pane.Markdown("# Page not found")
@@ -92,21 +91,22 @@ def create_app():
     # to avoid potential BrowserInfo object issues
     main_layout = pn.Column(
         pn.Row(
-            pn.pane.Markdown("# Metabolic Health Data Analysis",
-                             styles={'background-color': '#054471',
-                                     'color': 'white',
-                                     'padding': '10px'}),
-            sizing_mode='stretch_width'
+            pn.pane.Markdown(
+                "# Metabolic Health Data Analysis",
+                styles={
+                    "background-color": "#054471",
+                    "color": "white",
+                    "padding": "10px",
+                },
+            ),
+            sizing_mode="stretch_width",
         ),
         pn.Row(
             side_panel,
-            pn.Column(
-                get_content,
-                sizing_mode='stretch_width'
-            ),
-            sizing_mode='stretch_width'
+            pn.Column(get_content, sizing_mode="stretch_width"),
+            sizing_mode="stretch_width",
         ),
-        sizing_mode='stretch_width'
+        sizing_mode="stretch_width",
     )
 
     return main_layout

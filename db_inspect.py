@@ -2,7 +2,7 @@ import sqlite3
 import pandas as pd
 
 # Connect to the SQLite database
-conn = sqlite3.connect('patient_data.db')
+conn = sqlite3.connect("patient_data.db")
 cursor = conn.cursor()
 
 # Get list of all tables
@@ -20,8 +20,9 @@ for table in tables:
 
     # Create a DataFrame for better display of the columns
     columns_df = pd.DataFrame(
-        columns, columns=['cid', 'name', 'type', 'notnull', 'default_value', 'pk'])
-    print(columns_df[['name', 'type', 'pk']])
+        columns, columns=["cid", "name", "type", "notnull", "default_value", "pk"]
+    )
+    print(columns_df[["name", "type", "pk"]])
 
     # Get row count
     cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
