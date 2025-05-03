@@ -89,6 +89,15 @@ class QueryIntent(BaseModel):
     filters: List[Filter] = Field(default_factory=list)
     conditions: List[Condition] = Field(default_factory=list)
     parameters: Dict[str, Any] = Field(default_factory=dict)
+    # Restored optional v2 fields -------------------------------------------
+    additional_fields: List[str] = Field(
+        default_factory=list,
+        description="Optional extra metric/column names for multi-metric queries.",
+    )
+    group_by: List[str] = Field(
+        default_factory=list,
+        description="Optional list of columns to group the aggregate by.",
+    )
 
     @model_validator(mode="after")
     def _basic_sanity_checks(self):  # noqa: D401

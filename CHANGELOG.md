@@ -3,6 +3,10 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+✨ Added unit tests for V2 intent parsing (`additional_fields`, `group_by`) in `tests/intent/test_get_query_intent.py`.
+✨ Expanded intent parser & SQL templates: now handles multi-metric aggregates (e.g., avg weight & BMI) and boolean/range conditions (e.g., BMI > 30, age < 50).
+✨ Expanded golden harness: added 6 new cases covering multi-metric and boolean filter scenarios.
+🛠️ Fixed persistent test import errors: moved sys.path patch to `tests/conftest.py` for reliable module discovery before collection.
 🐛 Scalar result support – DataAnalysisAssistant now accepts NumPy scalars; float64 crash fixed.
 ✨ Happy-path integration smoke test for average weight scenario added; coverage climbs +2 %. Roadmap milestones updated.
 ✨ Architecture docs – Added docs/ARCHITECTURE.md with module map & data flow.

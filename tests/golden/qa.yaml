@@ -54,4 +54,133 @@
   expected:
     F: 7
     M: 5
-    Other: 2 
+    Other: 2
+
+- name: avg_weight_bmi
+  query: "What are the average weight and BMI of active patients?"
+  intent:
+    analysis_type: average
+    target_field: weight
+    additional_fields:
+      - bmi
+    filters:
+      - field: active
+        value: 1
+    conditions: []
+    parameters: {}
+  expected:
+    weight: 180.0
+    bmi: 29.5
+
+- name: max_weight_bmi
+  query: "Give me the maximum weight and BMI recorded."
+  intent:
+    analysis_type: max
+    target_field: weight
+    additional_fields:
+      - bmi
+    filters: []
+    conditions: []
+    parameters: {}
+  expected:
+    weight: 245.0
+    bmi: 42.0
+
+- name: sum_weight_bmi
+  query: "Total weight and BMI sums for female patients?"
+  intent:
+    analysis_type: sum
+    target_field: weight
+    additional_fields:
+      - bmi
+    filters:
+      - field: gender
+        value: F
+    conditions: []
+    parameters: {}
+  expected:
+    weight: 15000.0
+    bmi: 2400.0
+
+- name: count_overweight
+  query: "How many patients have BMI over 30?"
+  intent:
+    analysis_type: count
+    target_field: patient_id
+    filters: []
+    conditions:
+      - field: bmi
+        operator: '>'
+        value: 30
+    parameters: {}
+  expected: 8
+
+- name: avg_bmi_young
+  query: "What is the average BMI of patients under 50?"
+  intent:
+    analysis_type: average
+    target_field: bmi
+    filters: []
+    conditions:
+      - field: age
+        operator: '<'
+        value: 50
+    parameters: {}
+  expected: 27.8
+
+- name: count_active_high_bp
+  query: "How many active patients have systolic BP greater than 140?"
+  intent:
+    analysis_type: count
+    target_field: patient_id
+    filters:
+      - field: active
+        value: 1
+    conditions:
+      - field: sbp
+        operator: '>'
+        value: 140
+    parameters: {}
+  expected: 3
+
+- name: multi_metric_avg_weight_bmi
+  query: "What is the average weight and BMI?"
+  intent:
+    analysis_type: average
+    target_field: weight
+    filters: []
+    conditions: []
+    parameters: {}
+    additional_fields: ["bmi"]
+    group_by: []
+  expected:
+    weight: 185.0
+    bmi: 30.5
+
+- name: group_by_count_gender
+  query: "How many patients per gender?"
+  intent:
+    analysis_type: count
+    target_field: patient_id
+    filters: []
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: ["gender"]
+  expected:
+    F: 10
+    M: 8
+
+- name: group_by_avg_bmi_active
+  query: "Average BMI by active status"
+  intent:
+    analysis_type: average
+    target_field: bmi
+    filters: []
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: ["active"]
+  expected:
+    0: 32.0
+    1: 29.0 

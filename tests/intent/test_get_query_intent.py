@@ -61,6 +61,8 @@ test_cases: List[Dict[str, str]] = [
             "filters": [{"field": "gender", "value": "F"}],
             "conditions": [{"field": "bmi", "operator": ">", "value": 30}],
             "parameters": {},
+            "additional_fields": [],
+            "group_by": [],
         },
     },
     {
@@ -71,6 +73,8 @@ test_cases: List[Dict[str, str]] = [
             "filters": [{"field": "active", "value": 1}],
             "conditions": [],
             "parameters": {},
+            "additional_fields": [],
+            "group_by": [],
         },
     },
     {
@@ -81,6 +85,44 @@ test_cases: List[Dict[str, str]] = [
             "filters": [],
             "conditions": [],
             "parameters": {},
+            "additional_fields": [],
+            "group_by": [],
+        },
+    },
+    {
+        "query": "What is the average weight and BMI for active patients under 60?",
+        "expected": {
+            "analysis_type": "average",
+            "target_field": "weight",
+            "filters": [{"field": "active", "value": 1}],
+            "conditions": [{"field": "age", "operator": "<", "value": 60}],
+            "parameters": {},
+            "additional_fields": ["bmi"],
+            "group_by": [],
+        },
+    },
+    {
+        "query": "Show patient count per ethnicity",
+        "expected": {
+            "analysis_type": "count",
+            "target_field": "patient_id",
+            "filters": [],
+            "conditions": [],
+            "parameters": {},
+            "additional_fields": [],
+            "group_by": ["ethnicity"],
+        },
+    },
+    {
+        "query": "Average weight by gender for patients with BMI > 25",
+        "expected": {
+            "analysis_type": "average",
+            "target_field": "weight",
+            "filters": [],
+            "conditions": [{"field": "bmi", "operator": ">", "value": 25}],
+            "parameters": {},
+            "additional_fields": [],
+            "group_by": ["gender"],
         },
     },
 ]

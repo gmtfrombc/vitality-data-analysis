@@ -97,38 +97,62 @@ class AIHelper:
         system_prompt = """
         You are an expert medical data analyst. Analyze the user's query about patient data **and return ONLY a JSON object** matching the schema described below.
 
-        SCHEMA (all keys required):
+        SCHEMA (all keys required, optional keys can be empty lists):
         {
-          "analysis_type": one of [count, average, median, distribution, comparison, trend, change, sum, min, max],
-          "target_field"  : string,  # the metric/column of interest
-          "filters"      : [ {"field": string, EITHER "value": <scalar> OR "range": {"start": <val>, "end": <val>} } ],
-          "conditions"   : [ {"field": string, "operator": string, "value": <any>} ],
-          "parameters"   : { ... arbitrary additional params ... }
+          "analysis_type": one of [count, average, median, distribution, comparison, trend, change, sum, min, max, variance, std_dev, percent_change, top_n],
+          "target_field"  : string,            # Primary metric/column (e.g., "bmi")
+          "filters"      : [ {"field": string, EITHER "value": <scalar> OR "range": {"start": <val>, "end": <val>} } ], # Equality/range filters (e.g., gender="F")
+          "conditions"   : [ {"field": string, "operator": string, "value": <any>} ],                               # Operator conditions (e.g., bmi > 30)
+          "parameters"   : { ... },              # Extra params (e.g., {"n": 5} for top_n)
+          "additional_fields": [string],         # OPTIONAL: Extra metrics for multi-metric queries (e.g., ["weight"] if target_field="bmi")
+          "group_by": [string]                 # OPTIONAL: Columns to group results by (e.g., ["gender"])
         }
 
-        VALID COLUMN NAMES (use EXACTLY these; map synonyms to one of them or ask clarifying questions):
-        ["patient_id", "date", "score_type", "score_value", "gender",
-            "age", "ethnicity", "bmi", "weight", "sbp", "dbp"]
+        VALID COLUMN NAMES (use EXACTLY these; map synonyms):
+        ["patient_id", "date", "score_type", "score_value", "gender", "age", "ethnicity", "bmi", "weight", "sbp", "dbp", "active"]
 
         Rules:
-        • Use a simple *value* for equality filters (gender == "F").
-        • Use a *range* dict only when the user specifies a time/number window.
+        • Use "filters" for simple equality (gender="F") or date/numeric ranges.
+        • Use "conditions" for inequalities (bmi > 30, age < 50).
+        • If the user asks for multiple metrics (e.g., "average weight AND BMI"), put the first metric in "target_field" and subsequent ones in "additional_fields".
+        • If the user asks to break down results "by" or "per" a category (e.g., "by gender", "per ethnicity"), populate the "group_by" list.
+        • Keep "additional_fields" and "group_by" as empty lists `[]` if not applicable.
         • Do NOT output any keys other than the schema above.
         • Respond with raw JSON – no markdown fencing.
 
         Analyze the following natural-language question and produce the JSON intent.
-        1. What type of analysis is being requested (counting, statistics, comparison, trend, threshold, etc.)
-        2. What data fields are relevant (BMI, weight, blood pressure, age, gender, etc.)
-        3. What filters should be applied (gender, age range, activity status, etc.)
-        4. What thresholds or conditions apply (above/below a value, top N, etc.)
 
-        Example – "How many female patients have a BMI over 30?":
+        Example 1 – "How many female patients have a BMI over 30?":
         {
           "analysis_type": "count",
-          "target_field": "bmi",
+          "target_field": "patient_id",  // Counting patients
           "filters": [{"field": "gender", "value": "F"}],
           "conditions": [{"field": "bmi", "operator": ">", "value": 30}],
-          "parameters": {}
+          "parameters": {},
+          "additional_fields": [],
+          "group_by": []
+        }
+
+        Example 2 – "What is the average weight and BMI for active patients under 60?":
+        {
+          "analysis_type": "average",
+          "target_field": "weight",
+          "filters": [{"field": "active", "value": 1}],
+          "conditions": [{"field": "age", "operator": "<", "value": 60}],
+          "parameters": {},
+          "additional_fields": ["bmi"],
+          "group_by": []
+        }
+
+        Example 3 – "Show patient count per ethnicity":
+        {
+          "analysis_type": "count",
+          "target_field": "patient_id",
+          "filters": [],
+          "conditions": [],
+          "parameters": {},
+          "additional_fields": [],
+          "group_by": ["ethnicity"]
         }
         """
 
@@ -604,7 +628,11 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
     if intent.analysis_type in AGGREGATE_TYPES:
 
         group_by_field: str | None = None
-        if isinstance(intent.parameters, dict):
+        # Check V2 intent.group_by list first
+        if intent.group_by:
+            group_by_field = ALIASES.get(intent.group_by[0].lower(), intent.group_by[0])
+        # Fallback to checking V1 parameters dict (for potential backward compat or edge cases)
+        elif isinstance(intent.parameters, dict):
             raw_gb = intent.parameters.get("group_by") or intent.parameters.get("by")
             if isinstance(raw_gb, str):
                 group_by_field = ALIASES.get(raw_gb.lower(), raw_gb)
@@ -649,6 +677,13 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         # Build WHERE clause -------------------------------------------
         where_clauses: list[str] = []
 
+        # ------------------------------------------------------------------
+        # New: handle *Condition* objects (>, <, etc.) and Filter.range
+        # ------------------------------------------------------------------
+        def _quote(v):  # noqa: D401 – tiny helper
+            return f"'{v}'" if isinstance(v, str) else str(v)
+
+        # Inject implicit active filter heuristic (unchanged)
         if (
             intent.analysis_type == "count"
             and not any(f.field.lower() == "active" for f in intent.filters)
@@ -660,23 +695,82 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         ):
             where_clauses.append("active = 1")
 
+        # Equality & range filters ----------------------------------------
         for f in intent.filters:
-            if f.value is None:
-                continue
             canonical = ALIASES.get(f.field.lower(), f.field)
-            val = f.value
-            if canonical == "active" and isinstance(val, str):
-                val = (
-                    1
-                    if val.lower() == "active"
-                    else 0 if val.lower() == "inactive" else val
+            if f.value is not None:
+                val = f.value
+                if canonical == "active" and isinstance(val, str):
+                    val = (
+                        1
+                        if val.lower() == "active"
+                        else 0 if val.lower() == "inactive" else val
+                    )
+                where_clauses.append(f"{canonical} = {_quote(val)}")
+            elif f.range is not None:
+                start = f.range.get("start")
+                end = f.range.get("end")
+                if start is not None and end is not None:
+                    where_clauses.append(
+                        f"{canonical} BETWEEN {_quote(start)} AND {_quote(end)}"
+                    )
+
+        # Operator-based conditions --------------------------------------
+        for c in intent.conditions:
+            canonical = ALIASES.get(c.field.lower(), c.field)
+            op = c.operator
+            if (
+                op.lower() == "between"
+                and isinstance(c.value, (list, tuple))
+                and len(c.value) == 2
+            ):
+                where_clauses.append(
+                    f"{canonical} BETWEEN {_quote(c.value[0])} AND {_quote(c.value[1])}"
                 )
-            val_literal = f"'{val}'" if isinstance(val, str) else str(val)
-            where_clauses.append(f"{canonical} = {val_literal}")
+            elif op.lower() == "in" and isinstance(c.value, (list, tuple)):
+                vals = ", ".join(_quote(v) for v in c.value)
+                where_clauses.append(f"{canonical} IN ({vals})")
+            else:
+                where_clauses.append(f"{canonical} {op} {_quote(c.value)}")
 
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
-        # Generate SQL snippet ----------------------------------------
+        # ------------------------------------------------------------------
+        # Multi-metric aggregate (average/sum/min/max) without GROUP BY
+        # ------------------------------------------------------------------
+        metrics: list[str] = [metric_name] + [
+            ALIASES.get(m.lower(), m) for m in intent.additional_fields
+        ]
+        unique_metrics = []
+        # preserve order
+        [unique_metrics.append(m) for m in metrics if m not in unique_metrics]
+
+        if (
+            len(unique_metrics) > 1
+            and group_by_field is None
+            and intent.analysis_type in {"average", "sum", "min", "max"}
+        ):
+            func_map = {
+                "average": "AVG",
+                "sum": "SUM",
+                "min": "MIN",
+                "max": "MAX",
+            }
+            agg_func = func_map[intent.analysis_type]
+            select_exprs = [f"{agg_func}({m}) AS {m}" for m in unique_metrics]
+            sql = f"SELECT {', '.join(select_exprs)} FROM {table_name} {where_clause};"
+
+            code = (
+                "# Auto-generated multi-metric aggregate\n"
+                "from db_query import query_dataframe\nimport numpy as _np\n\n"
+                f'_df = query_dataframe("{sql}")\n'
+                "results = _df.iloc[0].to_dict() if not _df.empty else {}\n"
+            )
+            return code
+
+        # ------------------------------------------------------------------
+        # Existing single-metric aggregate paths continue below
+        # ------------------------------------------------------------------
         if group_by_field:
             sql = (
                 f"SELECT {group_by_field}, {agg_expr} AS result\n"
