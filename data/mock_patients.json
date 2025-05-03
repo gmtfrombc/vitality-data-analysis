@@ -1,0 +1,53 @@
+[
+    {
+        "id": "p100",
+        "first_name": "Alice",
+        "last_name": "Smith",
+        "birth_date": "1980-05-12",
+        "gender": "F",
+        "ethnicity": "Caucasian",
+        "active": 1,
+        "vitals": [
+            {
+                "patient_id": "p100",
+                "date": "2025-01-01",
+                "weight": 70,
+                "bmi": 27
+            }
+        ]
+    },
+    {
+        "id": "p101",
+        "first_name": "Bob",
+        "last_name": "Jones",
+        "birth_date": "1978-03-09",
+        "gender": "M",
+        "ethnicity": "Hispanic",
+        "active": 0,
+        "vitals": [
+            {
+                "patient_id": "p101",
+                "date": "2025-01-05",
+                "weight": 85,
+                "bmi": 29
+            }
+        ]
+    },
+    {
+        "id": "p102",
+        "first_name": "Carol",
+        "last_name": "Lee",
+        "birth_date": "1990-11-30",
+        "gender": "F",
+        "ethnicity": "Asian",
+        "active": 1,
+        "vitals": [
+            {
+                "patient_id": "p102",
+                "date": "2025-02-10",
+                "weight": 60,
+                "bmi": 24
+            }
+        ]
+    }
+]

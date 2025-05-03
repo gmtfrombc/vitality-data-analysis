@@ -126,7 +126,7 @@ def _bulk_upsert(
 # ---------------------------------------------------------------------------
 
 
-def ingest(json_path: Path, db_path: Path = Path(DB_FILE)) -> None:
+def ingest(json_path: Path, db_path: Path = Path(DB_FILE)) -> dict:
     apply_pending_migrations(str(db_path))
     raw = json.loads(Path(json_path).read_text())
 
@@ -162,8 +162,42 @@ def ingest(json_path: Path, db_path: Path = Path(DB_FILE)) -> None:
             # pmh_id auto; duplicates allowed
             total["pmh"] = _bulk_upsert(pmh_df, "pmh", ["pmh_id"], conn)
         logger.info("Ingest complete: %s", total)
+
+        # --------------------------------------------------------------
+        # Persist audit row so we can trace each import operation
+        # --------------------------------------------------------------
+        try:
+            audit_cols = [
+                "filename",
+                "patients",
+                "vitals",
+                "scores",
+                "mental_health",
+                "lab_results",
+                "pmh",
+            ]
+            placeholders = ", ".join(["?"] * len(audit_cols))
+            sql = f"INSERT INTO ingest_audit ({', '.join(audit_cols)}) VALUES ({placeholders})"
+            conn.execute(
+                sql,
+                (
+                    Path(json_path).name,
+                    total.get("patients", 0),
+                    total.get("vitals", 0),
+                    total.get("scores", 0),
+                    total.get("mental_health", 0),
+                    total.get("lab_results", 0),
+                    total.get("pmh", 0),
+                ),
+            )
+            logger.info("Ingest audit row inserted.")
+        except Exception as audit_exc:  # noqa: BLE001
+            logger.error("Failed to insert ingest_audit row: %s", audit_exc)
     finally:
         conn.close()
+
+    # Return dict so callers (e.g., Panel UI) can show success metrics
+    return total
 
 
 if __name__ == "__main__":

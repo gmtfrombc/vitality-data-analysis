@@ -23,6 +23,7 @@ from app.utils.query_intent import QueryIntent
 
 # WS-3-C write-path integration
 from app.utils.saved_questions_db import (
+    DB_FILE,
     load_saved_questions as _load_saved_questions_db,
     upsert_question as _upsert_question_db,
     delete_question as _delete_question_db,
@@ -218,43 +219,148 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Enable button only when file selected
         def _toggle_import_button(event):
-            import_button.disabled = event.new is None or len(event.new) == 0
+            # Panel <FileInput>.value is *bytes* when a file is selected.
+            # Disable button when value is *None* or empty bytes.
+            import_button.disabled = not bool(event.new)
 
         self.json_file_input.param.watch(_toggle_import_button, "value")
+
+        # Visual feedback – small spinner shown while ingest runs
+        self.import_spinner = pn.indicators.LoadingSpinner(
+            value=True, visible=False, width=30, height=30, color="primary"
+        )
 
         def _on_import_click(event):
             if not self.json_file_input.value:
                 return
-            try:
-                # Write uploaded bytes to a temp file
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
-                    tmp.write(self.json_file_input.value)
-                    tmp_path = Path(tmp.name)
 
-                self._update_status("Running ETL ingest… this may take a minute…")
-                _json_ingest(tmp_path)
-                self._update_status(
-                    "Import complete ✅. You may now query the fresh data."
-                )
-            except Exception as exc:
-                logger.error("JSON ingest failed: %s", exc, exc_info=True)
-                self._update_status(f"Import failed: {exc}")
-            finally:
-                # Clean temp file
+            # Quick file-size guard (10 MB default)
+            if len(self.json_file_input.value) > 10_000_000:  # ~10 MB
+                notifier = getattr(pn.state, "notifications", None)
+                if notifier:
+                    notifier.error("File too large (max 10 MB).")
+                else:
+                    self._update_status("File too large (max 10 MB).")
+                return
+
+            # Write uploaded bytes to a temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
+                tmp.write(self.json_file_input.value)
+                tmp_path = Path(tmp.name)
+
+            # Disable UI elements & show spinner
+            import_button.disabled = True
+            self.json_file_input.disabled = True
+            self.import_spinner.visible = True
+
+            def _worker(path: Path):  # background thread task
                 try:
-                    tmp_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
+                    counts_local = _json_ingest(path)
+                    summary_local = ", ".join(
+                        f"{k}: {v}" for k, v in counts_local.items()
+                    )
+                    notifier = getattr(pn.state, "notifications", None)
+                    if notifier:
+                        notifier.success(f"Import complete – {summary_local}")
+                    else:
+                        self._update_status(f"Import complete – {summary_local}")
+                except Exception as exc_inner:  # noqa: BLE001 – explicit
+                    logger.error("JSON ingest failed: %s", exc_inner, exc_info=True)
+                    notifier = getattr(pn.state, "notifications", None)
+                    if notifier:
+                        notifier.error(f"Import failed: {exc_inner}")
+                    else:
+                        self._update_status(f"Import failed: {exc_inner}")
+                finally:
+                    # Restore UI in main thread
+                    self.import_spinner.visible = False
+                    import_button.disabled = False
+                    self.json_file_input.disabled = False
+                    try:
+                        path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+            import threading
+
+            threading.Thread(target=_worker, args=(tmp_path,), daemon=True).start()
 
         import_button.on_click(_on_import_click)
 
-        import_panel = pn.Column(
+        # Store the panel on *self* so it can be referenced inside *view()*
+        self.import_panel = pn.Column(
             pn.pane.Markdown("### Import Patient JSON", margin=(0, 0, 5, 0)),
-            self.json_file_input,
+            pn.Row(self.json_file_input, self.import_spinner, align="center"),
             import_button,
             sizing_mode="stretch_width",
             styles={"background": "#f8f9fa", "border-radius": "5px"},
             css_classes=["card", "rounded-card"],
+        )
+
+        # --------------------------------------------------
+        # Convenience – remove demo/mock patients (p100-p102)
+        # --------------------------------------------------
+
+        delete_btn = pn.widgets.Button(
+            name="Remove mock patients", button_type="danger", width=220
+        )
+
+        def _delete_mock(event):
+            patient_ids = ["p100", "p101", "p102"]
+
+            import threading
+            import sqlite3
+
+            def _worker():
+                try:
+                    conn = sqlite3.connect(str(Path(DB_FILE)))
+                    with conn:
+                        for tbl, col in [
+                            ("vitals", "patient_id"),
+                            ("scores", "patient_id"),
+                            ("mental_health", "patient_id"),
+                            ("lab_results", "patient_id"),
+                            ("pmh", "patient_id"),
+                            ("patients", "id"),
+                        ]:
+                            placeholders = ",".join(["?"] * len(patient_ids))
+                            conn.execute(
+                                f"DELETE FROM {tbl} WHERE {col} IN ({placeholders})",
+                                patient_ids,
+                            )
+                    msg = "Mock patients removed."
+                    notifier = getattr(pn.state, "notifications", None)
+                    if notifier:
+                        notifier.success(msg)
+                    else:
+                        self._update_status(msg)
+                except Exception as exc_del:
+                    notifier = getattr(pn.state, "notifications", None)
+                    if notifier:
+                        notifier.error(f"Delete failed: {exc_del}")
+                    else:
+                        self._update_status(f"Delete failed: {exc_del}")
+
+            threading.Thread(target=_worker, daemon=True).start()
+
+        delete_btn.on_click(_delete_mock)
+
+        self.delete_mock_panel = pn.Column(
+            pn.pane.Markdown("### Cleanup", margin=(0, 0, 5, 0)),
+            delete_btn,
+            sizing_mode="stretch_width",
+            styles={"background": "#fff5f5", "border-radius": "5px"},
+            css_classes=["card", "rounded-card"],
+        )
+
+        # Narrative checkbox – let user toggle ChatGPT explanations on/off
+        self._show_narrative_checkbox = pn.widgets.Checkbox(
+            name="Show narrative interpretation",
+            value=True,
+        )
+        # Re-render results when the user toggles the switch
+        self._show_narrative_checkbox.param.watch(
+            self._update_display_after_toggle, "value"
         )
 
     def view(self):
@@ -381,14 +487,17 @@ class DataAnalysisAssistant(param.Parameterized):
             css_classes=["card", "rounded-card"],
         )
 
-        # Layout: sidebar with saved questions and import JSON
+        # Layout: sidebar – saved questions, narrative toggle, import widget
         sidebar = pn.Column(
             saved_questions_title,
             self.saved_question_buttons_container,
+            pn.Spacer(height=15),
             pn.Spacer(height=20),
-            import_panel,
+            self.import_panel,
+            pn.Spacer(height=15),
+            self.delete_mock_panel,
             pn.Spacer(height=20),
-            save_reset_panel,
+            self._show_narrative_checkbox,
             sizing_mode="stretch_width",
         )
 
@@ -440,11 +549,6 @@ class DataAnalysisAssistant(param.Parameterized):
             ("Code", self.code_display),
             ("Visualization", self.visualization_pane),
             dynamic=True,
-        )
-
-        # Narrative checkbox lives in sidebar for visibility
-        self._show_narrative_checkbox = pn.widgets.Checkbox(
-            name="Show narrative interpretation", value=True
         )
 
         # Create the main content area
@@ -1764,15 +1868,31 @@ Intermediate results and visualisations are still shown so you can audit the pro
         query = self.query_text
         result = {}
 
-        # Quick path: if intermediate_results is a simple scalar or Series, summarise immediately
+        # Quick path: scalar numeric results
         if isinstance(self.intermediate_results, (int, float, np.generic)):
             result_val = float(self.intermediate_results)
-            result["summary"] = f"Result: {result_val:.2f}"
-            self.analysis_result = result
-            return
-        if isinstance(self.intermediate_results, pd.Series):
-            mean_val = self.intermediate_results.mean()
-            result["summary"] = f"Series mean: {mean_val:.2f}"
+
+            # When narrative toggle is ON, ask AI to phrase a short summary; else plain number
+            if (
+                getattr(self, "_show_narrative_checkbox", None) is None
+                or self._show_narrative_checkbox.value
+            ):
+                try:
+                    narrative = ai.interpret_results(
+                        query,
+                        {"count": result_val},
+                        [],
+                    )
+                    result["summary"] = (
+                        narrative or f"There are {int(result_val)} active patients."
+                    )
+                except Exception as _exc:
+                    # Fallback to plain summary if AI fails
+                    result["summary"] = f"There are {int(result_val)} active patients."
+            else:
+                # Plain numeric summary
+                result["summary"] = f"Result: {result_val:.0f}"
+
             self.analysis_result = result
             return
 

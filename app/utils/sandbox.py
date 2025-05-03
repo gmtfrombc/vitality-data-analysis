@@ -128,6 +128,7 @@ def run_user_code(code: str) -> SandboxResult:
         "asyncio",  # param/Panel internals may import while watcher fires
         "time",
         "typing",
+        "sqlite3",  # allow db_query.query_dataframe
         "email",
         "tornado",  # Panel server runtime
         "config",  # panel.config import path during error handling

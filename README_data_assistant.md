@@ -135,4 +135,19 @@ The current implementation uses pattern matching for demonstration purposes. For
 2. **Memory**: Add conversation memory to allow follow-up questions
 3. **Custom Functions**: Allow creating and saving custom analyses
 4. **Export Features**: Add ability to export results to PDF or Excel
-5. **Data Refresh**: Add controls to refresh cached data 
+5. **Data Refresh**: Add controls to refresh cached data
+
+## Importing New Patient JSON
+
+A lightweight **Import Patient JSON** panel lives in the left sidebar.
+
+1. Click *Choose File* and pick a de-identified patients JSON export (max 10 MB).
+2. Press **Import JSON** – the button greys out and a tiny spinner shows while the ETL runs.
+3. Once complete you'll see a toast like `Import complete – patients: 3, vitals: 5, …`.
+4. Ask your question again – the data is immediately available.
+
+Every import is logged to the `ingest_audit` table so we can track who/what file modified the DB. You can inspect it with:
+
+```bash
+sqlite3 patient_data.db 'SELECT * FROM ingest_audit ORDER BY imported_at DESC LIMIT 5;' | column -t
+``` 

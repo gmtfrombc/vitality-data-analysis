@@ -318,8 +318,11 @@ class PatientView(param.Parameterized):
         # For plotting, we need datetime objects
         plot_df = scores_df.copy()
         if "date" in plot_df.columns:
-            # Keep the original date format for conversion to datetime
-            plot_df["date"] = pd.to_datetime(plot_df["date"])
+            # Parse mixed ISO strings robustly, coerce failures to NaT and drop them
+            plot_df["date"] = pd.to_datetime(
+                plot_df["date"], errors="coerce", utc=True
+            ).dt.tz_localize(None)
+            plot_df = plot_df.dropna(subset=["date"])
             # Sort by date for proper line plotting
             plot_df = plot_df.sort_values("date")
             logger.info(f"Plot data prepared with {len(plot_df)} rows")
@@ -412,8 +415,11 @@ class PatientView(param.Parameterized):
         # For plotting, we need datetime objects
         plot_df = vitals_df.copy()
         if "date" in plot_df.columns:
-            # Keep the original date format for conversion to datetime
-            plot_df["date"] = pd.to_datetime(plot_df["date"])
+            # Parse mixed ISO strings robustly
+            plot_df["date"] = pd.to_datetime(
+                plot_df["date"], errors="coerce", utc=True
+            ).dt.tz_localize(None)
+            plot_df = plot_df.dropna(subset=["date"])
             # Sort by date for proper line plotting
             plot_df = plot_df.sort_values("date")
             logger.info(f"Plot data prepared with {len(plot_df)} rows")
@@ -565,8 +571,11 @@ class PatientView(param.Parameterized):
         # For plotting, we need datetime objects
         plot_df = mh_df.copy()
         if "date" in plot_df.columns:
-            # Keep the original date format for conversion to datetime
-            plot_df["date"] = pd.to_datetime(plot_df["date"])
+            # Parse various ISO formats robustly & drop unparseable rows
+            plot_df["date"] = pd.to_datetime(
+                plot_df["date"], errors="coerce", utc=True
+            ).dt.tz_localize(None)
+            plot_df = plot_df.dropna(subset=["date"])
             # Sort by date for proper line plotting
             plot_df = plot_df.sort_values("date")
 
@@ -679,8 +688,10 @@ class PatientView(param.Parameterized):
         # For plotting, we need datetime objects
         plot_df = labs_df.copy()
         if "date" in plot_df.columns:
-            # Keep the original date format for conversion to datetime
-            plot_df["date"] = pd.to_datetime(plot_df["date"])
+            plot_df["date"] = pd.to_datetime(
+                plot_df["date"], errors="coerce", utc=True
+            ).dt.tz_localize(None)
+            plot_df = plot_df.dropna(subset=["date"])
             # Sort by date for proper line plotting
             plot_df = plot_df.sort_values("date")
 
