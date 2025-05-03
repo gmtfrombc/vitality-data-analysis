@@ -14,6 +14,8 @@ import sys
 import logging
 from pathlib import Path
 
+from app.utils.plots import line_plot
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -341,17 +343,13 @@ class PatientView(param.Parameterized):
                         f"Creating plot for score type: {score_type} with {len(score_data)} points"
                     )
 
-                    # Create plot
-                    score_plot = score_data.hvplot(
+                    # Create plot using shared helper
+                    score_plot = line_plot(
+                        score_data,
                         x="date",
                         y="score_value",
                         title=f'{score_type.replace("_", " ").title()} Over Time',
-                        xlabel="Date",
                         ylabel=f'{score_type.replace("_", " ").title()}',
-                        width=600,
-                        height=350,
-                        grid=True,
-                        line_width=2.0,
                     )
             score_plot = self.format_plot_time_axis(
                 score_plot, program_start_date, patient_data
@@ -434,16 +432,12 @@ class PatientView(param.Parameterized):
 
                 if not weight_data.empty:
                     logger.info("Creating weight plot")
-                    weight_plot = weight_data.hvplot(
+                    weight_plot = line_plot(
+                        weight_data,
                         x="date",
                         y="weight",
                         title="Weight Over Time",
-                        xlabel="Date",
                         ylabel="Weight (kg)",
-                        width=600,
-                        height=350,
-                        grid=True,
-                        line_width=2.0,
                     )
             weight_plot = self.format_plot_time_axis(
                 weight_plot, program_start_date, patient_data
@@ -461,16 +455,12 @@ class PatientView(param.Parameterized):
 
                     if not sbp_data.empty:
                         logger.info("Creating SBP plot")
-                        sbp_plot = sbp_data.hvplot(
+                        sbp_plot = line_plot(
+                            sbp_data,
                             x="date",
                             y="sbp",
                             title="Blood Pressure Over Time",
-                            xlabel="Date",
                             ylabel="mmHg (Systolic)",
-                            width=600,
-                            height=350,
-                            grid=True,
-                            line_width=2.0,
                         )
                 sbp_plot = self.format_plot_time_axis(
                     sbp_plot, program_start_date, patient_data
@@ -485,16 +475,12 @@ class PatientView(param.Parameterized):
 
                     if not dbp_data.empty:
                         logger.info("Creating DBP plot")
-                        dbp_plot = dbp_data.hvplot(
+                        dbp_plot = line_plot(
+                            dbp_data,
                             x="date",
                             y="dbp",
                             title="",
-                            xlabel="Date",
                             ylabel="mmHg (Diastolic)",
-                            width=600,
-                            height=350,
-                            grid=True,
-                            line_width=2.0,
                         )
                 dbp_plot = self.format_plot_time_axis(
                     dbp_plot, program_start_date, patient_data
@@ -631,16 +617,13 @@ class PatientView(param.Parameterized):
                         # Create a dataframe with only the data for this assessment type with no nulls
                         assessment_data = plot_pivot_data[["date", col]].dropna()
                         if not assessment_data.empty:
-                            individual_plot = assessment_data.hvplot(
+                            # Create plot using shared helper
+                            individual_plot = line_plot(
+                                assessment_data,
                                 x="date",
                                 y=col,
                                 title=f"{col} Score Over Time",
-                                xlabel="Date",
                                 ylabel="Score",
-                                width=600,
-                                height=350,
-                                grid=True,
-                                line_width=2.0,
                             )
                     individual_plot = self.format_plot_time_axis(
                         individual_plot, program_start_date, patient_data
@@ -754,17 +737,13 @@ class PatientView(param.Parameterized):
                 test_data = key_plot_df[key_plot_df["test_name"] == lab_test]
 
                 if not test_data.empty and len(test_data) > 0:
-                    # Convert to clean format for plotting
-                    lab_plot = test_data.hvplot(
+                    # Create plot using shared helper
+                    lab_plot = line_plot(
+                        test_data,
                         x="date",
                         y="value",
                         title=f"{lab_test} Over Time",
-                        xlabel="Date",
                         ylabel=f"{lab_test} Value",
-                        height=350,
-                        width=600,
-                        grid=True,
-                        line_width=2.0,
                     )
             lab_plot = self.format_plot_time_axis(
                 lab_plot, program_start_date, patient_data

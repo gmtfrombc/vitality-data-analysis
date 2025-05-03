@@ -135,6 +135,12 @@ def parse_intent_json(raw: str) -> QueryIntent:
         raise ValueError(f"Intent JSON is not valid: {exc}") from exc
 
     try:
-        return QueryIntent.parse_obj(data)
+        # Pydantic v2 migrated – *model_validate* replaces deprecated *parse_obj*.
+        # Keep a tiny fallback for projects still on v1.
+        validate_fn = getattr(QueryIntent, "model_validate", None)
+        if validate_fn is None:  # pragma: no cover – pydantic < 2.x
+            validate_fn = QueryIntent.parse_obj  # type: ignore[attr-defined]
+
+        return validate_fn(data)  # type: ignore[arg-type]
     except ValidationError as exc:
         raise ValueError(f"Intent JSON failed validation: {exc}") from exc

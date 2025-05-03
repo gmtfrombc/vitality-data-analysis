@@ -14,10 +14,23 @@ import db_query
 import json
 import os
 import re
+import tempfile
+from pathlib import Path
 from app.ai_helper import ai, get_data_schema  # Fix import path
 from app.utils.sandbox import run_snippet
 from app.utils.plots import histogram  # new helper
 from app.utils.query_intent import QueryIntent
+
+# WS-3-C write-path integration
+from app.utils.saved_questions_db import (
+    load_saved_questions as _load_saved_questions_db,
+    upsert_question as _upsert_question_db,
+    delete_question as _delete_question_db,
+    migrate_from_json as _migrate_from_json,
+)
+
+# ETL ingest
+from etl.json_ingest import ingest as _json_ingest
 
 # Configure logging
 logging.basicConfig(
@@ -37,8 +50,12 @@ SAVED_QUESTIONS_FILE = os.path.join(
     "saved_questions.json",
 )
 
-# Ensure the data directory exists
-os.makedirs(os.path.dirname(SAVED_QUESTIONS_FILE), exist_ok=True)
+# Ensure the data directory exists and auto-migrate legacy JSON once
+data_dir = os.path.dirname(SAVED_QUESTIONS_FILE)
+os.makedirs(data_dir, exist_ok=True)
+
+# Attempt one-off migration – silent when already done
+_migrate_from_json(SAVED_QUESTIONS_FILE)
 
 # TODO: For cloud deployment, replace file storage with database storage
 # - Create a 'saved_questions' table in patient_data.db
@@ -50,19 +67,14 @@ os.makedirs(os.path.dirname(SAVED_QUESTIONS_FILE), exist_ok=True)
 
 
 def load_saved_questions():
-    """Load saved questions from a JSON file"""
-    if os.path.exists(SAVED_QUESTIONS_FILE):
-        try:
-            with open(SAVED_QUESTIONS_FILE, "r") as f:
-                saved_questions = json.load(f)
-                logger.info(
-                    f"Loaded {len(saved_questions)} saved questions from {SAVED_QUESTIONS_FILE}"
-                )
-                return saved_questions
-        except Exception as e:
-            logger.error(f"Error loading saved questions: {str(e)}", exc_info=True)
+    """Load saved questions from SQLite; if none, return defaults."""
 
-    # Return default questions if file doesn't exist or has an error
+    saved = _load_saved_questions_db()
+    if saved:
+        logger.info("Loaded %d saved questions from SQLite", len(saved))
+        return saved
+
+    logger.info("No saved questions in DB; returning defaults")
     return [
         {
             "name": "Active patients count",
@@ -195,6 +207,56 @@ class DataAnalysisAssistant(param.Parameterized):
         # Initialize display content
         self._initialize_stage_indicators()
 
+        # ---------------------------
+        # Import JSON section (ETL)
+        # ---------------------------
+        self.json_file_input = pn.widgets.FileInput(accept=".json")
+
+        import_button = pn.widgets.Button(
+            name="Import JSON", button_type="primary", width=120, disabled=True
+        )
+
+        # Enable button only when file selected
+        def _toggle_import_button(event):
+            import_button.disabled = event.new is None or len(event.new) == 0
+
+        self.json_file_input.param.watch(_toggle_import_button, "value")
+
+        def _on_import_click(event):
+            if not self.json_file_input.value:
+                return
+            try:
+                # Write uploaded bytes to a temp file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
+                    tmp.write(self.json_file_input.value)
+                    tmp_path = Path(tmp.name)
+
+                self._update_status("Running ETL ingest… this may take a minute…")
+                _json_ingest(tmp_path)
+                self._update_status(
+                    "Import complete ✅. You may now query the fresh data."
+                )
+            except Exception as exc:
+                logger.error("JSON ingest failed: %s", exc, exc_info=True)
+                self._update_status(f"Import failed: {exc}")
+            finally:
+                # Clean temp file
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+        import_button.on_click(_on_import_click)
+
+        import_panel = pn.Column(
+            pn.pane.Markdown("### Import Patient JSON", margin=(0, 0, 5, 0)),
+            self.json_file_input,
+            import_button,
+            sizing_mode="stretch_width",
+            styles={"background": "#f8f9fa", "border-radius": "5px"},
+            css_classes=["card", "rounded-card"],
+        )
+
     def view(self):
         """Generate the data analysis assistant view"""
 
@@ -300,7 +362,7 @@ class DataAnalysisAssistant(param.Parameterized):
             self.continue_button, sizing_mode="stretch_width", align="start"
         )
 
-        # Save and reset buttons
+        # Save/reset & import panels
         save_reset_panel = pn.Column(
             pn.Row(
                 pn.pane.Markdown("### Save This Question", margin=(0, 0, 5, 0)),
@@ -317,7 +379,17 @@ class DataAnalysisAssistant(param.Parameterized):
             sizing_mode="stretch_width",
             styles={"background": "#f8f9fa", "border-radius": "5px"},
             css_classes=["card", "rounded-card"],
-            margin=(15, 15, 15, 15),
+        )
+
+        # Layout: sidebar with saved questions and import JSON
+        sidebar = pn.Column(
+            saved_questions_title,
+            self.saved_question_buttons_container,
+            pn.Spacer(height=20),
+            import_panel,
+            pn.Spacer(height=20),
+            save_reset_panel,
+            sizing_mode="stretch_width",
         )
 
         # Status indicator
@@ -375,19 +447,6 @@ class DataAnalysisAssistant(param.Parameterized):
             name="Show narrative interpretation", value=True
         )
 
-        left_sidebar = pn.Card(
-            pn.Column(
-                saved_questions_title,
-                self.saved_question_buttons_container,
-                pn.layout.Divider(),
-                self._show_narrative_checkbox,
-                sizing_mode="stretch_width",
-            ),
-            sizing_mode="stretch_width",
-            title="Saved Questions",
-            collapsed=False,
-        )
-
         # Create the main content area
         main_content_area = pn.Column(
             title,
@@ -405,7 +464,7 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Simplified layout with responsive sizes
         layout = pn.Row(
-            pn.Column(left_sidebar, width=300),
+            pn.Column(sidebar, width=300),
             pn.Column(main_content_area, margin=(0, 10, 0, 20)),
             sizing_mode="stretch_width",
         )
@@ -1998,8 +2057,12 @@ Intermediate results and visualisations are still shown so you can audit the pro
         # Update the UI
         self._update_saved_question_buttons()
 
-        # Save changes to file
-        save_questions_to_file(self.saved_questions)
+        # Attempt delete in SQLite; fallback to JSON file persistence only when needed
+        try:
+            _delete_question_db(question["name"])
+            logger.info("Deleted question from SQLite: %s", question["name"])
+        except Exception as exc:
+            logger.error("Failed to delete question from SQLite: %s", exc)
 
         # Update status
         self._update_status(f"Deleted question: '{question['name']}'")
@@ -2036,8 +2099,12 @@ Intermediate results and visualisations are still shown so you can audit the pro
         # Update the sidebar with the new saved questions
         self._update_saved_question_buttons()
 
-        # Save changes to file
-        save_questions_to_file(self.saved_questions)
+        # Persist to SQLite first; on failure fall back to JSON
+        try:
+            _upsert_question_db(self.question_name, self.query_text)
+            logger.info("Upserted question to SQLite: %s", self.question_name)
+        except Exception as exc:
+            logger.error("Failed to upsert question to SQLite: %s", exc)
 
         # Update status
         self._update_status(f"Question saved as '{self.question_name}'")

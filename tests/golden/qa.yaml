@@ -183,4 +183,143 @@
     group_by: ["active"]
   expected:
     0: 32.0
-    1: 29.0 
+    1: 29.0
+
+# --- Added cases (May 09) --------------------------------------------------
+- name: min_weight
+  query: "What is the minimum recorded weight?"
+  intent:
+    analysis_type: min
+    target_field: weight
+    filters: []
+    conditions: []
+    parameters: {}
+  expected: 55.0
+
+- name: max_sbp
+  query: "Maximum systolic blood pressure?"
+  intent:
+    analysis_type: max
+    target_field: sbp
+    filters: []
+    conditions: []
+    parameters: {}
+  expected: 180
+
+- name: sum_bmi_active
+  query: "Total BMI sum for active patients"
+  intent:
+    analysis_type: sum
+    target_field: bmi
+    filters:
+      - field: active
+        value: 1
+    conditions: []
+    parameters: {}
+  expected: 3500.0
+
+- name: count_inactive
+  query: "How many inactive patients are there?"
+  intent:
+    analysis_type: count
+    target_field: patient_id
+    filters:
+      - field: active
+        value: 0
+    conditions: []
+    parameters: {}
+  expected: 4
+
+- name: avg_weight_male
+  query: "Average weight for male patients"
+  intent:
+    analysis_type: average
+    target_field: weight
+    filters:
+      - field: gender
+        value: M
+    conditions: []
+    parameters: {}
+  expected: 190.0
+
+- name: avg_weight_bmi_by_gender
+  query: "Average weight and BMI by gender"
+  intent:
+    analysis_type: average
+    target_field: weight
+    additional_fields:
+      - bmi
+    filters: []
+    conditions: []
+    parameters: {}
+    group_by: ["gender"]
+  expected:
+    F_weight: 175.0
+    F_bmi: 29.0
+    M_weight: 190.0
+    M_bmi: 31.0
+
+- name: top_ethnicities
+  query: "What are the two most common ethnicities?"
+  intent:
+    analysis_type: top_n
+    target_field: ethnicity
+    filters: []
+    conditions: []
+    parameters:
+      n: 2
+  expected:
+    Hispanic: 6
+    Caucasian: 5
+
+- name: count_age_30_50
+  query: "Patients aged between 30 and 50?"
+  intent:
+    analysis_type: count
+    target_field: patient_id
+    filters: []
+    conditions:
+      - field: age
+        operator: 'between'
+        value: [30, 50]
+    parameters: {}
+  expected: 9
+
+- name: min_bmi_female
+  query: "Minimum BMI among female patients"
+  intent:
+    analysis_type: min
+    target_field: bmi
+    filters:
+      - field: gender
+        value: F
+    conditions: []
+    parameters: {}
+  expected: 24.0
+
+- name: max_weight_active
+  query: "Max weight of active patients"
+  intent:
+    analysis_type: max
+    target_field: weight
+    filters:
+      - field: active
+        value: 1
+    conditions: []
+    parameters: {}
+  expected: 240.0
+
+- name: sum_weight_by_ethnicity
+  query: "Sum of weight by ethnicity"
+  intent:
+    analysis_type: sum
+    target_field: weight
+    filters: []
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: ["ethnicity"]
+  expected:
+    Hispanic: 9000.0
+    Caucasian: 7200.0
+    Asian: 3500.0

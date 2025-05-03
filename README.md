@@ -17,7 +17,7 @@ Below is a snapshot of the current work streams:
 |----|-------------|----------------|
 | WS-1 | Stability & Refactor | Unit tests ≥ 60 % · remove duplication |
 | WS-2 | Hybrid AI Engine | Intent classification · dynamic code generation |
-| WS-3 | Data & Storage | Persist saved questions in SQLite · migrations |
+| WS-3 | Data & Storage | Saved questions in SQLite ✔ · migrations ✔ · JSON→SQLite ETL 🔄 |
 | WS-4 | UX & Viz | Responsive layout · drag-and-drop chart builder |
 | WS-5 | Cloud Deployment | Docker · CI/CD · AWS/GCP hosting |
 | WS-6 | Security & Quality | Hardened sandbox · ≥60 % coverage gate ✔ |
@@ -69,6 +69,10 @@ pip install -r requirements.txt
 # Set your OpenAI key
 cp .env.example .env  # or echo "OPENAI_API_KEY=sk-..." >> .env
 
+# (Optional) ingest patient export
+#   1. Place your *patients.json* export (or run `python deidentify_patients.py patients.json` → `deidentified_patients.json`)
+#   2. Run ETL: `python -m etl.json_ingest deidentified_patients.json`
+
 # Run the app
 python run.py
 ```
@@ -93,4 +97,4 @@ Notes:
 * Add or extend tests whenever you fix a bug or create new helpers—e.g., histogram helper raises `ValueError` when column missing.
 
 ---
-*Last updated: <!-- AI/maintainer: timestamp on save -->* 
+*Last updated: 2025-07-10 – WS-3-D migrations + ETL ingest* 

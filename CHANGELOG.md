@@ -26,7 +26,29 @@ Use reverse-chronological order (latest on top).
 ✅ Golden-query harness completed – all 5 canonical cases pass; moved milestone to *done*.
 🐛 Fixed `ModuleNotFoundError: app` by re-ordering sys.path injection before project imports in golden harness.
 ⬆️ Coverage surpasses 80 % (was 75 %); 34 tests green.
-Last updated: 2025-05-05
+✨ WS-3-A: Added `tests/utils/test_saved_questions_db.py` covering load/upsert/delete and edge cases (duplicate names, bad path).
+🔄 WS-3-B: `DataAnalysisAssistant` now loads saved questions from SQLite first, falling back to JSON; helpers remain read-only until WS-3-C.
+✔ WS-3-C: Save & Delete actions now write to SQLite (`upsert_question` / `delete_question`) with graceful JSON fallback.
+⬆️ Coverage holds at 81 % (gate 60 %) with 65 tests green.
+✨ WS-3-D: Added DB migration engine (`app/utils/db_migrations.py`) and baseline `migrations/001_initial.sql`, `002_add_etl_columns.sql`, `003_unique_indexes.sql`.
+✨ WS-3-D: Implemented `etl/json_ingest.py` CLI with idempotent upserts; 2× run verified, counts stable.
+🧪 Tests: `tests/etl/test_db_migrations.py` and `tests/etl/test_json_ingest.py`; coverage now 75 %.
+🖼️ Data Assistant sidebar now includes *Import Patient JSON* panel (FileInput + ETL trigger).
+Last updated: 2025-07-10
 
 - [ ] Tech debt: silence Tornado loop warn in tests
 - [ ] Upgrade to Pydantic v2 APIs
+
+## [2025-07-09] – Refactor prep & SQLite groundwork
+### Added
+- `app/utils/saved_questions_db.py` – thin SQLite helper (create table, load, save, upsert, delete) ready for future UI integration.
+- Roadmap milestone: *Automated JSON → SQLite update pipeline* under WS-3.
+
+### Changed
+- No production code changes; **rolled back** the attempted integration of SQLite into `app/pages/data_assistant.py` to keep the app stable.
+
+### Fixed
+- Restored green test suite (61 tests, 65 % coverage) after rollback.
+
+### Notes
+- Next incremental plan for the SQLite migration is captured in docs/summary_2025-07-09.md.

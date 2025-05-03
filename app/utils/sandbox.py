@@ -15,6 +15,7 @@ from typing import Any, Dict, Literal
 from dataclasses import dataclass, field
 import os
 import signal
+import threading as _threading
 
 import numpy as np
 import pandas as pd
@@ -103,11 +104,14 @@ def run_user_code(code: str) -> SandboxResult:
 
     # Minimal whitelist – expand as legitimate needs grow
     _IMPORT_WHITELIST = {
+        # Data science libs
         "pandas",
         "numpy",
         "np",
         "pd",
+        # Project helpers
         "db_query",
+        # Standard-lib utilities commonly used by snippets *and* Panel callbacks
         "math",
         "json",
         "datetime",
@@ -121,6 +125,12 @@ def run_user_code(code: str) -> SandboxResult:
         "warnings",
         "_io",
         "re",
+        "asyncio",  # param/Panel internals may import while watcher fires
+        "time",
+        "typing",
+        "email",
+        "tornado",  # Panel server runtime
+        "config",  # panel.config import path during error handling
     }
 
     def _safe_import(
@@ -139,7 +149,11 @@ def run_user_code(code: str) -> SandboxResult:
     # ------------------------------------------------------------------
     # Execution timeout (POSIX only)
     # ------------------------------------------------------------------
-    _HAS_ALARM = hasattr(signal, "alarm") and os.name != "nt"
+    _HAS_ALARM = (
+        hasattr(signal, "alarm")
+        and os.name != "nt"
+        and _threading.current_thread() is _threading.main_thread()
+    )
 
     if _HAS_ALARM:
 
