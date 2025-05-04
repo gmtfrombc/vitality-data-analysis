@@ -113,6 +113,11 @@ def _execute_code_in_process(code: str, queue: multiprocessing.Queue):
             "db_query",
             "app",  # Allow app.utils.plots and other project modules
             "__future__",  # For from __future__ import annotations
+            # Visualization libraries
+            "holoviews",
+            "operation",  # Required for holoviews operation.element
+            "data",  # Required for holoviews data module
+            "dimension",  # Required for holoviews dimension module
             # Standard-lib utilities commonly used by snippets *and* Panel callbacks
             "math",
             "json",
@@ -284,6 +289,11 @@ def _run_with_signal_timeout(code: str) -> SandboxResult:
         "db_query",
         "app",  # Allow app.utils.plots and other project modules
         "__future__",  # For from __future__ import annotations
+        # Visualization libraries
+        "holoviews",
+        "operation",  # Required for holoviews operation.element
+        "data",  # Required for holoviews data module
+        "dimension",  # Required for holoviews dimension module
         # Standard-lib utilities commonly used by snippets *and* Panel callbacks
         "math",
         "json",

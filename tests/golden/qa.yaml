@@ -340,3 +340,146 @@
     correlation_coefficient: 0.95
     # correlation can vary slightly with test data, so we expect a strong positive correlation
     # but don't enforce an exact value
+
+# --- New test cases (July 16) -------------------------------------------------------------------
+- name: std_deviation_bmi
+  query: "What is the standard deviation of BMI values?"
+  intent:
+    analysis_type: std_dev
+    target_field: bmi
+    filters: []
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: []
+    time_range: null
+  expected: 5.2
+
+- name: count_by_ethnicity_age_filter
+  query: "How many patients per ethnicity are over 60 years old?"
+  intent:
+    analysis_type: count
+    target_field: patient_id
+    filters: []
+    conditions:
+      - field: age
+        operator: '>'
+        value: 60
+    parameters: {}
+    additional_fields: []
+    group_by: ["ethnicity"]
+    time_range: null
+  expected:
+    Caucasian: 3
+    Hispanic: 2
+    Asian: 1
+
+- name: patient_count_with_date_range
+  query: "How many patients were active from January to March 2025?"
+  intent:
+    analysis_type: count
+    target_field: patient_id
+    filters:
+      - field: active
+        value: 1
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: []
+    time_range:
+      start_date: "2025-01-01"
+      end_date: "2025-03-31"
+  expected: 12
+
+- name: change_in_weight_over_time
+  query: "What was the percent change in average weight from January to June 2025?"
+  intent:
+    analysis_type: percent_change
+    target_field: weight
+    filters: []
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: []
+    time_range:
+      start_date: "2025-01-01"
+      end_date: "2025-06-30"
+  expected: -5.2
+
+- name: multi_metric_comparison_by_gender
+  query: "Compare the average weight, BMI, and systolic BP between male and female patients"
+  intent:
+    analysis_type: average
+    target_field: weight
+    filters: []
+    conditions: []
+    parameters: {}
+    additional_fields: ["bmi", "sbp"]
+    group_by: ["gender"]
+    time_range: null
+  expected:
+    F_weight: 175.0
+    F_bmi: 29.0
+    F_sbp: 125.0
+    M_weight: 190.0
+    M_bmi: 31.0
+    M_sbp: 135.0
+
+- name: trend_analysis_weight_by_month
+  query: "Show me the trend of average weight by month for 2025"
+  intent:
+    analysis_type: trend
+    target_field: weight
+    filters: []
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: []
+    time_range:
+      start_date: "2025-01-01"
+      end_date: "2025-12-31"
+  expected:
+    "2025-01": 180.5
+    "2025-02": 179.3
+    "2025-03": 178.6
+    "2025-04": 177.4
+    "2025-05": 176.0
+    "2025-06": 175.2
+
+- name: phq9_score_improvement
+  query: "What percentage of patients showed improvement in their PHQ-9 scores?"
+  intent:
+    analysis_type: percent_change
+    target_field: score_value
+    filters:
+      - field: score_type
+        value: "PHQ-9"
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: []
+    time_range: null
+  expected: -22.5
+
+- name: count_with_multiple_filters
+  query: "How many female patients over 50 with BMI over 30 are active in the program?"
+  intent:
+    analysis_type: count
+    target_field: patient_id
+    filters:
+      - field: gender
+        value: "F"
+      - field: active
+        value: 1
+    conditions:
+      - field: age
+        operator: '>'
+        value: 50
+      - field: bmi
+        operator: '>'
+        value: 30
+    parameters: {}
+    additional_fields: []
+    group_by: []
+    time_range: null
+  expected: 3

@@ -78,7 +78,16 @@ def _make_fake_df(case):  # noqa: D401
 
                 offset = math.sqrt(expected)
                 values = [mean - offset, mean, mean + offset]
-            else:  # std_dev or percent_change
+            elif intent["analysis_type"] == "std_dev":
+                # For standard deviation, create values that will produce the expected std dev (5.2)
+                # Using the correct formula for a 2-point dataset: std = |x1-x2|/sqrt(2)
+                # So if we want std=5.2, we need |x1-x2| = 5.2*sqrt(2)
+                import math
+
+                separation = expected * math.sqrt(2)
+                mean = 30  # arbitrary mean
+                values = [mean - separation / 2, mean + separation / 2]
+            else:  # percent_change
                 values = [10, 10 * (1 + expected / 100)]
             return pd.DataFrame({metric_col: values})
         else:
@@ -156,6 +165,16 @@ def _make_fake_df(case):  # noqa: D401
             # Create dataframe with columns matching the expected query structure
             return pd.DataFrame({metric_x: x, metric_y: y})
 
+        # --- TREND ANALYSIS --- (dict with time series data)
+        elif intent["analysis_type"] == "trend" and intent.get("time_range"):
+            # Expected structure: {time_key: aggregate_value}
+            # Create a dataframe with month and avg_value columns
+            df_data = {
+                "month": list(expected.keys()),
+                "avg_value": list(expected.values()),
+            }
+            return pd.DataFrame(df_data)
+
         else:
             # Fallback if dict structure doesn't match known patterns
             raise ValueError(
@@ -215,6 +234,14 @@ def test_golden_query(monkeypatch: pytest.MonkeyPatch, case):  # noqa: D103 – 
         ), f"Correlation coefficient {actual_corr} not close to expected {expected_corr}"
 
         # Skip the exact equality check for correlation tests
+        return
+
+    # Use numpy.isclose for floating point comparisons
+    # This handles percent change and other numeric results that might have small differences
+    if isinstance(results, float) and isinstance(case["expected"], (int, float)):
+        assert np.isclose(
+            results, case["expected"], rtol=1e-5, atol=1e-8
+        ), f"Result {results} not close to expected {case['expected']}"
         return
 
     assert results == case["expected"]

@@ -39,8 +39,13 @@ def test_correlation_with_real_data():
     print(f"Retrieved {len(weight_bmi_df)} records for weight-BMI correlation")
 
     # Calculate correlation
-    corr_value = weight_bmi_df["metric_x"].corr(weight_bmi_df["metric_y"])
-    print(f"Weight-BMI Correlation: {corr_value:.4f}")
+    weight_bmi_corr = weight_bmi_df["metric_x"].corr(weight_bmi_df["metric_y"])
+    print(f"Weight-BMI Correlation: {weight_bmi_corr:.4f}")
+
+    # Assert correlation is positive and significant (BMI should correlate with weight)
+    assert (
+        weight_bmi_corr > 0.5
+    ), f"Expected strong positive correlation, got {weight_bmi_corr}"
 
     # Generate visualization
     plot1 = scatter_plot(
@@ -53,6 +58,7 @@ def test_correlation_with_real_data():
         correlation=True,
         regression=True,
     )
+    assert plot1 is not None, "Failed to generate weight vs BMI plot"
 
     # Query for weight-engagement score correlation (cross-table)
     weight_engagement_sql = """
@@ -70,8 +76,15 @@ def test_correlation_with_real_data():
     )
 
     # Calculate correlation
-    corr_value = weight_engagement_df["metric_x"].corr(weight_engagement_df["metric_y"])
-    print(f"Weight-Engagement Score Correlation: {corr_value:.4f}")
+    weight_eng_corr = weight_engagement_df["metric_x"].corr(
+        weight_engagement_df["metric_y"]
+    )
+    print(f"Weight-Engagement Score Correlation: {weight_eng_corr:.4f}")
+
+    # Just verify we got a valid correlation value (no assumption about direction)
+    assert (
+        -1.0 <= weight_eng_corr <= 1.0
+    ), f"Expected correlation in range [-1,1], got {weight_eng_corr}"
 
     # Generate visualization
     plot2 = scatter_plot(
@@ -84,6 +97,7 @@ def test_correlation_with_real_data():
         correlation=True,
         regression=True,
     )
+    assert plot2 is not None, "Failed to generate weight vs engagement plot"
 
     # Query for SBP-DBP correlation (blood pressure components)
     bp_sql = """
@@ -98,8 +112,13 @@ def test_correlation_with_real_data():
     print(f"Retrieved {len(bp_df)} records for SBP-DBP correlation")
 
     # Calculate correlation
-    corr_value = bp_df["metric_x"].corr(bp_df["metric_y"])
-    print(f"SBP-DBP Correlation: {corr_value:.4f}")
+    bp_corr = bp_df["metric_x"].corr(bp_df["metric_y"])
+    print(f"SBP-DBP Correlation: {bp_corr:.4f}")
+
+    # SBP and DBP should be positively correlated
+    assert (
+        bp_corr > 0
+    ), f"Expected positive correlation between SBP and DBP, got {bp_corr}"
 
     # Generate visualization
     plot3 = scatter_plot(
@@ -112,24 +131,31 @@ def test_correlation_with_real_data():
         correlation=True,
         regression=True,
     )
+    assert plot3 is not None, "Failed to generate SBP vs DBP plot"
 
     conn.close()
 
-    # Display plots in a panel app
-    dashboard = pn.Column(
-        pn.pane.Markdown("# Correlation Analysis Test"),
-        pn.pane.Markdown("## Weight vs BMI Correlation"),
-        pn.pane.HoloViews(plot1, sizing_mode="stretch_width"),
-        pn.pane.Markdown("## Weight vs Engagement Score Correlation"),
-        pn.pane.HoloViews(plot2, sizing_mode="stretch_width"),
-        pn.pane.Markdown("## SBP vs DBP Correlation"),
-        pn.pane.HoloViews(plot3, sizing_mode="stretch_width"),
-    )
+    # Skip visualization panel creation in test mode - uncomment for manual testing
+    # dashboard = pn.Column(
+    #     pn.pane.Markdown("# Correlation Analysis Test"),
+    #     pn.pane.Markdown("## Weight vs BMI Correlation"),
+    #     pn.pane.HoloViews(plot1, sizing_mode="stretch_width"),
+    #     pn.pane.Markdown("## Weight vs Engagement Score Correlation"),
+    #     pn.pane.HoloViews(plot2, sizing_mode="stretch_width"),
+    #     pn.pane.Markdown("## SBP vs DBP Correlation"),
+    #     pn.pane.HoloViews(plot3, sizing_mode="stretch_width"),
+    # )
 
-    dashboard.servable()
-    return dashboard
-
-
-if __name__ == "__main__":
-    dashboard = test_correlation_with_real_data()
-    pn.serve(dashboard, port=5007, show=True)
+    # For manual testing only - not used in automated tests
+    if __name__ == "__main__":
+        # Create live dashboard when running as script
+        dashboard = pn.Column(
+            pn.pane.Markdown("# Correlation Analysis Test"),
+            pn.pane.Markdown("## Weight vs BMI Correlation"),
+            pn.pane.HoloViews(plot1, sizing_mode="stretch_width"),
+            pn.pane.Markdown("## Weight vs Engagement Score Correlation"),
+            pn.pane.HoloViews(plot2, sizing_mode="stretch_width"),
+            pn.pane.Markdown("## SBP vs DBP Correlation"),
+            pn.pane.HoloViews(plot3, sizing_mode="stretch_width"),
+        )
+        dashboard.servable()

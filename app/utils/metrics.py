@@ -23,6 +23,7 @@ __all__ = [
     "percent_change",
     "top_n",
     "correlation_coefficient",
+    "correlation_matrix",
 ]
 
 # ---------------------------------------------------------------------------
@@ -247,6 +248,88 @@ def correlation_coefficient(
         raise ValueError(f"Unsupported correlation method: {method}")
 
 
+def correlation_matrix(
+    df: pd.DataFrame,
+    metrics: list[str],
+    method: Literal["pearson", "spearman", "kendall"] = "pearson",
+    include_p_values: bool = True,
+) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    """Calculate correlation matrix between multiple metrics with optional p-value calculation.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Source data containing all metrics to correlate.
+    metrics : list[str]
+        List of metric column names to include in the correlation matrix.
+    method : {"pearson", "spearman", "kendall"}, default "pearson"
+        Correlation method to use.
+    include_p_values : bool, default True
+        Whether to calculate and return p-values for significance testing.
+
+    Returns
+    -------
+    tuple[pd.DataFrame, pd.DataFrame | None]
+        - Correlation coefficient matrix (metrics × metrics)
+        - P-value matrix if include_p_values=True, otherwise None
+
+    Notes
+    -----
+    - P-values < 0.05 typically indicate statistically significant correlations
+    - Pearson: assumes normal distribution, tests linear relationships
+    - Spearman: non-parametric, detects monotonic relationships
+    - Kendall: non-parametric, robust to outliers, good for small samples
+    """
+    # Check if all requested columns exist
+    assert_columns(df, *metrics)
+
+    # Clean data - drop rows with any NaN in the requested columns
+    clean_df = df.dropna(subset=metrics)
+
+    # Check if we have enough data
+    if len(clean_df) < 3:
+        raise ValueError(
+            f"Need at least 3 complete rows for correlation matrix, got {len(clean_df)}"
+        )
+
+    # Calculate correlation matrix
+    corr_matrix = clean_df[metrics].corr(method=method)
+
+    # Calculate p-values if requested
+    p_values = None
+    if include_p_values:
+        import numpy as np
+        from scipy import stats
+
+        # Initialize p-value matrix
+        p_values = pd.DataFrame(np.nan, index=metrics, columns=metrics)
+
+        # For each pair of variables, calculate the p-value
+        for i, metric1 in enumerate(metrics):
+            for j, metric2 in enumerate(metrics):
+                if i == j:  # Same variable, p-value is 1
+                    p_values.loc[metric1, metric2] = 1.0
+                    continue
+
+                # Get the data
+                x = clean_df[metric1].values
+                y = clean_df[metric2].values
+
+                # Calculate correlation and p-value based on method
+                if method == "pearson":
+                    r, p = stats.pearsonr(x, y)
+                elif method == "spearman":
+                    r, p = stats.spearmanr(x, y)
+                elif method == "kendall":
+                    r, p = stats.kendalltau(x, y)
+                else:
+                    raise ValueError(f"Unsupported correlation method: {method}")
+
+                p_values.loc[metric1, metric2] = p
+
+    return corr_matrix, p_values
+
+
 # ---------------------------------------------------------------------------
 # Registry utilities
 # ---------------------------------------------------------------------------
@@ -260,6 +343,7 @@ METRIC_REGISTRY: Dict[str, Callable[..., pd.Series]] = {
     "percent_change": percent_change,
     "top_n": top_n,
     "correlation_coefficient": correlation_coefficient,
+    "correlation_matrix": correlation_matrix,
 }
 
 

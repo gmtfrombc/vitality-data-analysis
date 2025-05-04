@@ -28,6 +28,7 @@ from app.utils.saved_questions_db import (
     DB_FILE,
     load_saved_questions as _load_saved_questions_db,
     migrate_from_json as _migrate_from_json,
+    upsert_question,
 )
 
 # ETL ingest
@@ -136,10 +137,9 @@ class DataAnalysisAssistant(param.Parameterized):
     # Analysis workflow stages
     STAGE_INITIAL = 0
     STAGE_CLARIFYING = 1
-    STAGE_SHOWING_DATA = 2
-    STAGE_CODE_GENERATION = 3
-    STAGE_EXECUTION = 4
-    STAGE_RESULTS = 5
+    STAGE_CODE_GENERATION = 2
+    STAGE_EXECUTION = 3
+    STAGE_RESULTS = 4
 
     current_stage = param.Integer(
         default=STAGE_INITIAL, doc="Current stage in the analysis workflow"
@@ -195,7 +195,11 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Interactive components for each stage
         self.clarifying_pane = pn.Column(pn.pane.Markdown(""))
-        self.data_sample_pane = pn.Column(pn.pane.Markdown(""))
+        self.clarifying_input = pn.widgets.TextAreaInput(
+            placeholder="Provide additional details here...",
+            rows=3,
+            visible=False,  # Initially hidden
+        )
         self.code_generation_pane = pn.Column(pn.pane.Markdown(""))
         self.execution_pane = pn.Column(pn.pane.Markdown(""))
 
@@ -203,8 +207,8 @@ class DataAnalysisAssistant(param.Parameterized):
         self.continue_button = pn.widgets.Button(
             name="Continue", button_type="primary", disabled=True, width=100
         )
-        # Hook up continue button (no step-by-step mode for now)
-        # self.continue_button.on_click(self._advance_workflow)
+        # Hook up continue button
+        self.continue_button.on_click(self._advance_workflow)
 
         # Initialize display content
         self._initialize_stage_indicators()
@@ -422,11 +426,10 @@ class DataAnalysisAssistant(param.Parameterized):
             
             This assistant follows a multi-step workflow:
             1. Ask your question
-            2. The assistant will clarify your intent
-            3. Relevant data samples will be shown
-            4. Python code will be generated for your analysis
-            5. The code will be executed with explanations
-            6. Results will be shown with visualizations
+            2. The assistant will clarify your intent if needed
+            3. Python code will be generated for your analysis
+            4. The code will be executed with explanations
+            5. Results will be shown with visualizations
             
             You can save questions for future use using the "Save Question" button below.
             """
@@ -480,7 +483,7 @@ class DataAnalysisAssistant(param.Parameterized):
         # Stage-specific content panels
         workflow_content = pn.Column(
             self.clarifying_pane,
-            self.data_sample_pane,
+            self.clarifying_input,  # Add the new clarifying input
             self.code_generation_pane,
             self.execution_pane,
             sizing_mode="stretch_width",
@@ -562,7 +565,10 @@ class DataAnalysisAssistant(param.Parameterized):
         workflow_panel = pn.Column(
             workflow_indicators,
             pn.layout.Divider(),
-            workflow_content,
+            self.clarifying_pane,
+            self.clarifying_input,  # Add the new clarifying input
+            self.code_generation_pane,
+            self.execution_pane,
             workflow_nav_buttons,
             pn.layout.Divider(),
             save_reset_panel,
@@ -653,7 +659,7 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Reset workflow states
         self.clarifying_pane.objects = []
-        self.data_sample_pane.objects = []
+        self.clarifying_input.visible = False
         self.code_generation_pane.objects = []
         self.execution_pane.objects = []
 
@@ -668,14 +674,24 @@ class DataAnalysisAssistant(param.Parameterized):
             self._update_stage_indicators()
             self._update_status("Starting analysis workflow...")
 
-            # Process through all the stages until we reach execution/results
-            # This helps ensure tests pass by forcing execution
-            while self.current_stage < self.STAGE_EXECUTION:
+            # Process through all the stages until we reach results
+            while self.current_stage <= self.STAGE_RESULTS:
                 self._process_current_stage()
-                # Avoid infinite loop by stopping if any stage fails
-                if self.current_stage == self.STAGE_CLARIFYING:
-                    # In automated testing, always continue past clarification
-                    self.current_stage = self.STAGE_SHOWING_DATA
+                # Avoid infinite loop by adding a short delay
+                import time
+
+                time.sleep(0.1)
+                # Break if we've reached the final stage
+                if self.current_stage == self.STAGE_RESULTS:
+                    break
+
+            # Ensure final results are displayed (in case the loop doesn't reach there)
+            if self.intermediate_results is not None and not self.analysis_result:
+                self._generate_final_results()
+                self._display_final_results()
+
+            logger.info("Query processing completed successfully")
+            self._update_status("Analysis complete")
 
         except Exception as e:
             logger.error(f"Error processing query: {str(e)}", exc_info=True)
@@ -2035,6 +2051,86 @@ Intermediate results and visualisations are still shown so you can audit the pro
             self.analysis_result = result
             return
 
+    def _display_final_results(self):
+        """Display the final analysis results with visualizations."""
+        logger.info("Displaying final results")
+
+        if not self.analysis_result:
+            self.result_pane.object = "No analysis results available."
+            return
+
+        # Display summary and insights in the Results tab
+        if "summary" in self.analysis_result:
+            self.result_pane.object = (
+                f"### Analysis Results\n\n{self.analysis_result['summary']}"
+            )
+        else:
+            self.result_pane.object = "### Analysis Complete\n\nResults are available in the Visualization tab."
+
+        # Display visualizations in the Visualization tab
+        visualization_displayed = False
+
+        # Check for correlation matrix visualization
+        if (
+            isinstance(self.intermediate_results, dict)
+            and "visualization" in self.intermediate_results
+            and "correlation_matrix" in self.intermediate_results
+        ):
+            # Show correlation visualization
+            self.visualization_pane.object = self.intermediate_results["visualization"]
+            visualization_displayed = True
+
+            # Also update the results pane with correlation information
+            if "correlation_matrix" in self.intermediate_results:
+                matrix = self.intermediate_results["correlation_matrix"]
+                method = self.intermediate_results.get("method", "pearson")
+
+                # Create a markdown summary of the correlation results
+                result_md = "### Correlation Analysis Results\n\n"
+                result_md += f"**Correlation Method:** {method.title()}\n\n"
+
+                # If it's a simple correlation between two metrics
+                if "correlation" in self.intermediate_results:
+                    metrics = self.intermediate_results.get("metrics", [])
+                    corr_value = self.intermediate_results["correlation"]
+                    if len(metrics) >= 2:
+                        result_md += f"**Correlation between {metrics[0]} and {metrics[1]}:** {corr_value:.3f}\n\n"
+
+                # Add interpretation based on correlation strength
+                result_md += "**Interpretation:**\n\n"
+                result_md += "- 0.8 to 1.0: Very strong correlation\n"
+                result_md += "- 0.6 to 0.8: Strong correlation\n"
+                result_md += "- 0.4 to 0.6: Moderate correlation\n"
+                result_md += "- 0.2 to 0.4: Weak correlation\n"
+                result_md += "- 0.0 to 0.2: Very weak or no correlation\n\n"
+
+                result_md += "Negative values indicate inverse relationships (as one increases, the other decreases).\n\n"
+
+                # Update the results pane
+                self.result_pane.object = result_md
+
+        # Otherwise, check for standard visualizations
+        if not visualization_displayed:
+            if "bmi_plot" in self.analysis_result:
+                self.visualization_pane.object = self.analysis_result["bmi_plot"]
+            elif "visualization" in self.analysis_result:
+                self.visualization_pane.object = self.analysis_result["visualization"]
+            else:
+                # Try to create a visualization based on results type
+                if (
+                    isinstance(self.intermediate_results, dict)
+                    and "bmi_data" in self.intermediate_results
+                ):
+                    bmi_data = self.intermediate_results["bmi_data"]
+                    if not bmi_data.empty:
+                        bmi_plot = histogram(
+                            bmi_data, "bmi", bins=20, title="BMI Distribution"
+                        )
+                        self.visualization_pane.object = bmi_plot
+
+        # Update status
+        self._update_status("Analysis complete")
+
     def _advance_workflow(self, event=None):
         """Advance to the next workflow stage and trigger associated actions"""
         logger.info("Advancing workflow from stage %s", self.current_stage)
@@ -2043,6 +2139,16 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
         if self.current_stage == self.STAGE_INITIAL:
             # Directly jump to code generation for now
+            self.current_stage = self.STAGE_CODE_GENERATION
+            self._generate_analysis_code()
+            self._display_generated_code()
+
+        elif self.current_stage == self.STAGE_CLARIFYING:
+            # Clean up clarification UI
+            self.clarifying_input.visible = False
+            self.clarifying_pane.objects = []
+
+            # Continue to code generation
             self.current_stage = self.STAGE_CODE_GENERATION
             self._generate_analysis_code()
             self._display_generated_code()
@@ -2067,7 +2173,6 @@ Intermediate results and visualisations are still shown so you can audit the pro
         stage_names = {
             self.STAGE_INITIAL: "Initial",
             self.STAGE_CLARIFYING: "Clarifying",
-            self.STAGE_SHOWING_DATA: "Showing Data",
             self.STAGE_CODE_GENERATION: "Code Generation",
             self.STAGE_EXECUTION: "Execution",
             self.STAGE_RESULTS: "Results",
@@ -2127,23 +2232,17 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     self.current_stage = self.STAGE_CLARIFYING
                     self._display_clarifying_questions()
                 else:
-                    # Skip to data samples if intent is clear
-                    self.current_stage = self.STAGE_SHOWING_DATA
-                    self._generate_data_samples()
-                    self._display_data_samples()
+                    # Skip clarification if intent is clear
+                    self.current_stage = self.STAGE_CODE_GENERATION
+                    self._generate_analysis_code()
+                    self._display_generated_code()
             except Exception as e:
                 logger.error("Error in initial stage: %s", e, exc_info=True)
                 self._update_status(f"Error: {str(e)}")
                 return
 
         elif self.current_stage == self.STAGE_CLARIFYING:
-            # Process clarifying answers and continue
-            self.current_stage = self.STAGE_SHOWING_DATA
-            self._generate_data_samples()
-            self._display_data_samples()
-
-        elif self.current_stage == self.STAGE_SHOWING_DATA:
-            # Generate code for analysis
+            # Process clarifying answers and continue to code generation
             self.current_stage = self.STAGE_CODE_GENERATION
             self._generate_analysis_code()
             self._display_generated_code()
@@ -2183,17 +2282,84 @@ Intermediate results and visualisations are still shown so you can audit the pro
         for i, question in enumerate(self.clarifying_questions):
             questions_md += f"{i+1}. {question}\n"
 
-        questions_md += "\nPlease provide these details in your query or click Continue to proceed anyway."
+        questions_md += (
+            "\nPlease provide these details in the box below, or use the buttons below."
+        )
 
         # Update the clarifying pane - create the object explicitly to ensure tests can find it
         clarify_md = pn.pane.Markdown(questions_md)
         self.clarifying_pane.objects = [clarify_md]
+
+        # Show the input box for user's response
+        self.clarifying_input.value = ""
+        self.clarifying_input.visible = True
+
+        # Add a submit button for the clarification
+        submit_button = pn.widgets.Button(
+            name="Submit Clarification", button_type="success", width=150
+        )
+        submit_button.on_click(self._process_clarification)
+
+        # Add a dismiss button to proceed without clarification
+        dismiss_button = pn.widgets.Button(
+            name="Skip Clarification", button_type="default", width=150
+        )
+        dismiss_button.on_click(self._advance_workflow)
+
+        # Create a row for buttons
+        button_row = pn.Row(
+            submit_button,
+            pn.Spacer(width=10),
+            dismiss_button,
+            sizing_mode="stretch_width",
+            align="center",
+        )
+
+        # Add the buttons to the clarifying pane
+        self.clarifying_pane.append(self.clarifying_input)
+        self.clarifying_pane.append(button_row)
+
         # Add object directly to self for test access
         self.clarifying_text = questions_md
+        # Disable main continue button while clarifying
+        self.continue_button.disabled = True
+
+    def _process_clarification(self, event=None):
+        """Process the user's clarification response."""
+        if self.clarifying_input.value.strip():
+            # If the user provided clarification, append it to the original query
+            clarification = self.clarifying_input.value.strip()
+            self.query_text = (
+                f"{self.query_text}\n\nAdditional context: {clarification}"
+            )
+
+            # Update the input field to reflect the updated query
+            if self.query_input is not None:
+                self.query_input.value = self.query_text
+
+            logger.info(f"Clarification added: {clarification}")
+            self._update_status("Clarification added to query")
+        else:
+            logger.info("No clarification provided, continuing with original query")
+
+        # Hide the clarification UI
+        self.clarifying_input.visible = False
+        self.clarifying_pane.objects = []
+
+        # Re-enable continue button
         self.continue_button.disabled = False
 
+        # Continue to code generation
+        self.current_stage = self.STAGE_CODE_GENERATION
+        self._generate_analysis_code()
+        self._display_generated_code()
+
     def _generate_data_samples(self):
-        """Generate representative data samples to show the user."""
+        """Generate representative data samples to show the user.
+
+        Note: This function is kept for backward compatibility but is no longer used
+        in the main workflow.
+        """
         logger.info("Generating data samples")
         try:
             self.data_samples = {}
@@ -2225,15 +2391,26 @@ Intermediate results and visualisations are still shown so you can audit the pro
             logger.error("Error generating data samples: %s", e, exc_info=True)
             self.data_samples = {"error": str(e)}
 
+    def _display_data_samples(self):
+        """Display the retrieved data samples to the user.
+
+        Note: This function is kept for backward compatibility but is no longer used
+        in the main workflow.
+        """
+        # This implementation is kept for backward compatibility
+        logger.info("Data sample display skipped in updated workflow")
+        pass
+
     def _start_ai_indicator(self, message="AI is thinking..."):
         """Show an animated indicator that AI is processing."""
         if self.ai_status_row_ref is None:
             return  # Can't show indicator if row not initialized
-        # ---NEW---
-        self._ai_base_message = message  # cache once
-        # ---NEW---
 
-        self.ai_status_text.object = f"{message}"
+        # Cache the base message for animation
+        self._ai_base_message = message
+
+        # Set initial message and make indicator visible
+        self.ai_status_text.object = message
         self.ai_status_row_ref.visible = True
 
         # Start animation if not already running
@@ -2243,12 +2420,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 def _animate_ellipsis():
                     self.ellipsis_count = (self.ellipsis_count + 1) % 4
                     ellipsis = "." * self.ellipsis_count
-
-                    # ---NEW---
                     self.ai_status_text.object = f"{self._ai_base_message}{ellipsis}"
-                    # ---NEW---
-
-                    # self.ai_status_text.object = f"{message}{ellipsis}"
 
                 self.ellipsis_animation = pn.state.add_periodic_callback(
                     _animate_ellipsis, period=500  # 500ms interval
@@ -2269,5 +2441,130 @@ Intermediate results and visualisations are still shown so you can audit the pro
             except Exception as e:
                 logger.error("Error stopping animation: %s", e)
 
-        # Hide indicator row
+        # Reset the text and hide the indicator row
+        self.ai_status_text.object = ""
         self.ai_status_row_ref.visible = False
+
+    def _update_saved_question_buttons(self):
+        """Update the sidebar with buttons for saved questions."""
+        logger.info("Updating saved question buttons")
+
+        # Clear existing buttons
+        self.saved_question_buttons_container.objects = []
+
+        # Create buttons for each saved question
+        for question in self.saved_questions:
+            question_name = question.get("name", "Unnamed")
+            question_text = question.get("query", "")
+
+            # Create a button for this question
+            button = pn.widgets.Button(
+                name=question_name,
+                button_type="default",
+                width=220,
+                margin=(0, 0, 5, 0),
+                html_attributes={"title": question_text},  # tooltip hint
+            )
+
+            # Create a click handler that uses the specific question
+            def make_click_handler(q):
+                def on_click(event):
+                    self._use_example_query(q)
+
+                return on_click
+
+            # Attach the click handler to the button
+            button.on_click(make_click_handler(question))
+
+            # Add the button to the container
+            self.saved_question_buttons_container.append(button)
+
+        logger.info(f"Added {len(self.saved_questions)} saved question buttons")
+
+    def _save_question(self, event=None):
+        """Save the current query to the saved questions list."""
+        if not self.query_text:
+            self._update_status("No query to save")
+            return
+
+        if not self.question_name:
+            self._update_status("Please enter a name for the question")
+            return
+
+        # Check if a question with this name already exists
+        existing_index = None
+        for i, q in enumerate(self.saved_questions):
+            if q.get("name") == self.question_name:
+                existing_index = i
+                break
+
+        # Create the question object
+        question = {"name": self.question_name, "query": self.query_text}
+
+        # Update or append
+        if existing_index is not None:
+            self.saved_questions[existing_index] = question
+            logger.info(f"Updated existing question: {self.question_name}")
+        else:
+            self.saved_questions.append(question)
+            logger.info(f"Added new question: {self.question_name}")
+
+        # Save to database using the imported helper
+        try:
+            upsert_question(self.question_name, self.query_text)
+            self._update_status(f"Question '{self.question_name}' saved")
+        except Exception as e:
+            logger.error(f"Error saving question to database: {str(e)}", exc_info=True)
+            self._update_status(f"Error saving to database: {str(e)}")
+
+        # Update the sidebar buttons
+        self._update_saved_question_buttons()
+
+    def _reset_all(self, event=None):
+        """Reset the interface to its initial state."""
+        logger.info("Resetting interface")
+
+        # Reset query
+        self.query_text = ""
+        if self.query_input is not None:
+            self.query_input.value = ""
+
+        # Reset question name
+        self.question_name = ""
+        if self.save_question_input is not None:
+            self.save_question_input.value = ""
+
+        # Reset workflow state
+        self.current_stage = self.STAGE_INITIAL
+        self._update_stage_indicators()
+
+        # Clear results
+        self.result_pane.object = "Enter a query to analyze data"
+        self.code_display.object = ""
+        self.visualization_pane.object = hv.Div("")
+
+        # Clear workflow panes
+        self.clarifying_pane.objects = []
+        self.clarifying_input.value = ""
+        self.clarifying_input.visible = False
+        self.code_generation_pane.objects = []
+        self.execution_pane.objects = []
+
+        # Reset data
+        self.clarifying_questions = []
+        self.data_samples = {}
+        self.generated_code = ""
+        self.intermediate_results = None
+        self.analysis_result = {}
+
+        self._update_status("Interface reset")
+
+
+def data_assistant_page():
+    """Create and return the data assistant page for the application.
+
+    Returns:
+        panel.viewable.Viewable: The data assistant page.
+    """
+    assistant = DataAnalysisAssistant()
+    return assistant.view()

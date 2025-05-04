@@ -667,6 +667,102 @@ def simplify_for_json(obj):
             return str(obj)
 
 
+def _build_filters_clause(intent_obj: QueryIntent) -> str:
+    """Build SQL WHERE clause from intent filters and conditions."""
+    where_clauses: list[str] = []
+
+    # Alias mapping for translating common field names
+    ALIASES = {
+        "test_date": "date",
+        "score": "score_value",
+        "scorevalue": "score_value",
+        "phq9_score": "score_value",
+        "phq_score": "score_value",
+        "sex": "gender",
+        "patient": "patient_id",
+        "assessment_type": "assessment_type",
+        "score_type": "assessment_type",
+        "activity_status": "active",
+        "status": "active",
+    }
+
+    # Helper to quote values properly for SQL
+    def _quote(v):
+        return f"'{v}'" if isinstance(v, str) else str(v)
+
+    # Add global time_range filter if present
+    if intent_obj.time_range is not None:
+        date_column = "date"  # Most tables use this column name
+        start_date = intent_obj.time_range.start_date
+        end_date = intent_obj.time_range.end_date
+
+        # Format dates properly for SQL
+        if hasattr(start_date, "strftime"):
+            start_date = start_date.strftime("%Y-%m-%d")
+        if hasattr(end_date, "strftime"):
+            end_date = end_date.strftime("%Y-%m-%d")
+
+        where_clauses.append(
+            f"{date_column} BETWEEN {_quote(start_date)} AND {_quote(end_date)}"
+        )
+
+    # Process filters (equality, ranges)
+    for f in intent_obj.filters:
+        canonical = ALIASES.get(f.field.lower(), f.field)
+
+        if f.value is not None:
+            val = f.value
+            if canonical == "active" and isinstance(val, str):
+                val = (
+                    1
+                    if val.lower() == "active"
+                    else 0 if val.lower() == "inactive" else val
+                )
+            where_clauses.append(f"{canonical} = {_quote(val)}")
+        elif f.range is not None:
+            start = f.range.get("start")
+            end = f.range.get("end")
+            if start is not None and end is not None:
+                where_clauses.append(
+                    f"{canonical} BETWEEN {_quote(start)} AND {_quote(end)}"
+                )
+        elif f.date_range is not None:
+            start_date = f.date_range.start_date
+            end_date = f.date_range.end_date
+
+            # Format dates properly for SQL
+            if hasattr(start_date, "strftime"):
+                start_date = start_date.strftime("%Y-%m-%d")
+            if hasattr(end_date, "strftime"):
+                end_date = end_date.strftime("%Y-%m-%d")
+
+            where_clauses.append(
+                f"{canonical} BETWEEN {_quote(start_date)} AND {_quote(end_date)}"
+            )
+
+    # Process conditions (operators)
+    for c in intent_obj.conditions:
+        canonical = ALIASES.get(c.field.lower(), c.field)
+        op = c.operator
+
+        if (
+            op.lower() == "between"
+            and isinstance(c.value, (list, tuple))
+            and len(c.value) == 2
+        ):
+            where_clauses.append(
+                f"{canonical} BETWEEN {_quote(c.value[0])} AND {_quote(c.value[1])}"
+            )
+        elif op.lower() == "in" and isinstance(c.value, (list, tuple)):
+            vals = ", ".join(_quote(v) for v in c.value)
+            where_clauses.append(f"{canonical} IN ({vals})")
+        else:
+            where_clauses.append(f"{canonical} {op} {_quote(c.value)}")
+
+    # Build final WHERE clause
+    return "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+
 def _build_code_from_intent(intent: QueryIntent) -> str | None:
     """Return python code string for simple intent matching a registered metric.
 
@@ -674,6 +770,11 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
     the analysis is an aggregate, the assistant returns counts/aggregates broken
     down by that column.
     """
+
+    # First, check if this is an uncommon query type that needs flexible handling
+    dynamic_code = _generate_dynamic_code_for_complex_intent(intent)
+    if dynamic_code:
+        return dynamic_code
 
     # ------------------------------------------------------------------
     # 1. Normalise target field & map common synonyms
@@ -710,6 +811,177 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         )
     ):
         metric_name = "active_patients"
+
+    # ------------------------------------------------------------------
+    # 3c. Multi-variable correlation analysis (NEW)
+    # ------------------------------------------------------------------
+    if intent.analysis_type == "correlation":
+        # Extract metrics to correlate
+        metrics = [metric_name]  # First metric is the target_field
+
+        # Add additional metrics from intent
+        for field in intent.additional_fields:
+            canonical = ALIASES.get(field.lower(), field)
+            if canonical not in metrics:
+                metrics.append(canonical)
+
+        # If there's only one metric, we can't do correlation analysis
+        if len(metrics) < 2:
+            logger.warning("Need at least 2 metrics for correlation analysis")
+            return None
+
+        # Determine if we want a correlation matrix (3+ metrics) or single correlation
+        is_matrix = len(metrics) > 2
+
+        # Determine necessary tables based on metrics
+        vitals_metrics = {"bmi", "weight", "sbp", "dbp", "height"}
+        patient_metrics = {"age", "gender", "ethnicity", "active"}
+        scores_metrics = {"score_value", "value", "phq9", "gad7"}
+
+        needed_tables = set()
+        for m in metrics:
+            if m in vitals_metrics:
+                needed_tables.add("vitals")
+            elif m in patient_metrics:
+                needed_tables.add("patients")
+            elif m in scores_metrics:
+                needed_tables.add("scores")
+
+        # Build the SQL query based on needed tables
+        if len(needed_tables) == 1:
+            # Simple case - all metrics from same table
+            table_name = list(needed_tables)[0]
+            metrics_sql = ", ".join(metrics)
+            sql = f"SELECT {metrics_sql} FROM {table_name}"
+
+            # Add WHERE clauses
+            where_clauses = _build_filters_clause(intent)
+            if where_clauses:
+                sql += f" WHERE {where_clauses}"
+        else:
+            # Complex case - need to join tables
+            tables_joins = []
+            select_clauses = []
+
+            # Start with patients table as base
+            if "patients" in needed_tables:
+                tables_joins.append("patients")
+                for m in metrics:
+                    if m in patient_metrics:
+                        select_clauses.append(f"patients.{m}")
+
+            # Add vitals if needed with LEFT JOIN
+            if "vitals" in needed_tables:
+                if "patients" in tables_joins:
+                    tables_joins.append(
+                        "LEFT JOIN vitals ON patients.id = vitals.patient_id"
+                    )
+                else:
+                    tables_joins.append("vitals")
+
+                for m in metrics:
+                    if m in vitals_metrics:
+                        select_clauses.append(f"vitals.{m}")
+
+            # Add scores if needed with LEFT JOIN
+            if "scores" in needed_tables:
+                if len(tables_joins) > 0:
+                    tables_joins.append(
+                        "LEFT JOIN scores ON patients.id = scores.patient_id"
+                    )
+                else:
+                    tables_joins.append("scores")
+
+                for m in metrics:
+                    if m in scores_metrics:
+                        select_clauses.append(f"scores.{m}")
+
+            # Build the full SQL query
+            sql = f"SELECT {', '.join(select_clauses)} FROM {' '.join(tables_joins)}"
+
+            # Add WHERE clauses
+            where_clauses = _build_filters_clause(intent)
+            if where_clauses:
+                sql += f" WHERE {where_clauses}"
+
+        # Get correlation method parameter
+        corr_method = "pearson"  # default
+        if isinstance(intent.parameters, dict) and "method" in intent.parameters:
+            method = intent.parameters["method"]
+            if method in ["pearson", "spearman", "kendall"]:
+                corr_method = method
+
+        # Check if we should skip visualization (for tests)
+        skip_viz = False
+        if isinstance(intent.parameters, dict) and intent.parameters.get("SKIP_VIZ"):
+            skip_viz = True
+
+        # Generate code based on whether we're doing matrix or single correlation
+        if is_matrix:
+            code = (
+                "# Auto-generated multi-variable correlation matrix\n"
+                "from db_query import query_dataframe\n"
+                "from app.utils.metrics import correlation_matrix\n"
+                "from app.utils.plots import correlation_heatmap\n\n"
+                f"# Load data\n_sql = '''{sql}'''\n"
+                "_df = query_dataframe(_sql)\n\n"
+                f"# Calculate correlation matrix with p-values\nmetrics = {metrics}\n"
+                f"corr_matrix, p_values = correlation_matrix(_df, metrics, method='{corr_method}', include_p_values=True)\n\n"
+            )
+
+            if not skip_viz:
+                code += (
+                    "# Create visualization\n"
+                    "viz = correlation_heatmap(corr_matrix, p_values, title='Correlation Matrix')\n\n"
+                )
+            else:
+                code += "# Visualization skipped for testing\nviz = None\n\n"
+
+            code += (
+                "# Return results\n"
+                "results = {\n"
+                "    'correlation_matrix': corr_matrix.to_dict(),\n"
+                "    'p_values': p_values.to_dict() if p_values is not None else None,\n"
+                "    'visualization': viz\n"
+                "}\n"
+            )
+        else:
+            # Simple pair correlation (just 2 metrics)
+            code = (
+                "# Auto-generated correlation analysis\n"
+                "from db_query import query_dataframe\n"
+                "from app.utils.metrics import correlation_coefficient\n"
+            )
+
+            if not skip_viz:
+                code += "from app.utils.plots import scatter_plot\n\n"
+            else:
+                code += "\n"
+
+            code += (
+                f"# Load data\n_sql = '''{sql}'''\n"
+                "_df = query_dataframe(_sql)\n\n"
+                f"# Calculate correlation coefficient\ncorr_value = correlation_coefficient(_df, '{metrics[0]}', '{metrics[1]}', method='{corr_method}')\n\n"
+            )
+
+            if not skip_viz:
+                code += (
+                    "# Create visualization\n"
+                    f"viz = scatter_plot(_df, x='{metrics[0]}', y='{metrics[1]}', correlation=True, regression=True)\n\n"
+                )
+            else:
+                code += "# Visualization skipped for testing\nviz = None\n\n"
+
+            code += (
+                "# Return results\n"
+                "results = {\n"
+                "    'correlation_coefficient': corr_value,\n"
+                "    'method': '" + corr_method + "',\n"
+                "    'metrics': ['" + metrics[0] + "', '" + metrics[1] + "'],\n"
+                "    'visualization': viz\n"
+                "}\n"
+            )
+        return code
 
     # ------------------------------------------------------------------
     # 2. Quick out via metrics registry (unchanged path)
@@ -1376,22 +1648,26 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         return code
 
     # ------------------------------------------------------------------
-    # 3h. Correlation – scatter plot with correlation coefficient
+    # 3d. Standard deviation - pandas path using std
     # ------------------------------------------------------------------
-    # Helper function to build SQL WHERE clauses from intent filters and conditions
-    def _build_filters_clause(intent_obj: QueryIntent) -> str:
-        """Build SQL WHERE clause from intent filters and conditions."""
+    if intent.analysis_type == "std_dev":
+        # Choose table
+        if metric_name in {"bmi", "weight", "sbp", "dbp"}:
+            table_name = "vitals"
+        elif metric_name in {"age", "score_value", "value"}:
+            table_name = (
+                "scores" if metric_name in {"score_value", "value"} else "patients"
+            )
+        else:
+            table_name = "vitals"
+
         where_clauses: list[str] = []
 
-        # Helper to quote values properly for SQL
-        def _quote(v):
-            return f"'{v}'" if isinstance(v, str) else str(v)
-
         # Add global time_range filter if present
-        if intent_obj.time_range is not None:
-            date_column = "date"  # Most tables use this column name
-            start_date = intent_obj.time_range.start_date
-            end_date = intent_obj.time_range.end_date
+        if intent.time_range is not None:
+            date_column = "date"
+            start_date = intent.time_range.start_date
+            end_date = intent.time_range.end_date
 
             # Format dates properly for SQL
             if hasattr(start_date, "strftime"):
@@ -1400,29 +1676,20 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
                 end_date = end_date.strftime("%Y-%m-%d")
 
             where_clauses.append(
-                f"{date_column} BETWEEN {_quote(start_date)} AND {_quote(end_date)}"
+                f"{date_column} BETWEEN '{start_date}' AND '{end_date}'"
             )
 
-        # Process filters (equality, ranges)
-        for f in intent_obj.filters:
+        for f in intent.filters:
+            if f.value is None and f.date_range is None:
+                continue
+
             canonical = ALIASES.get(f.field.lower(), f.field)
 
             if f.value is not None:
-                val = f.value
-                if canonical == "active" and isinstance(val, str):
-                    val = (
-                        1
-                        if val.lower() == "active"
-                        else 0 if val.lower() == "inactive" else val
-                    )
-                where_clauses.append(f"{canonical} = {_quote(val)}")
-            elif f.range is not None:
-                start = f.range.get("start")
-                end = f.range.get("end")
-                if start is not None and end is not None:
-                    where_clauses.append(
-                        f"{canonical} BETWEEN {_quote(start)} AND {_quote(end)}"
-                    )
+                val_literal = (
+                    f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+                )
+                where_clauses.append(f"{canonical} = {val_literal}")
             elif f.date_range is not None:
                 start_date = f.date_range.start_date
                 end_date = f.date_range.end_date
@@ -1434,155 +1701,32 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
                     end_date = end_date.strftime("%Y-%m-%d")
 
                 where_clauses.append(
-                    f"{canonical} BETWEEN {_quote(start_date)} AND {_quote(end_date)}"
+                    f"{canonical} BETWEEN '{start_date}' AND '{end_date}'"
                 )
 
-        # Process conditions (operators)
-        for c in intent_obj.conditions:
+        # Add conditions
+        for c in intent.conditions:
             canonical = ALIASES.get(c.field.lower(), c.field)
             op = c.operator
+            val_literal = f"'{c.value}'" if isinstance(c.value, str) else str(c.value)
+            where_clauses.append(f"{canonical} {op} {val_literal}")
 
-            if (
-                op.lower() == "between"
-                and isinstance(c.value, (list, tuple))
-                and len(c.value) == 2
-            ):
-                where_clauses.append(
-                    f"{canonical} BETWEEN {_quote(c.value[0])} AND {_quote(c.value[1])}"
-                )
-            elif op.lower() == "in" and isinstance(c.value, (list, tuple)):
-                vals = ", ".join(_quote(v) for v in c.value)
-                where_clauses.append(f"{canonical} IN ({vals})")
-            else:
-                where_clauses.append(f"{canonical} {op} {_quote(c.value)}")
+        where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
-        # Build final WHERE clause
-        return "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        # SQL to select the data
+        sql = f"SELECT {metric_name} FROM {table_name} {where_clause};"
 
-    if intent.analysis_type == "correlation":
-        # Need at least one field in additional_fields
-        if not intent.additional_fields:
-            logger.warning("Correlation analysis without second field specified")
-            return None
+        # Build the code
+        code = (
+            "# Auto-generated std_dev aggregate using pandas\n"
+            "from db_query import query_dataframe\n"
+            "import numpy as _np\n\n"
+            f'_df = query_dataframe("{sql}")\n'
+            f"_clean = _df.dropna(subset=['{metric_name}'])\n"
+            f"results = float(_clean['{metric_name}'].std(ddof=1)) if not _clean.empty else _np.nan\n"
+        )
 
-        # Get the second metric (correlation target)
-        metric_x = intent.target_field
-        metric_y = intent.additional_fields[0]
-
-        # Set correlation method (default to pearson)
-        method = intent.parameters.get("method", "pearson")
-
-        # Skip visualization if needed (mainly for testing)
-        skip_viz = intent.parameters.get("SKIP_VIZ", False)
-
-        # Create filters clause
-        filters = _build_filters_clause(intent)
-
-        # Build the SQL query using the actual column names, not aliases
-        sql = f"""
-            SELECT 
-                vitals.{metric_x} AS {metric_x},
-                vitals.{metric_y} AS {metric_y}
-            FROM vitals
-            {filters}
-            """
-
-        # Define the template with conditional visualization
-        if skip_viz:
-            template = f'''
-# Auto-generated correlation analysis (simplified for testing)
-import numpy as np
-import pandas as pd
-from db_query import query_dataframe
-
-# Get data from database
-sql = """
-            SELECT 
-                vitals.{metric_x} AS {metric_x},
-                vitals.{metric_y} AS {metric_y}
-            FROM vitals
-            {filters}
-            """
-df = query_dataframe(sql)
-
-# Clean data (remove rows with NaN in either column)
-clean_df = df.dropna(subset=['{metric_x}', '{metric_y}'])
-
-# Calculate correlation
-if len(clean_df) >= 2:
-    # Calculate {method.title()} correlation
-    corr_value = clean_df['{metric_x}'].corr(clean_df['{metric_y}'], method='{method}')
-    
-    # Prepare results (without visualization for testing)
-    results = {{
-        'correlation_coefficient': float(corr_value),
-        'correlation_method': '{method}',
-        'sample_size': len(clean_df),
-        'x_metric': '{metric_x}',
-        'y_metric': '{metric_y}'
-    }}
-else:
-    # Not enough data points
-    results = {{
-        'error': 'Insufficient data points for correlation analysis',
-        'sample_size': len(clean_df)
-    }}
-'''
-        else:
-            template = f'''
-# Auto-generated correlation analysis with scatter plot
-import numpy as np
-import pandas as pd
-from app.utils.plots import scatter_plot
-from db_query import query_dataframe
-
-# Get data from database
-sql = """
-            SELECT 
-                vitals.{metric_x} AS {metric_x},
-                vitals.{metric_y} AS {metric_y}
-            FROM vitals
-            {filters}
-            """
-df = query_dataframe(sql)
-
-# Clean data (remove rows with NaN in either column)
-clean_df = df.dropna(subset=['{metric_x}', '{metric_y}'])
-
-# Calculate correlation
-if len(clean_df) >= 2:
-    # Calculate {method.title()} correlation
-    corr_value = clean_df['{metric_x}'].corr(clean_df['{metric_y}'], method='{method}')
-    
-    # Create visualization
-    viz = scatter_plot(
-        clean_df, 
-        x='{metric_x}', 
-        y='{metric_y}',
-        xlabel='{metric_x}',
-        ylabel='{metric_y}',
-        title='Correlation: {metric_x.title()} vs {metric_y.title()}',
-        correlation=True,
-        regression=True
-    )
-    
-    # Prepare results
-    results = {{
-        'correlation_coefficient': float(corr_value),
-        'correlation_method': '{method}',
-        'sample_size': len(clean_df),
-        'visualization': viz,
-        'x_metric': '{metric_x}',
-        'y_metric': '{metric_y}'
-    }}
-else:
-    # Not enough data points
-    results = {{
-        'error': 'Insufficient data points for correlation analysis',
-        'sample_size': len(clean_df)
-    }}
-'''
-        return template
+        return code
 
     # ------------------------------------------------------------------
     # 4. FALLBACK – preserve original average/distribution templates
@@ -1592,3 +1736,241 @@ else:
 
 # Create the single instance to be imported by other modules
 ai = AIHelper()
+
+
+def _generate_dynamic_code_for_complex_intent(intent: QueryIntent) -> str | None:
+    """Generate code for complex or uncommon query types that don't match standard patterns.
+
+    Returns None if the intent should be handled by standard deterministic templates.
+    """
+    # Define what we consider "complex" or "uncommon" queries
+    uncommon_analysis_types = {"distribution", "comparison", "trend"}
+
+    # Check if this is an uncommon analysis type
+    if intent.analysis_type not in uncommon_analysis_types:
+        return None
+
+    # Special case for trend analysis with time_range
+    if intent.analysis_type == "trend" and intent.time_range is not None:
+        return _generate_trend_analysis_code(intent)
+
+    # Special case for distribution analysis
+    if intent.analysis_type == "distribution":
+        return _generate_distribution_analysis_code(intent)
+
+    # Special case for comparison analysis
+    if intent.analysis_type == "comparison":
+        return _generate_comparison_analysis_code(intent)
+
+    # If we reach here, this is not a query type we have special handling for
+    return None
+
+
+def _generate_trend_analysis_code(intent: QueryIntent) -> str:
+    """Generate code for trend analysis over time."""
+    metric = intent.target_field
+
+    # Determine table based on metric
+    table_name = "vitals"
+    if metric in {"score_value", "phq9_score", "gad7_score"}:
+        table_name = "scores"
+
+    # Build filters clause for WHERE conditions
+    filters_clause = _build_filters_clause(intent)
+    where_clause = f"WHERE {filters_clause}" if filters_clause else ""
+
+    # Format dates for time range
+    start_date = intent.time_range.start_date
+    end_date = intent.time_range.end_date
+    if hasattr(start_date, "strftime"):
+        start_date = start_date.strftime("%Y-%m-%d")
+    if hasattr(end_date, "strftime"):
+        end_date = end_date.strftime("%Y-%m-%d")
+
+    # We'll group by month using SQL's date functions
+    sql = f"""
+    SELECT 
+        strftime('%Y-%m', date) AS month,
+        AVG({metric}) AS avg_value
+    FROM {table_name}
+    {where_clause}
+    {"AND" if where_clause else "WHERE"} date BETWEEN '{start_date}' AND '{end_date}'
+    GROUP BY month
+    ORDER BY month
+    """
+
+    # Build the Python code to execute
+    code = (
+        "# Auto-generated trend analysis over time\n"
+        "from db_query import query_dataframe\n"
+        "import pandas as pd\n\n"
+        f"# SQL query to get monthly trends\n_sql = '''{sql}'''\n\n"
+        "# Execute query and process results\n"
+        "df = query_dataframe(_sql)\n"
+        "if df.empty:\n"
+        "    results = {}\n"
+        "else:\n"
+        "    # Calculate monthly trends - return as dictionary\n"
+        "    results = df.set_index('month')['avg_value'].to_dict()\n"
+    )
+
+    return code
+
+
+def _generate_distribution_analysis_code(intent: QueryIntent) -> str:
+    """Generate code for distribution analysis."""
+    metric = intent.target_field
+
+    # Determine table based on metric
+    table_name = "vitals"
+    if metric in {"score_value", "phq9_score", "gad7_score"}:
+        table_name = "scores"
+    elif metric in {"age", "gender", "ethnicity"}:
+        table_name = "patients"
+
+    # Build filters clause for WHERE conditions
+    filters_clause = _build_filters_clause(intent)
+    where_clause = f"WHERE {filters_clause}" if filters_clause else ""
+
+    # Add time range if specified
+    if intent.time_range is not None:
+        date_clause = f"date BETWEEN '{intent.time_range.start_date}' AND '{intent.time_range.end_date}'"
+        where_clause = (
+            where_clause + f" AND {date_clause}"
+            if where_clause
+            else f"WHERE {date_clause}"
+        )
+
+    # SQL to get raw data for distribution analysis
+    sql = f"""
+    SELECT {metric} 
+    FROM {table_name}
+    {where_clause}
+    """
+
+    # Build the Python code
+    code = (
+        "# Auto-generated distribution analysis\n"
+        "from db_query import query_dataframe\n"
+        "import pandas as pd\n"
+        "import numpy as np\n"
+        "from app.utils.plots import histogram\n\n"
+        f"# SQL query to get distribution data\n_sql = '''{sql}'''\n\n"
+        "# Execute query and process results\n"
+        "df = query_dataframe(_sql)\n"
+        "if df.empty:\n"
+        "    results = {'error': 'No data available for distribution analysis'}\n"
+        "else:\n"
+        "    # Calculate distribution statistics\n"
+        f"    stats = df['{metric}'].describe().to_dict()\n"
+        "    \n"
+        "    # Create histogram visualization\n"
+        f"    title = 'Distribution of {metric.title()}'\n"
+        f"    viz = histogram(df, '{metric}', bins=15, title=title)\n"
+        "    \n"
+        "    # Return results\n"
+        "    results = {\n"
+        "        'statistics': stats,\n"
+        "        'visualization': viz,\n"
+        "        'count': int(stats.get('count', 0)),\n"
+        "        'mean': float(stats.get('mean', 0)),\n"
+        "        'std': float(stats.get('std', 0)),\n"
+        "        'min': float(stats.get('min', 0)),\n"
+        "        'max': float(stats.get('max', 0))\n"
+        "    }\n"
+    )
+
+    return code
+
+
+def _generate_comparison_analysis_code(intent: QueryIntent) -> str:
+    """Generate code for comparison analysis between groups."""
+    metric = intent.target_field
+    compare_field = None
+
+    # Try to determine what to compare by
+    if intent.group_by:
+        compare_field = intent.group_by[0]
+    elif "compare_by" in intent.parameters:
+        compare_field = intent.parameters["compare_by"]
+    else:
+        # Default to gender if not specified
+        compare_field = "gender"
+
+    # Determine table based on metric
+    table_name = "vitals"
+    if metric in {"score_value", "phq9_score", "gad7_score"}:
+        table_name = "scores"
+    elif metric in {"age", "gender", "ethnicity"}:
+        table_name = "patients"
+
+    # Add join with patients table if needed for comparison field
+    join_clause = ""
+    if table_name != "patients" and compare_field in {
+        "gender",
+        "age",
+        "ethnicity",
+        "active",
+    }:
+        join_clause = "LEFT JOIN patients ON patients.id = {}.patient_id".format(
+            table_name
+        )
+        compare_field = f"patients.{compare_field}"
+    else:
+        compare_field = f"{table_name}.{compare_field}"
+
+    # Build filters clause for WHERE conditions
+    filters_clause = _build_filters_clause(intent)
+    where_clause = f"WHERE {filters_clause}" if filters_clause else ""
+
+    # Add time range if specified
+    if intent.time_range is not None:
+        date_clause = f"date BETWEEN '{intent.time_range.start_date}' AND '{intent.time_range.end_date}'"
+        where_clause = (
+            where_clause + f" AND {date_clause}"
+            if where_clause
+            else f"WHERE {date_clause}"
+        )
+
+    # SQL to get data for comparison analysis
+    sql = f"""
+    SELECT 
+        {compare_field} AS compare_group,
+        AVG({table_name}.{metric}) AS avg_value,
+        COUNT(*) AS count
+    FROM {table_name}
+    {join_clause}
+    {where_clause}
+    GROUP BY {compare_field}
+    ORDER BY avg_value DESC
+    """
+
+    # Build the Python code
+    code = (
+        "# Auto-generated comparison analysis\n"
+        "from db_query import query_dataframe\n"
+        "import pandas as pd\n"
+        "from app.utils.plots import bar_chart\n\n"
+        f"# SQL query to get comparison data\n_sql = '''{sql}'''\n\n"
+        "# Execute query and process results\n"
+        "df = query_dataframe(_sql)\n"
+        "if df.empty:\n"
+        "    results = {'error': 'No data available for comparison analysis'}\n"
+        "else:\n"
+        "    # Format comparison results\n"
+        "    comparison_data = df.set_index('compare_group')['avg_value'].to_dict()\n"
+        "    count_data = df.set_index('compare_group')['count'].to_dict()\n"
+        "    \n"
+        "    # Create bar chart visualization\n"
+        f"    title = 'Comparison of Average {metric.title()} by Group'\n"
+        "    viz = bar_chart(df, 'compare_group', 'avg_value', title=title)\n"
+        "    \n"
+        "    # Return results\n"
+        "    results = {\n"
+        "        'comparison': comparison_data,\n"
+        "        'counts': count_data,\n"
+        "        'visualization': viz\n"
+        "    }\n"
+    )
+
+    return code

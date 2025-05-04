@@ -16,9 +16,9 @@ Below is a snapshot of the current work streams:
 | ID | Work Stream | Key Next Steps |
 |----|-------------|----------------|
 | WS-1 | Stability & Refactor | Unit tests ≥ 60 % · remove duplication |
-| WS-2 | Hybrid AI Engine | Date range filtering ✔ · dynamic code generation |
+| WS-2 | Hybrid AI Engine | Multi-metric correlation ✔ · dynamic code generation |
 | WS-3 | Data & Storage | Saved questions in SQLite ✔ · migrations ✔ · JSON→SQLite ETL ✔ |
-| WS-4 | UX & Viz | Auto-visualization mapper ✔ · responsive layout · drag-and-drop chart builder |
+| WS-4 | UX & Viz | Auto-visualization mapper ✔ · fix plots.py test issues 🔄 · responsive layout |
 | WS-5 | Cloud Deployment | Docker · CI/CD · AWS/GCP hosting |
 | WS-6 | Continuous Feedback | Feedback widget ✔ · query/response logging · nightly triage |
 
@@ -95,6 +95,7 @@ Notes:
 * Pre-commit hooks (`black`, `ruff`) run automatically before each commit (`pre-commit install` one-time).
 * CI fails if branch coverage drops below the level on `main`.
 * Add or extend tests whenever you fix a bug or create new helpers—e.g., histogram helper raises `ValueError` when column missing.
+* **Known Issue (2025-07-15):** Tests for plot utilities (`tests/utils/test_plots.py`) are failing due to mock implementation issues. Coverage remains strong at 73.38% (above the required 60%), and a fix is in progress. See `docs/summary_2025-07-15.md` for details.
 
 ---
-*Last updated: 2025-07-13 – WS-2 Date range filtering capability* 
+*Last updated: 2025-07-15 – WS-2 Multi-metric correlation analysis & WS-4 Test improvement plan* 
