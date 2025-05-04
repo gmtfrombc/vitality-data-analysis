@@ -42,7 +42,11 @@ Use reverse-chronological order (latest on top).
 🧪 Extended ingest tests for additive rows; all 68 tests pass.
 🩹 Patient-view robust date parsing; fixed pd.to_datetime crashes.
 ✅ Coverage still 75 %.
-Last updated: 2025-07-10
+🆕 Roadmap: Added *WS-6 Continuous Feedback & Evaluation* work stream with feedback widget, query logging, triage loop, and dataset prep.
+🚀 Feature: Auto-viz mapper (#WS-4-A) – Intelligent visualization selection for query results
+🛠️ Feature: User feedback collection system (#WS-6-A) – Thumbs up/down with comments
+🔄 Fixed workflow stages to ensure tests pass with proper query execution flow
+Last updated: 2025-07-12
 
 - [ ] Tech debt: silence Tornado loop warn in tests
 - [ ] Upgrade to Pydantic v2 APIs

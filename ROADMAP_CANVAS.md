@@ -21,8 +21,9 @@ Provide healthcare teams with an interactive, AI-assisted data exploration tool 
 | WS-1 | **Stability & Refactor** | Solid baseline with tests and CI | ✔ Persist saved questions (file) <br> ✔ Unit test coverage ≥ 60 % <br> ✔ Golden query harness <br> ☐ Refactor duplicated code | Q2 2024 |
 | WS-2 | **Hybrid AI Engine** | Natural-language analytics powered by GPT | ✔ OpenAI integration <br> ✔ Intent classification API <br> ✔ Richer code templates (var/std, pct-change, top-N, GROUP BY, Multi-Metric) <br> ☐ Dynamic code generation sandbox | Q2–Q3 2024 |
 | WS-3 | **Data & Storage** | Scalable, durable persistence | ✔ Move saved questions to SQLite (tests + read/write) <br> ✔ Add migrations <br> ✔ Incremental ETL & Import panel with audit logging <br> ☐ Multiple-user support | Q3 2024 |
-| WS-4 | **UX & Visualization** | Intuitive interface & dashboards | 🔄 Auto-visualisation mapper <br> ☐ Responsive layout overhaul <br> ☐ Drag-and-drop chart builder <br> ☐ Help & onboarding tour <br> ☐ Refine follow-ups | Q3 2024 |
+| WS-4 | **UX & Visualization** | Intuitive interface & dashboards | ✔ Auto-visualisation mapper <br> ☐ Responsive layout overhaul <br> ☐ Drag-and-drop chart builder <br> ☐ Help & onboarding tour <br> ☐ Refine follow-ups | Q3 2024 |
 | WS-5 | **Cloud Deployment** | CI/CD & managed hosting | ☐ Dockerize app <br> ☐ GitHub Actions pipeline <br> ☐ Deploy to AWS/GCP <br> ☐ Observability (logging, metrics) | Q4 2024 |
+| WS-6 | **Continuous Feedback & Evaluation** | Human-in-the-loop iterative improvement | ✔ Add feedback widget & `assistant_feedback` table <br> ☐ Query/response logging <br> ☐ Nightly triage report <br> ☐ Weekly **Feedback Friday** loop <br> ☐ Dataset for fine-tuning | Q3 2025 |
 
 Legend: ✔ = done ☐ = pending 🔄 = in progress
 
@@ -30,8 +31,8 @@ Legend: ✔ = done ☐ = pending 🔄 = in progress
 ## 4. Backlog (Next-Up Tasks)
 - [ ] **Tests:** Scale golden-query harness to ≥25 canonical questions (#testing)
 - [✔] **AI:** Multi-metric & boolean filter parsing (#ai) - *Backend & parsing tests complete; needs live LLM validation.*
-- [ ] **UX:** Auto-visualisation mapper (#design)
-- [x] **Persistence:** JSON → SQLite patient-data update pipeline (#db) – import panel & audit log done
+- [✔] **UX:** Auto-visualisation mapper (#design) - *Implemented in `auto_viz_mapper.py` with tests*
+- [✔] **Persistence:** JSON → SQLite patient-data update pipeline (#db) – import panel & audit log done
 - [ ] **Refactor:** Extract plotting utilities into `plots.py` (#code-health)
 - [ ] **Deployment:** Draft minimal Dockerfile & GH Action (#devops)
 - [ ] **UX:** Add tooltip hints to saved-question buttons (#design)
@@ -49,7 +50,7 @@ Legend: ✔ = done ☐ = pending 🔄 = in progress
 ---
 ## 6. Meta
 - **Document owner:** @gmtfr  
-- **Last updated:** 2025-07-10 # WS-3 ETL import panel & audit log complete
+- **Last updated:** 2025-07-12 # Completed WS-4-A Auto-viz mapper and WS-6-A Feedback widget
 - **Edit instructions for AI assistants:**  
   • Maintain markdown table formatting.  
   • Use ✔/☐/🔄 symbols for status.  
