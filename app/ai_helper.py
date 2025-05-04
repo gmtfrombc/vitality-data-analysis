@@ -5,7 +5,7 @@ import json
 from dotenv import load_dotenv
 import logging.handlers
 from pathlib import Path
-from app.utils.query_intent import parse_intent_json, QueryIntent
+from app.utils.query_intent import parse_intent_json, QueryIntent, DateRange
 from pydantic import BaseModel
 from app.utils.metrics import METRIC_REGISTRY
 import re
@@ -101,15 +101,22 @@ class AIHelper:
         {
           "analysis_type": one of [count, average, median, distribution, comparison, trend, change, sum, min, max, variance, std_dev, percent_change, top_n],
           "target_field"  : string,            # Primary metric/column (e.g., "bmi")
-          "filters"      : [ {"field": string, EITHER "value": <scalar> OR "range": {"start": <val>, "end": <val>} } ], # Equality/range filters (e.g., gender="F")
-          "conditions"   : [ {"field": string, "operator": string, "value": <any>} ],                               # Operator conditions (e.g., bmi > 30)
+          "filters"      : [ {"field": string, EITHER "value": <scalar> OR "range": {"start": <val>, "end": <val>} OR "date_range": {"start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"} } ],
+          "conditions"   : [ {"field": string, "operator": string, "value": <any>} ],
           "parameters"   : { ... },              # Extra params (e.g., {"n": 5} for top_n)
           "additional_fields": [string],         # OPTIONAL: Extra metrics for multi-metric queries (e.g., ["weight"] if target_field="bmi")
-          "group_by": [string]                 # OPTIONAL: Columns to group results by (e.g., ["gender"])
+          "group_by": [string],                  # OPTIONAL: Columns to group results by (e.g., ["gender"])
+          "time_range": {"start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"}  # OPTIONAL: Global date range for the entire query
         }
 
         VALID COLUMN NAMES (use EXACTLY these; map synonyms):
         ["patient_id", "date", "score_type", "score_value", "gender", "age", "ethnicity", "bmi", "weight", "sbp", "dbp", "active"]
+
+        DATE RANGE HANDLING:
+        • If the query mentions a specific date range (e.g., "from January to March 2025" or "between 2024-01-01 and 2024-03-31"), add a "time_range" field.
+        • If the range is relative (e.g., "last 3 months", "previous quarter"), calculate the actual dates relative to the current date.
+        • For queries like "Q1 2025" or "first quarter of 2025", use "2025-01-01" to "2025-03-31".
+        • Month names should be converted to their numeric values (e.g., "January 2025" becomes "2025-01-01").
 
         Rules:
         • Use "filters" for simple equality (gender="F") or date/numeric ranges.
@@ -117,6 +124,7 @@ class AIHelper:
         • If the user asks for multiple metrics (e.g., "average weight AND BMI"), put the first metric in "target_field" and subsequent ones in "additional_fields".
         • If the user asks to break down results "by" or "per" a category (e.g., "by gender", "per ethnicity"), populate the "group_by" list.
         • Keep "additional_fields" and "group_by" as empty lists `[]` if not applicable.
+        • If the query has a timeframe like "in January", "during Q2", or "from March to June", add a "time_range" with the appropriate dates.
         • Do NOT output any keys other than the schema above.
         • Respond with raw JSON – no markdown fencing.
 
@@ -130,7 +138,8 @@ class AIHelper:
           "conditions": [{"field": "bmi", "operator": ">", "value": 30}],
           "parameters": {},
           "additional_fields": [],
-          "group_by": []
+          "group_by": [],
+          "time_range": null
         }
 
         Example 2 – "What is the average weight and BMI for active patients under 60?":
@@ -141,7 +150,8 @@ class AIHelper:
           "conditions": [{"field": "age", "operator": "<", "value": 60}],
           "parameters": {},
           "additional_fields": ["bmi"],
-          "group_by": []
+          "group_by": [],
+          "time_range": null
         }
 
         Example 3 – "Show patient count per ethnicity":
@@ -152,7 +162,20 @@ class AIHelper:
           "conditions": [],
           "parameters": {},
           "additional_fields": [],
-          "group_by": ["ethnicity"]
+          "group_by": ["ethnicity"],
+          "time_range": null
+        }
+
+        Example 4 – "Show weight trends from January to March 2025":
+        {
+          "analysis_type": "trend",
+          "target_field": "weight",
+          "filters": [],
+          "conditions": [],
+          "parameters": {},
+          "additional_fields": [],
+          "group_by": [],
+          "time_range": {"start_date": "2025-01-01", "end_date": "2025-03-31"}
         }
         """
 
@@ -212,6 +235,66 @@ class AIHelper:
                         "Overriding analysis_type to 'count' based on 'total' keyword"
                     )
                     intent.analysis_type = "count"
+
+                # ------------------------------------------------------------------
+                # NEW: Post-processing heuristics for date ranges
+                # ------------------------------------------------------------------
+                # Check for date range mentions that might have been missed
+                date_range_patterns = [
+                    r"from\s+(\w+)\s+to\s+(\w+)",
+                    r"between\s+(\w+)\s+and\s+(\w+)",
+                    r"in\s+(january|february|march|april|may|june|july|august|september|october|november|december)",
+                    r"during\s+(q1|q2|q3|q4)",
+                    r"(last|past)\s+(\d+)\s+(days|weeks|months|years)",
+                ]
+
+                # If the intent doesn't already have a date range but query mentions dates
+                if not intent.has_date_filter():
+                    # Simple date heuristic for "in [month]" or "during [month]"
+                    month_pattern = r"(?:in|during)\s+(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(\d{4}))?\.?"
+                    month_match = re.search(month_pattern, q_lower)
+
+                    if month_match:
+                        from datetime import datetime
+
+                        month_name = month_match.group(1)
+                        year = (
+                            int(month_match.group(2))
+                            if month_match.group(2)
+                            else datetime.now().year
+                        )
+
+                        month_map = {
+                            "january": 1,
+                            "february": 2,
+                            "march": 3,
+                            "april": 4,
+                            "may": 5,
+                            "june": 6,
+                            "july": 7,
+                            "august": 8,
+                            "september": 9,
+                            "october": 10,
+                            "november": 11,
+                            "december": 12,
+                        }
+
+                        month_num = month_map.get(month_name.lower())
+                        if month_num:
+                            # Create a date range for the full month
+                            import calendar
+
+                            _, last_day = calendar.monthrange(year, month_num)
+
+                            start_date = f"{year}-{month_num:02d}-01"
+                            end_date = f"{year}-{month_num:02d}-{last_day:02d}"
+
+                            intent.time_range = DateRange(
+                                start_date=start_date, end_date=end_date
+                            )
+                            logger.debug(
+                                f"Added implicit date range for month: {start_date} to {end_date}"
+                            )
 
                 logger.info("Intent analysis successful on attempt %s", attempt + 1)
                 return intent
@@ -695,6 +778,30 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         ):
             where_clauses.append("active = 1")
 
+        # Add global time_range filter if present
+        if intent.time_range is not None:
+            # Determine which date column to use based on the table
+            date_column = "date"
+            if table_name == "patients":
+                # For patients table, default to program_start_date
+                date_column = "program_start_date"
+
+            start_date = intent.time_range.start_date
+            end_date = intent.time_range.end_date
+
+            # Format dates properly for SQL
+            if hasattr(start_date, "strftime"):
+                start_date = start_date.strftime("%Y-%m-%d")
+            if hasattr(end_date, "strftime"):
+                end_date = end_date.strftime("%Y-%m-%d")
+
+            where_clauses.append(
+                f"{date_column} BETWEEN {_quote(start_date)} AND {_quote(end_date)}"
+            )
+            logger.debug(
+                f"Added date range filter: {date_column} between {start_date} and {end_date}"
+            )
+
         # Equality & range filters ----------------------------------------
         for f in intent.filters:
             canonical = ALIASES.get(f.field.lower(), f.field)
@@ -714,6 +821,23 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
                     where_clauses.append(
                         f"{canonical} BETWEEN {_quote(start)} AND {_quote(end)}"
                     )
+            elif f.date_range is not None:
+                # Handle the date_range field in Filter
+                start_date = f.date_range.start_date
+                end_date = f.date_range.end_date
+
+                # Format dates properly for SQL
+                if hasattr(start_date, "strftime"):
+                    start_date = start_date.strftime("%Y-%m-%d")
+                if hasattr(end_date, "strftime"):
+                    end_date = end_date.strftime("%Y-%m-%d")
+
+                where_clauses.append(
+                    f"{canonical} BETWEEN {_quote(start_date)} AND {_quote(end_date)}"
+                )
+                logger.debug(
+                    f"Added filter date range: {canonical} between {start_date} and {end_date}"
+                )
 
         # Operator-based conditions --------------------------------------
         for c in intent.conditions:
@@ -820,12 +944,47 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
             table_name = "vitals"
 
         where_clauses: list[str] = []
+
+        # Add global time_range filter if present
+        if intent.time_range is not None:
+            date_column = "date"
+            start_date = intent.time_range.start_date
+            end_date = intent.time_range.end_date
+
+            # Format dates properly for SQL
+            if hasattr(start_date, "strftime"):
+                start_date = start_date.strftime("%Y-%m-%d")
+            if hasattr(end_date, "strftime"):
+                end_date = end_date.strftime("%Y-%m-%d")
+
+            where_clauses.append(
+                f"{date_column} BETWEEN '{start_date}' AND '{end_date}'"
+            )
+
         for f in intent.filters:
-            if f.value is None:
+            if f.value is None and f.date_range is None:
                 continue
+
             canonical = ALIASES.get(f.field.lower(), f.field)
-            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
-            where_clauses.append(f"{canonical} = {val_literal}")
+
+            if f.value is not None:
+                val_literal = (
+                    f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+                )
+                where_clauses.append(f"{canonical} = {val_literal}")
+            elif f.date_range is not None:
+                start_date = f.date_range.start_date
+                end_date = f.date_range.end_date
+
+                # Format dates properly for SQL
+                if hasattr(start_date, "strftime"):
+                    start_date = start_date.strftime("%Y-%m-%d")
+                if hasattr(end_date, "strftime"):
+                    end_date = end_date.strftime("%Y-%m-%d")
+
+                where_clauses.append(
+                    f"{canonical} BETWEEN '{start_date}' AND '{end_date}'"
+                )
 
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
@@ -862,12 +1021,47 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
             table_name = "vitals"
 
         where_clauses: list[str] = []
+
+        # Add global time_range filter if present
+        if intent.time_range is not None:
+            date_column = "date" if table_name != "patients" else "program_start_date"
+            start_date = intent.time_range.start_date
+            end_date = intent.time_range.end_date
+
+            # Format dates properly for SQL
+            if hasattr(start_date, "strftime"):
+                start_date = start_date.strftime("%Y-%m-%d")
+            if hasattr(end_date, "strftime"):
+                end_date = end_date.strftime("%Y-%m-%d")
+
+            where_clauses.append(
+                f"{date_column} BETWEEN '{start_date}' AND '{end_date}'"
+            )
+
         for f in intent.filters:
-            if f.value is None:
+            if f.value is None and f.date_range is None:
                 continue
+
             canonical = ALIASES.get(f.field.lower(), f.field)
-            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
-            where_clauses.append(f"{canonical} = {val_literal}")
+
+            if f.value is not None:
+                val_literal = (
+                    f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+                )
+                where_clauses.append(f"{canonical} = {val_literal}")
+            elif f.date_range is not None:
+                start_date = f.date_range.start_date
+                end_date = f.date_range.end_date
+
+                # Format dates properly for SQL
+                if hasattr(start_date, "strftime"):
+                    start_date = start_date.strftime("%Y-%m-%d")
+                if hasattr(end_date, "strftime"):
+                    end_date = end_date.strftime("%Y-%m-%d")
+
+                where_clauses.append(
+                    f"{canonical} BETWEEN '{start_date}' AND '{end_date}'"
+                )
 
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
@@ -897,12 +1091,47 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
             table_name = "vitals"
 
         where_clauses: list[str] = []
+
+        # Add global time_range filter if present
+        if intent.time_range is not None:
+            date_column = "date" if table_name != "patients" else "program_start_date"
+            start_date = intent.time_range.start_date
+            end_date = intent.time_range.end_date
+
+            # Format dates properly for SQL
+            if hasattr(start_date, "strftime"):
+                start_date = start_date.strftime("%Y-%m-%d")
+            if hasattr(end_date, "strftime"):
+                end_date = end_date.strftime("%Y-%m-%d")
+
+            where_clauses.append(
+                f"{date_column} BETWEEN '{start_date}' AND '{end_date}'"
+            )
+
         for f in intent.filters:
-            if f.value is None:
+            if f.value is None and f.date_range is None:
                 continue
+
             canonical = ALIASES.get(f.field.lower(), f.field)
-            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
-            where_clauses.append(f"{canonical} = {val_literal}")
+
+            if f.value is not None:
+                val_literal = (
+                    f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+                )
+                where_clauses.append(f"{canonical} = {val_literal}")
+            elif f.date_range is not None:
+                start_date = f.date_range.start_date
+                end_date = f.date_range.end_date
+
+                # Format dates properly for SQL
+                if hasattr(start_date, "strftime"):
+                    start_date = start_date.strftime("%Y-%m-%d")
+                if hasattr(end_date, "strftime"):
+                    end_date = end_date.strftime("%Y-%m-%d")
+
+                where_clauses.append(
+                    f"{canonical} BETWEEN '{start_date}' AND '{end_date}'"
+                )
 
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
@@ -931,12 +1160,47 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
             table_name = "vitals"
 
         where_clauses: list[str] = []
+
+        # Add global time_range filter if present
+        if intent.time_range is not None:
+            date_column = "date" if table_name != "patients" else "program_start_date"
+            start_date = intent.time_range.start_date
+            end_date = intent.time_range.end_date
+
+            # Format dates properly for SQL
+            if hasattr(start_date, "strftime"):
+                start_date = start_date.strftime("%Y-%m-%d")
+            if hasattr(end_date, "strftime"):
+                end_date = end_date.strftime("%Y-%m-%d")
+
+            where_clauses.append(
+                f"{date_column} BETWEEN '{start_date}' AND '{end_date}'"
+            )
+
         for f in intent.filters:
-            if f.value is None:
+            if f.value is None and f.date_range is None:
                 continue
+
             canonical = ALIASES.get(f.field.lower(), f.field)
-            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
-            where_clauses.append(f"{canonical} = {val_literal}")
+
+            if f.value is not None:
+                val_literal = (
+                    f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+                )
+                where_clauses.append(f"{canonical} = {val_literal}")
+            elif f.date_range is not None:
+                start_date = f.date_range.start_date
+                end_date = f.date_range.end_date
+
+                # Format dates properly for SQL
+                if hasattr(start_date, "strftime"):
+                    start_date = start_date.strftime("%Y-%m-%d")
+                if hasattr(end_date, "strftime"):
+                    end_date = end_date.strftime("%Y-%m-%d")
+
+                where_clauses.append(
+                    f"{canonical} BETWEEN '{start_date}' AND '{end_date}'"
+                )
 
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
@@ -969,12 +1233,44 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         date_col = "date"  # all target tables have a date field
 
         where_clauses: list[str] = []
+
+        # Add date range conditions
+        if intent.time_range is not None:
+            start_date = intent.time_range.start_date
+            end_date = intent.time_range.end_date
+
+            # Format dates properly for SQL
+            if hasattr(start_date, "strftime"):
+                start_date = start_date.strftime("%Y-%m-%d")
+            if hasattr(end_date, "strftime"):
+                end_date = end_date.strftime("%Y-%m-%d")
+
+            where_clauses.append(f"{date_col} BETWEEN '{start_date}' AND '{end_date}'")
+
         for f in intent.filters:
-            if f.value is None:
+            if f.value is None and f.date_range is None:
                 continue
+
             canonical = ALIASES.get(f.field.lower(), f.field)
-            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
-            where_clauses.append(f"{canonical} = {val_literal}")
+
+            if f.value is not None:
+                val_literal = (
+                    f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+                )
+                where_clauses.append(f"{canonical} = {val_literal}")
+            elif f.date_range is not None:
+                start_date = f.date_range.start_date
+                end_date = f.date_range.end_date
+
+                # Format dates properly for SQL
+                if hasattr(start_date, "strftime"):
+                    start_date = start_date.strftime("%Y-%m-%d")
+                if hasattr(end_date, "strftime"):
+                    end_date = end_date.strftime("%Y-%m-%d")
+
+                where_clauses.append(
+                    f"{canonical} BETWEEN '{start_date}' AND '{end_date}'"
+                )
 
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
@@ -1011,12 +1307,47 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
             table_name = "vitals"
 
         where_clauses: list[str] = []
+
+        # Add global time_range filter if present
+        if intent.time_range is not None:
+            date_column = "date" if table_name != "patients" else "program_start_date"
+            start_date = intent.time_range.start_date
+            end_date = intent.time_range.end_date
+
+            # Format dates properly for SQL
+            if hasattr(start_date, "strftime"):
+                start_date = start_date.strftime("%Y-%m-%d")
+            if hasattr(end_date, "strftime"):
+                end_date = end_date.strftime("%Y-%m-%d")
+
+            where_clauses.append(
+                f"{date_column} BETWEEN '{start_date}' AND '{end_date}'"
+            )
+
         for f in intent.filters:
-            if f.value is None:
+            if f.value is None and f.date_range is None:
                 continue
+
             canonical = ALIASES.get(f.field.lower(), f.field)
-            val_literal = f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
-            where_clauses.append(f"{canonical} = {val_literal}")
+
+            if f.value is not None:
+                val_literal = (
+                    f"'{f.value}'" if isinstance(f.value, str) else str(f.value)
+                )
+                where_clauses.append(f"{canonical} = {val_literal}")
+            elif f.date_range is not None:
+                start_date = f.date_range.start_date
+                end_date = f.date_range.end_date
+
+                # Format dates properly for SQL
+                if hasattr(start_date, "strftime"):
+                    start_date = start_date.strftime("%Y-%m-%d")
+                if hasattr(end_date, "strftime"):
+                    end_date = end_date.strftime("%Y-%m-%d")
+
+                where_clauses.append(
+                    f"{canonical} BETWEEN '{start_date}' AND '{end_date}'"
+                )
 
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 

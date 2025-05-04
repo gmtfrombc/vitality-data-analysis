@@ -142,9 +142,15 @@ def test_get_query_intent(ai_helper_stub: AIHelper, case):  # noqa: D103 - test
     # Convert to plain dict (pydantic >2) for simple comparison
     intent_dict = json.loads(intent.model_dump_json())
 
-    # Remove optional None fields like 'range' inserted by pydantic
+    # Remove optional None fields inserted by pydantic
     for f in intent_dict["filters"]:
         if "range" in f and f["range"] is None:
             f.pop("range")
+        if "date_range" in f and f["date_range"] is None:
+            f.pop("date_range")
+
+    # Remove time_range if None (new field added for date range filtering)
+    if "time_range" in intent_dict and intent_dict["time_range"] is None:
+        intent_dict.pop("time_range")
 
     assert intent_dict == case["expected"]

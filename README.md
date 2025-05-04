@@ -16,11 +16,11 @@ Below is a snapshot of the current work streams:
 | ID | Work Stream | Key Next Steps |
 |----|-------------|----------------|
 | WS-1 | Stability & Refactor | Unit tests ≥ 60 % · remove duplication |
-| WS-2 | Hybrid AI Engine | Intent classification · dynamic code generation |
-| WS-3 | Data & Storage | Saved questions in SQLite ✔ · migrations ✔ · JSON→SQLite ETL 🔄 |
-| WS-4 | UX & Viz | Responsive layout · drag-and-drop chart builder |
+| WS-2 | Hybrid AI Engine | Date range filtering ✔ · dynamic code generation |
+| WS-3 | Data & Storage | Saved questions in SQLite ✔ · migrations ✔ · JSON→SQLite ETL ✔ |
+| WS-4 | UX & Viz | Auto-visualization mapper ✔ · responsive layout · drag-and-drop chart builder |
 | WS-5 | Cloud Deployment | Docker · CI/CD · AWS/GCP hosting |
-| WS-6 | Security & Quality | Hardened sandbox · ≥60 % coverage gate ✔ |
+| WS-6 | Continuous Feedback | Feedback widget ✔ · query/response logging · nightly triage |
 
 > ❖ Legend: ✔ complete · ☐ pending · 🔄 in-progress.  
 > See the canvas for milestones, risks, and backlog.
@@ -54,7 +54,7 @@ run.py                       # Panel server entry-point
 
 ### LLM Usage
 * All prompts & responses routed through `app/ai_helper.py`.
-* Deterministic templates now cover **median** aggregates and **distribution histograms** in addition to count/average.
+* Deterministic templates now cover **median** aggregates, **distribution histograms**, and **date range filtering**.
 * Hardened execution sandbox blocks unsafe imports & network access.
 * Persist user queries (minus PII) for audit.
 * Post-process model output with rule-based checks before execution.
@@ -97,4 +97,4 @@ Notes:
 * Add or extend tests whenever you fix a bug or create new helpers—e.g., histogram helper raises `ValueError` when column missing.
 
 ---
-*Last updated: 2025-07-10 – WS-3-D migrations + ETL ingest* 
+*Last updated: 2025-07-13 – WS-2 Date range filtering capability* 

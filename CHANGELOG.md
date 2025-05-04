@@ -3,6 +3,11 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+✨ Feature: Date range filtering capability (#WS-2) – Support for queries with specific date ranges like "from January to March 2025"
+🧩 Enhanced QueryIntent model with DateRange class for standardized date handling
+⚡️ SQL generation now supports global time_range and Filter.date_range objects in all templates
+🧪 Added tests: Unit tests for DateRange model and integration tests for date range queries
+📊 Added golden test for weight trends time series with date range filtering
 ✨ Added unit tests for V2 intent parsing (`additional_fields`, `group_by`) in `tests/intent/test_get_query_intent.py`.
 ✨ Expanded intent parser & SQL templates: now handles multi-metric aggregates (e.g., avg weight & BMI) and boolean/range conditions (e.g., BMI > 30, age < 50).
 ✨ Expanded golden harness: added 6 new cases covering multi-metric and boolean filter scenarios.
@@ -46,7 +51,7 @@ Use reverse-chronological order (latest on top).
 🚀 Feature: Auto-viz mapper (#WS-4-A) – Intelligent visualization selection for query results
 🛠️ Feature: User feedback collection system (#WS-6-A) – Thumbs up/down with comments
 🔄 Fixed workflow stages to ensure tests pass with proper query execution flow
-Last updated: 2025-07-12
+Last updated: 2025-07-13
 
 - [ ] Tech debt: silence Tornado loop warn in tests
 - [ ] Upgrade to Pydantic v2 APIs
