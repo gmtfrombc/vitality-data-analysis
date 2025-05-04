@@ -105,6 +105,17 @@ def helper() -> AIHelper:  # noqa: D401 - fixture
             ),
             "value_counts().nlargest(3)",  # indicate top-n logic
         ),
+        (
+            QueryIntent(
+                analysis_type="correlation",
+                target_field="weight",
+                additional_fields=["bmi"],
+                filters=[],
+                conditions=[],
+                parameters={"method": "pearson"},
+            ),
+            "scatter_plot",  # should include scatter plot function
+        ),
     ],
 )
 def test_sql_aggregate_templates(

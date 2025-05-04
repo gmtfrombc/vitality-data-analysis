@@ -147,6 +147,7 @@ class QueryIntent(BaseModel):
         "std_dev",
         "percent_change",
         "top_n",
+        "correlation",
     ]
     target_field: str = Field(..., description="Primary metric or column of interest")
     filters: List[Filter] = Field(default_factory=list)

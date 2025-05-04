@@ -9,7 +9,7 @@ computed metric.
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Tuple, Literal
 
 import pandas as pd
 
@@ -22,6 +22,7 @@ __all__ = [
     "std_dev",
     "percent_change",
     "top_n",
+    "correlation_coefficient",
 ]
 
 # ---------------------------------------------------------------------------
@@ -195,6 +196,57 @@ def top_n(series: pd.Series, n: int = 5):  # noqa: D401
     return dict(series.value_counts().nlargest(n))
 
 
+def correlation_coefficient(
+    df: pd.DataFrame,
+    metric_x: str,
+    metric_y: str,
+    method: Literal["pearson", "spearman", "kendall"] = "pearson",
+) -> float:
+    """Calculate correlation coefficient between two metrics.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Source data containing both metrics.
+    metric_x : str
+        First metric column name.
+    metric_y : str
+        Second metric column name to correlate with first metric.
+    method : {"pearson", "spearman", "kendall"}, default "pearson"
+        Correlation method to use.
+
+    Returns
+    -------
+    float
+        Correlation coefficient (-1 to 1).
+
+    Notes
+    -----
+    - Pearson: Linear correlation, sensitive to outliers
+    - Spearman: Rank correlation, less sensitive to outliers
+    - Kendall: Non-parametric rank correlation, robust but computationally expensive
+    """
+    # Check if columns exist
+    assert_columns(df, metric_x, metric_y)
+
+    # Get clean data (drop rows with NaN in either column)
+    clean_df = df.dropna(subset=[metric_x, metric_y])
+
+    # Ensure we have enough data
+    if len(clean_df) < 2:
+        return float("nan")
+
+    # Calculate correlation
+    if method == "pearson":
+        return float(clean_df[metric_x].corr(clean_df[metric_y], method="pearson"))
+    elif method == "spearman":
+        return float(clean_df[metric_x].corr(clean_df[metric_y], method="spearman"))
+    elif method == "kendall":
+        return float(clean_df[metric_x].corr(clean_df[metric_y], method="kendall"))
+    else:
+        raise ValueError(f"Unsupported correlation method: {method}")
+
+
 # ---------------------------------------------------------------------------
 # Registry utilities
 # ---------------------------------------------------------------------------
@@ -207,6 +259,7 @@ METRIC_REGISTRY: Dict[str, Callable[..., pd.Series]] = {
     "std_dev": std_dev,
     "percent_change": percent_change,
     "top_n": top_n,
+    "correlation_coefficient": correlation_coefficient,
 }
 
 

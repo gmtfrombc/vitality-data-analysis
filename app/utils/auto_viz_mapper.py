@@ -16,7 +16,7 @@ import pandas as pd
 import hvplot.pandas  # noqa: F401 – register accessor
 from holoviews.element import Element
 
-from app.utils.plots import histogram, line_plot
+from app.utils.plots import histogram, line_plot, scatter_plot
 from app.utils.query_intent import QueryIntent
 
 __all__ = ["auto_visualize"]
@@ -52,6 +52,67 @@ def auto_visualize(
         # Single scalar – nothing to plot; number card handled elsewhere.
         return None
 
+    # ---------------------------------------------------------------------
+    # 2. Handle correlation results specifically
+    # ---------------------------------------------------------------------
+    if intent.analysis_type == "correlation":
+        # If the result is a dict with 'visualization' key, return that
+        if isinstance(data, dict) and "visualization" in data:
+            return data["visualization"]
+
+        # If we have a DataFrame with two columns that could be our metrics
+        if (
+            isinstance(data, pd.DataFrame)
+            and len(data.columns) >= 2
+            and len(intent.additional_fields) >= 1
+        ):
+            metric_x = intent.target_field
+            metric_y = intent.additional_fields[0]
+
+            # Try to find columns by name
+            x_col = next(
+                (col for col in data.columns if metric_x.lower() in col.lower()), None
+            )
+            y_col = next(
+                (col for col in data.columns if metric_y.lower() in col.lower()), None
+            )
+
+            # If we found both columns, generate a scatter plot
+            if x_col is not None and y_col is not None:
+                return scatter_plot(
+                    data,
+                    x=x_col,
+                    y=y_col,
+                    title=f"Correlation: {x_col.title()} vs {y_col.title()}",
+                    correlation=True,
+                    regression=True,
+                )
+
+        # If we have a dict with our metrics as separate keys
+        if (
+            isinstance(data, dict)
+            and len(intent.additional_fields) >= 1
+            and intent.target_field in data
+            and intent.additional_fields[0] in data
+        ):
+            # Create a DataFrame from the metrics
+            metric_x = intent.target_field
+            metric_y = intent.additional_fields[0]
+
+            # Check if the values are scalar or Series/arrays
+            if isinstance(data[metric_x], (list, pd.Series)) and isinstance(
+                data[metric_y], (list, pd.Series)
+            ):
+                # Convert to DataFrame
+                df = pd.DataFrame({metric_x: data[metric_x], metric_y: data[metric_y]})
+
+                return scatter_plot(
+                    df, x=metric_x, y=metric_y, correlation=True, regression=True
+                )
+
+    # ---------------------------------------------------------------------
+    # Original auto visualization code continues below
+    # ---------------------------------------------------------------------
     # Ensure we are working with a DataFrame
     if isinstance(data, pd.Series):
         df = data.to_frame(name=data.name or "value")

@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 import os
 import signal
 import threading as _threading
+import multiprocessing
+import time
 
 import numpy as np
 import pandas as pd
@@ -43,6 +45,9 @@ _READ_ONLY_GLOBALS = MappingProxyType(
 
 # dict version for exec (exec requires mutable mapping)
 _EXEC_GLOBALS = dict(_READ_ONLY_GLOBALS)
+
+# Max DataFrame size to prevent memory issues
+MAX_DATAFRAME_SIZE = 1_000_000  # 1 million cells
 
 if not logger.handlers:
     import logging.handlers
@@ -85,6 +90,156 @@ class SandboxResult:
     meta: Dict[str, Any] = field(default_factory=dict)
 
 
+def _execute_code_in_process(code: str, queue: multiprocessing.Queue):
+    """Execute code in a separate process and put the result in a queue."""
+    try:
+        # Create a safe locals dictionary
+        safe_locals: Dict[str, Any] = {}
+
+        # Import handling
+        import builtins as _builtins  # local alias to avoid shadowing
+
+        # Save original import so we can restore later
+        _orig_import = _builtins.__import__
+
+        # Minimal whitelist – expand as legitimate needs grow
+        _IMPORT_WHITELIST = {
+            # Data science libs
+            "pandas",
+            "numpy",
+            "np",
+            "pd",
+            # Project helpers
+            "db_query",
+            "app",  # Allow app.utils.plots and other project modules
+            "__future__",  # For from __future__ import annotations
+            # Standard-lib utilities commonly used by snippets *and* Panel callbacks
+            "math",
+            "json",
+            "datetime",
+            "os",
+            "sys",
+            "signal",
+            "logging",
+            "tokenize",
+            "linecache",
+            "inspect",
+            "warnings",
+            "_io",
+            "re",
+            "asyncio",  # param/Panel internals may import while watcher fires
+            "time",
+            "typing",
+            "sqlite3",  # allow db_query.query_dataframe
+            "email",
+            "tornado",  # Panel server runtime
+            "config",  # panel.config import path during error handling
+        }
+
+        def _safe_import(
+            name, globals=None, locals=None, fromlist=(), level=0
+        ):  # noqa: ANN001, D401 – guard
+            root_name = name.split(".")[0]
+            if root_name not in _IMPORT_WHITELIST:
+                raise ImportError(
+                    f"Import of '{name}' is blocked in sandbox (only {sorted(_IMPORT_WHITELIST)})"
+                )
+            return _orig_import(name, globals, locals, fromlist, level)
+
+        # Patch builtins.__import__
+        _builtins.__import__ = _safe_import  # type: ignore[assignment]
+
+        # Execute the code
+        exec(code, _EXEC_GLOBALS, safe_locals)
+
+        # Check for results
+        if "results" not in safe_locals:
+            queue.put(
+                SandboxResult(
+                    type="error", value="Snippet did not define a `results` variable"
+                )
+            )
+            return
+
+        raw = safe_locals["results"]
+
+        # Size validation for DataFrames and Series to prevent memory issues
+        try:
+            import pandas as _pd
+
+            if isinstance(raw, _pd.DataFrame):
+                size = raw.shape[0] * raw.shape[1]
+                if size > MAX_DATAFRAME_SIZE:
+                    queue.put(
+                        SandboxResult(
+                            type="error",
+                            value=f"DataFrame too large: {size} cells (max: {MAX_DATAFRAME_SIZE})",
+                        )
+                    )
+                    return
+            elif isinstance(raw, _pd.Series) and len(raw) > MAX_DATAFRAME_SIZE:
+                queue.put(
+                    SandboxResult(
+                        type="error",
+                        value=f"Series too large: {len(raw)} elements (max: {MAX_DATAFRAME_SIZE})",
+                    )
+                )
+                return
+        except Exception:
+            pass  # If pandas isn't available, skip this check
+
+        # Detect result type
+        result_type = "object"
+        meta: Dict[str, Any] = {}
+
+        try:
+            import pandas as _pd
+            import holoviews as _hv
+            from bokeh.document import Document  # noqa: F401 – just for isinstance test
+
+            if raw is None:
+                result_type = "object"
+                raw = {}
+            elif isinstance(raw, (int, float, complex)):
+                result_type = "scalar"
+            elif isinstance(raw, _pd.Series):
+                result_type = "series"
+                meta = {"length": len(raw)}
+            elif isinstance(raw, _pd.DataFrame):
+                result_type = "dataframe"
+                meta = {"shape": raw.shape, "columns": list(raw.columns)}
+            elif isinstance(raw, dict):
+                result_type = "dict"
+                meta = {"keys": list(raw.keys())}
+            elif isinstance(raw, _hv.core.generators.Generator):
+                result_type = "figure"
+            else:
+                result_type = "object"
+
+        except Exception:
+            # If imports fail, use basic type detection
+            if raw is None:
+                result_type = "object"
+                raw = {}
+            elif isinstance(raw, (int, float, complex)):
+                result_type = "scalar"
+            elif isinstance(raw, dict):
+                result_type = "dict"
+                meta = {"keys": list(raw.keys())}
+            else:
+                result_type = "object"
+
+        # Put the result in the queue
+        queue.put(SandboxResult(type=result_type, value=raw, meta=meta))
+
+    except Exception as exc:
+        # Send the error back through the queue
+        queue.put(SandboxResult(type="error", value=str(exc)))
+    finally:
+        # Always restore the original import
+        _builtins.__import__ = _orig_import
+
+
 def run_user_code(code: str) -> SandboxResult:
     """Execute *code* safely and return a :class:`SandboxResult` envelope.
 
@@ -92,6 +247,22 @@ def run_user_code(code: str) -> SandboxResult:
     receives a consistent data structure independent of what the snippet
     produced, making UI rendering much simpler.
     """
+    logger.info("Starting sandbox execution")
+
+    # First try with thread-based timeout approach for compatibility
+    if (
+        _threading.current_thread() is _threading.main_thread()
+        and hasattr(signal, "alarm")
+        and os.name != "nt"
+    ):
+        return _run_with_signal_timeout(code)
+
+    # Otherwise, use a more robust process-based approach
+    return _run_with_process_timeout(code)
+
+
+def _run_with_signal_timeout(code: str) -> SandboxResult:
+    """Execute code with signal-based timeout (original implementation)."""
     safe_locals: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
@@ -111,6 +282,8 @@ def run_user_code(code: str) -> SandboxResult:
         "pd",
         # Project helpers
         "db_query",
+        "app",  # Allow app.utils.plots and other project modules
+        "__future__",  # For from __future__ import annotations
         # Standard-lib utilities commonly used by snippets *and* Panel callbacks
         "math",
         "json",
@@ -186,6 +359,25 @@ def run_user_code(code: str) -> SandboxResult:
 
     raw = safe_locals["results"]
 
+    # Check DataFrame size
+    try:
+        import pandas as _pd
+
+        if isinstance(raw, _pd.DataFrame):
+            size = raw.shape[0] * raw.shape[1]
+            if size > MAX_DATAFRAME_SIZE:
+                return SandboxResult(
+                    type="error",
+                    value=f"DataFrame too large: {size} cells (max: {MAX_DATAFRAME_SIZE})",
+                )
+        elif isinstance(raw, _pd.Series) and len(raw) > MAX_DATAFRAME_SIZE:
+            return SandboxResult(
+                type="error",
+                value=f"Series too large: {len(raw)} elements (max: {MAX_DATAFRAME_SIZE})",
+            )
+    except Exception:
+        pass  # If pandas isn't available, skip this check
+
     # Detect result type ---------------------------------------------------
     result_type: str
     meta: Dict[str, Any] = {}
@@ -219,6 +411,57 @@ def run_user_code(code: str) -> SandboxResult:
 
     logger.info("Sandbox execution completed → %s", result_type)
     return SandboxResult(type=result_type, value=raw, meta=meta)
+
+
+def _run_with_process_timeout(code: str, timeout=5) -> SandboxResult:
+    """Execute code in a separate process with timeout."""
+    ctx = multiprocessing.get_context("spawn")
+    queue = ctx.Queue()
+
+    # Create and start the process
+    process = ctx.Process(target=_execute_code_in_process, args=(code, queue))
+
+    try:
+        # Start the process with a timeout
+        process.start()
+
+        # Wait for result with timeout
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if not queue.empty():
+                # Get the result and return it
+                result = queue.get(block=False)
+                return result
+
+            # Check if process has terminated
+            if not process.is_alive():
+                if not queue.empty():
+                    return queue.get(block=False)
+                return SandboxResult(
+                    type="error", value="Process terminated without returning a result"
+                )
+
+            # Sleep a bit to avoid tight loop
+            time.sleep(0.1)
+
+        # If we're here, we hit the timeout
+        logger.warning("Sandbox execution timed out after %s seconds", timeout)
+        return SandboxResult(
+            type="error", value=f"Execution timed out after {timeout} seconds"
+        )
+
+    except Exception as e:
+        logger.error("Error in process-based execution: %s", e, exc_info=True)
+        return SandboxResult(type="error", value=str(e))
+
+    finally:
+        # Make sure we clean up the process
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=1.0)
+            # Force kill if it didn't terminate
+            if process.is_alive():
+                os.kill(process.pid, 9)  # SIGKILL
 
 
 def run_snippet(code: str) -> Dict[str, Any]:

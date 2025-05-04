@@ -2229,6 +2229,9 @@ Intermediate results and visualisations are still shown so you can audit the pro
         """Show an animated indicator that AI is processing."""
         if self.ai_status_row_ref is None:
             return  # Can't show indicator if row not initialized
+        # ---NEW---
+        self._ai_base_message = message  # cache once
+        # ---NEW---
 
         self.ai_status_text.object = f"{message}"
         self.ai_status_row_ref.visible = True
@@ -2240,7 +2243,12 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 def _animate_ellipsis():
                     self.ellipsis_count = (self.ellipsis_count + 1) % 4
                     ellipsis = "." * self.ellipsis_count
-                    self.ai_status_text.object = f"{message}{ellipsis}"
+
+                    # ---NEW---
+                    self.ai_status_text.object = f"{self._ai_base_message}{ellipsis}"
+                    # ---NEW---
+
+                    # self.ai_status_text.object = f"{message}{ellipsis}"
 
                 self.ellipsis_animation = pn.state.add_periodic_callback(
                     _animate_ellipsis, period=500  # 500ms interval

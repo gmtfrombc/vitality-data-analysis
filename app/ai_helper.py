@@ -99,7 +99,7 @@ class AIHelper:
 
         SCHEMA (all keys required, optional keys can be empty lists):
         {
-          "analysis_type": one of [count, average, median, distribution, comparison, trend, change, sum, min, max, variance, std_dev, percent_change, top_n],
+          "analysis_type": one of [count, average, median, distribution, comparison, trend, change, sum, min, max, variance, std_dev, percent_change, top_n, correlation],
           "target_field"  : string,            # Primary metric/column (e.g., "bmi")
           "filters"      : [ {"field": string, EITHER "value": <scalar> OR "range": {"start": <val>, "end": <val>} OR "date_range": {"start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"} } ],
           "conditions"   : [ {"field": string, "operator": string, "value": <any>} ],
@@ -122,6 +122,7 @@ class AIHelper:
         • Use "filters" for simple equality (gender="F") or date/numeric ranges.
         • Use "conditions" for inequalities (bmi > 30, age < 50).
         • If the user asks for multiple metrics (e.g., "average weight AND BMI"), put the first metric in "target_field" and subsequent ones in "additional_fields".
+        • If the user asks for correlation or relationship between metrics (e.g., "correlation between BMI and weight"), use analysis_type="correlation", put the first metric in "target_field" and the second in "additional_fields".
         • If the user asks to break down results "by" or "per" a category (e.g., "by gender", "per ethnicity"), populate the "group_by" list.
         • Keep "additional_fields" and "group_by" as empty lists `[]` if not applicable.
         • If the query has a timeframe like "in January", "during Q2", or "from March to June", add a "time_range" with the appropriate dates.
@@ -176,6 +177,18 @@ class AIHelper:
           "additional_fields": [],
           "group_by": [],
           "time_range": {"start_date": "2025-01-01", "end_date": "2025-03-31"}
+        }
+        
+        Example 5 – "Is there a correlation between weight and BMI in active patients?":
+        {
+          "analysis_type": "correlation",
+          "target_field": "weight",
+          "filters": [{"field": "active", "value": 1}],
+          "conditions": [],
+          "parameters": {"method": "pearson"},
+          "additional_fields": ["bmi"],
+          "group_by": [],
+          "time_range": null
         }
         """
 
@@ -1361,6 +1374,215 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
             f"results = float(_clean['{metric_name}'].{stat_func}(ddof=1)) if not _clean.empty else _np.nan\n"
         )
         return code
+
+    # ------------------------------------------------------------------
+    # 3h. Correlation – scatter plot with correlation coefficient
+    # ------------------------------------------------------------------
+    # Helper function to build SQL WHERE clauses from intent filters and conditions
+    def _build_filters_clause(intent_obj: QueryIntent) -> str:
+        """Build SQL WHERE clause from intent filters and conditions."""
+        where_clauses: list[str] = []
+
+        # Helper to quote values properly for SQL
+        def _quote(v):
+            return f"'{v}'" if isinstance(v, str) else str(v)
+
+        # Add global time_range filter if present
+        if intent_obj.time_range is not None:
+            date_column = "date"  # Most tables use this column name
+            start_date = intent_obj.time_range.start_date
+            end_date = intent_obj.time_range.end_date
+
+            # Format dates properly for SQL
+            if hasattr(start_date, "strftime"):
+                start_date = start_date.strftime("%Y-%m-%d")
+            if hasattr(end_date, "strftime"):
+                end_date = end_date.strftime("%Y-%m-%d")
+
+            where_clauses.append(
+                f"{date_column} BETWEEN {_quote(start_date)} AND {_quote(end_date)}"
+            )
+
+        # Process filters (equality, ranges)
+        for f in intent_obj.filters:
+            canonical = ALIASES.get(f.field.lower(), f.field)
+
+            if f.value is not None:
+                val = f.value
+                if canonical == "active" and isinstance(val, str):
+                    val = (
+                        1
+                        if val.lower() == "active"
+                        else 0 if val.lower() == "inactive" else val
+                    )
+                where_clauses.append(f"{canonical} = {_quote(val)}")
+            elif f.range is not None:
+                start = f.range.get("start")
+                end = f.range.get("end")
+                if start is not None and end is not None:
+                    where_clauses.append(
+                        f"{canonical} BETWEEN {_quote(start)} AND {_quote(end)}"
+                    )
+            elif f.date_range is not None:
+                start_date = f.date_range.start_date
+                end_date = f.date_range.end_date
+
+                # Format dates properly for SQL
+                if hasattr(start_date, "strftime"):
+                    start_date = start_date.strftime("%Y-%m-%d")
+                if hasattr(end_date, "strftime"):
+                    end_date = end_date.strftime("%Y-%m-%d")
+
+                where_clauses.append(
+                    f"{canonical} BETWEEN {_quote(start_date)} AND {_quote(end_date)}"
+                )
+
+        # Process conditions (operators)
+        for c in intent_obj.conditions:
+            canonical = ALIASES.get(c.field.lower(), c.field)
+            op = c.operator
+
+            if (
+                op.lower() == "between"
+                and isinstance(c.value, (list, tuple))
+                and len(c.value) == 2
+            ):
+                where_clauses.append(
+                    f"{canonical} BETWEEN {_quote(c.value[0])} AND {_quote(c.value[1])}"
+                )
+            elif op.lower() == "in" and isinstance(c.value, (list, tuple)):
+                vals = ", ".join(_quote(v) for v in c.value)
+                where_clauses.append(f"{canonical} IN ({vals})")
+            else:
+                where_clauses.append(f"{canonical} {op} {_quote(c.value)}")
+
+        # Build final WHERE clause
+        return "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+    if intent.analysis_type == "correlation":
+        # Need at least one field in additional_fields
+        if not intent.additional_fields:
+            logger.warning("Correlation analysis without second field specified")
+            return None
+
+        # Get the second metric (correlation target)
+        metric_x = intent.target_field
+        metric_y = intent.additional_fields[0]
+
+        # Set correlation method (default to pearson)
+        method = intent.parameters.get("method", "pearson")
+
+        # Skip visualization if needed (mainly for testing)
+        skip_viz = intent.parameters.get("SKIP_VIZ", False)
+
+        # Create filters clause
+        filters = _build_filters_clause(intent)
+
+        # Build the SQL query using the actual column names, not aliases
+        sql = f"""
+            SELECT 
+                vitals.{metric_x} AS {metric_x},
+                vitals.{metric_y} AS {metric_y}
+            FROM vitals
+            {filters}
+            """
+
+        # Define the template with conditional visualization
+        if skip_viz:
+            template = f'''
+# Auto-generated correlation analysis (simplified for testing)
+import numpy as np
+import pandas as pd
+from db_query import query_dataframe
+
+# Get data from database
+sql = """
+            SELECT 
+                vitals.{metric_x} AS {metric_x},
+                vitals.{metric_y} AS {metric_y}
+            FROM vitals
+            {filters}
+            """
+df = query_dataframe(sql)
+
+# Clean data (remove rows with NaN in either column)
+clean_df = df.dropna(subset=['{metric_x}', '{metric_y}'])
+
+# Calculate correlation
+if len(clean_df) >= 2:
+    # Calculate {method.title()} correlation
+    corr_value = clean_df['{metric_x}'].corr(clean_df['{metric_y}'], method='{method}')
+    
+    # Prepare results (without visualization for testing)
+    results = {{
+        'correlation_coefficient': float(corr_value),
+        'correlation_method': '{method}',
+        'sample_size': len(clean_df),
+        'x_metric': '{metric_x}',
+        'y_metric': '{metric_y}'
+    }}
+else:
+    # Not enough data points
+    results = {{
+        'error': 'Insufficient data points for correlation analysis',
+        'sample_size': len(clean_df)
+    }}
+'''
+        else:
+            template = f'''
+# Auto-generated correlation analysis with scatter plot
+import numpy as np
+import pandas as pd
+from app.utils.plots import scatter_plot
+from db_query import query_dataframe
+
+# Get data from database
+sql = """
+            SELECT 
+                vitals.{metric_x} AS {metric_x},
+                vitals.{metric_y} AS {metric_y}
+            FROM vitals
+            {filters}
+            """
+df = query_dataframe(sql)
+
+# Clean data (remove rows with NaN in either column)
+clean_df = df.dropna(subset=['{metric_x}', '{metric_y}'])
+
+# Calculate correlation
+if len(clean_df) >= 2:
+    # Calculate {method.title()} correlation
+    corr_value = clean_df['{metric_x}'].corr(clean_df['{metric_y}'], method='{method}')
+    
+    # Create visualization
+    viz = scatter_plot(
+        clean_df, 
+        x='{metric_x}', 
+        y='{metric_y}',
+        xlabel='{metric_x}',
+        ylabel='{metric_y}',
+        title='Correlation: {metric_x.title()} vs {metric_y.title()}',
+        correlation=True,
+        regression=True
+    )
+    
+    # Prepare results
+    results = {{
+        'correlation_coefficient': float(corr_value),
+        'correlation_method': '{method}',
+        'sample_size': len(clean_df),
+        'visualization': viz,
+        'x_metric': '{metric_x}',
+        'y_metric': '{metric_y}'
+    }}
+else:
+    # Not enough data points
+    results = {{
+        'error': 'Insufficient data points for correlation analysis',
+        'sample_size': len(clean_df)
+    }}
+'''
+        return template
 
     # ------------------------------------------------------------------
     # 4. FALLBACK – preserve original average/distribution templates

@@ -10,6 +10,10 @@ from app.pages.dashboard import dashboard_page
 import app.pages.patient_view as patient_view
 import app.pages.data_assistant as data_assistant
 import logging
+import atexit
+import signal
+import sys
+import os
 
 # Configure logging
 logging.basicConfig(
@@ -18,6 +22,42 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(), logging.FileHandler("app.log")],
 )
 logger = logging.getLogger(__name__)
+
+# Store server reference for cleanup
+_server = None
+
+
+def cleanup_resources():
+    """Cleanup function to ensure resources are properly released."""
+    logger.info("Cleaning up resources...")
+    # Stop periodic callbacks
+    try:
+        if hasattr(pn.state, "_periodic_callbacks"):
+            for cb in list(pn.state._periodic_callbacks):
+                try:
+                    cb.stop()
+                    logger.info(f"Stopped callback: {cb}")
+                except Exception as e:
+                    logger.error(f"Error stopping callback: {e}")
+    except Exception as e:
+        logger.error(f"Error cleaning up callbacks: {e}")
+
+    # Close server if it exists
+    global _server
+    if _server:
+        try:
+            logger.info("Shutting down server...")
+            _server.stop()
+            _server = None
+        except Exception as e:
+            logger.error(f"Error stopping server: {e}")
+
+
+def signal_handler(sig, frame):
+    """Handle termination signals by cleaning up and exiting."""
+    logger.info(f"Received signal {sig}, shutting down...")
+    cleanup_resources()
+    sys.exit(0)
 
 
 def create_app():
@@ -54,6 +94,11 @@ def create_app():
 
 
 if __name__ == "__main__":
+    # Register signal handlers and cleanup
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    atexit.register(cleanup_resources)
+
     # Get the application template
     app = create_app()
 
@@ -61,6 +106,12 @@ if __name__ == "__main__":
     logger.info("Starting VP Analytics Platform")
 
     try:
-        app.show(threaded=True)
+        # Store server reference for cleanup
+        _server = app.show(threaded=True)
+
+        # Log process info for debugging
+        logger.info(f"Server running with PID: {os.getpid()}")
     except Exception as e:
         logger.error(f"Error starting server: {str(e)}")
+        cleanup_resources()
+        sys.exit(1)

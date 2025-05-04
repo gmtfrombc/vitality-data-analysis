@@ -13,6 +13,7 @@ __all__ = [
     "histogram",
     "pie_chart",
     "line_plot",
+    "scatter_plot",
 ]
 
 
@@ -36,9 +37,23 @@ def histogram(
         raise ValueError(f"Column '{column}' not found in dataframe")
 
     _title = title or f"{column.title()} Distribution"
-    return df[column].hvplot.hist(
-        bins=bins, alpha=0.7, height=300, width=500, title=_title
-    )
+
+    try:
+        # Try using hvplot.hist first
+        return df[column].hvplot.hist(
+            bins=bins, alpha=0.7, height=300, width=500, title=_title
+        )
+    except (ImportError, AttributeError) as e:
+        # Fall back to direct HoloViews implementation if hvplot fails
+        import holoviews as hv
+        import numpy as np
+
+        # Get the data and compute histogram
+        data = df[column].dropna().values
+        hist, edges = np.histogram(data, bins=bins)
+
+        # Create HoloViews Histogram
+        return hv.Histogram((edges, hist), kdims=[column], label=_title)
 
 
 def pie_chart(
@@ -128,3 +143,116 @@ def line_plot(
         grid=grid,
         line_width=line_width,
     )
+
+
+def scatter_plot(
+    df: pd.DataFrame,
+    *,
+    x: str,
+    y: str,
+    title: str | None = None,
+    xlabel: str | None = None,
+    ylabel: str | None = None,
+    width: int = 600,
+    height: int = 400,
+    grid: bool = True,
+    correlation: bool = True,
+    color: str = "blue",
+    alpha: float = 0.6,
+    size: int = 50,
+    regression: bool = True,
+):
+    """Create a scatter plot with optional correlation statistics and regression line.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Source data containing both metrics.
+    x : str
+        Column name for x-axis.
+    y : str
+        Column name for y-axis.
+    title : str, optional
+        Plot title. If omitted, uses "Correlation: {x} vs {y}".
+    xlabel, ylabel : str, optional
+        Axis labels. If omitted, uses column names.
+    width, height : int
+        Plot dimensions.
+    grid : bool, default True
+        Whether to show grid lines.
+    correlation : bool, default True
+        Whether to display correlation coefficient on the plot.
+    color : str, default "blue"
+        Scatter point color.
+    alpha : float, default 0.6
+        Opacity of scatter points (0-1).
+    size : int, default 50
+        Scatter point size.
+    regression : bool, default True
+        Whether to show regression line.
+
+    Returns
+    -------
+    holoviews.Element
+        HoloViews scatter plot with optional regression line.
+    """
+    if x not in df.columns or y not in df.columns:
+        raise ValueError(f"Columns '{x}' and/or '{y}' not found in dataframe")
+
+    # Clean data - remove rows with NaN in either column
+    clean_df = df.dropna(subset=[x, y])
+
+    if len(clean_df) < 2:
+        raise ValueError(
+            f"Need at least 2 valid data points for correlation analysis, got {len(clean_df)}"
+        )
+
+    # Calculate correlation coefficient using numpy
+    # Import numpy inside the function to avoid namespace issues
+
+    corr_coef = np.corrcoef(clean_df[x], clean_df[y])[0, 1]
+    corr_text = f"Correlation: {corr_coef:.3f}"
+
+    _title = title or f"Correlation: {x.title()} vs {y.title()}"
+    if correlation:
+        _title = f"{_title}\n{corr_text}"
+
+    _xlabel = xlabel or x.title()
+    _ylabel = ylabel or y.title()
+
+    scatter = clean_df.hvplot.scatter(
+        x=x,
+        y=y,
+        title=_title,
+        xlabel=_xlabel,
+        ylabel=_ylabel,
+        width=width,
+        height=height,
+        grid=grid,
+        color=color,
+        alpha=alpha,
+        size=size,
+    )
+
+    if regression and len(clean_df) > 2:
+        # Add regression line
+        # Import modules inside the function scope to avoid namespace conflicts
+        import numpy as np
+        from scipy import stats
+
+        slope, intercept, _, _, _ = stats.linregress(clean_df[x], clean_df[y])
+        x_range = np.linspace(clean_df[x].min(), clean_df[x].max(), 100)
+        y_range = intercept + slope * x_range
+
+        regression_df = pd.DataFrame({x: x_range, y: y_range})
+        regression_line = regression_df.hvplot.line(
+            x=x,
+            y=y,
+            color="red",
+            line_width=2,
+            label=f"y = {slope:.3f}x + {intercept:.3f}",
+        )
+
+        return scatter * regression_line
+
+    return scatter

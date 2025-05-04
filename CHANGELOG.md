@@ -3,6 +3,11 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+✨ Feature: Multi-metric correlation analysis (#WS-2) – Support for correlation queries between two metrics (e.g., "Is there a correlation between weight and BMI?")
+🧩 Added scatter_plot function with regression line visualization and correlation coefficient display
+⚡️ Implemented correlation_coefficient function with support for Pearson and Spearman methods
+🛠️ Updated QueryIntent model, AI Helper, and sandbox security to support correlation analysis
+🧪 Added tests: Unit tests for correlation functionality and golden test for weight-BMI correlation
 ✨ Feature: Date range filtering capability (#WS-2) – Support for queries with specific date ranges like "from January to March 2025"
 🧩 Enhanced QueryIntent model with DateRange class for standardized date handling
 ⚡️ SQL generation now supports global time_range and Filter.date_range objects in all templates

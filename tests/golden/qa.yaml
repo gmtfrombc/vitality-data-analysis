@@ -323,3 +323,20 @@
     Hispanic: 9000.0
     Caucasian: 7200.0
     Asian: 3500.0
+
+- name: bmi_weight_correlation
+  query: "Is there a correlation between weight and BMI?"
+  intent:
+    analysis_type: correlation
+    target_field: weight
+    additional_fields:
+      - bmi
+    filters: []
+    conditions: []
+    parameters:
+      method: pearson
+      SKIP_VIZ: true
+  expected:
+    correlation_coefficient: 0.95
+    # correlation can vary slightly with test data, so we expect a strong positive correlation
+    # but don't enforce an exact value
