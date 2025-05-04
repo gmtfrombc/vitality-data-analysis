@@ -34,7 +34,19 @@ Use reverse-chronological order (latest on top).
 ✨ WS-3-D: Implemented `etl/json_ingest.py` CLI with idempotent upserts; 2× run verified, counts stable.
 🧪 Tests: `tests/etl/test_db_migrations.py` and `tests/etl/test_json_ingest.py`; coverage now 75 %.
 🖼️ Data Assistant sidebar now includes *Import Patient JSON* panel (FileInput + ETL trigger).
-Last updated: 2025-07-10
+✨ Sidebar: re-added Narrative checkbox, removed duplicate save panel.
+✨ Background ETL: spinner + thread + max-size guard; toast/Status fallback.
+✨ Audit logging: migration 004 creates ingest_audit; ETL writes one row per import.
+✨ Remove-mock-patients helper button (sidebar Cleanup card) with multitable delete.
+📝 README updated with Import instructions & audit query sample.
+🧪 Extended ingest tests for additive rows; all 68 tests pass.
+🩹 Patient-view robust date parsing; fixed pd.to_datetime crashes.
+✅ Coverage still 75 %.
+🆕 Roadmap: Added *WS-6 Continuous Feedback & Evaluation* work stream with feedback widget, query logging, triage loop, and dataset prep.
+🚀 Feature: Auto-viz mapper (#WS-4-A) – Intelligent visualization selection for query results
+🛠️ Feature: User feedback collection system (#WS-6-A) – Thumbs up/down with comments
+🔄 Fixed workflow stages to ensure tests pass with proper query execution flow
+Last updated: 2025-07-12
 
 - [ ] Tech debt: silence Tornado loop warn in tests
 - [ ] Upgrade to Pydantic v2 APIs

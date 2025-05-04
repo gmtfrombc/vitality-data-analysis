@@ -77,8 +77,8 @@ def test_low_confidence_triggers_clarification(monkeypatch):
     assistant._process_current_stage()
 
     assert assistant.current_stage == assistant.STAGE_CLARIFYING
-    # Ensure clarifying text displayed
-    assert "Which date range?" in assistant.clarifying_pane[1].object
+    # Ensure clarifying text displayed (property added for tests to access)
+    assert "Which date range?" in assistant.clarifying_text
 
 
 def test_low_confidence_generic_target(monkeypatch):
