@@ -19,7 +19,7 @@ Provide healthcare teams with an interactive, AI-assisted data exploration tool 
 | ID | Work Stream | Goal | Milestones | Target Quarter |
 |----|-------------|------|------------|----------------|
 | WS-1 | **Stability & Refactor** | Solid baseline with tests and CI | ✔ Persist saved questions (file) <br> ✔ Unit test coverage ≥ 60 % <br> ✔ Golden query harness <br> ☐ Refactor duplicated code | Q2 2024 |
-| WS-2 | **Hybrid AI Engine** | Natural-language analytics powered by GPT | ✔ OpenAI integration <br> ✔ Intent classification API <br> ✔ Richer code templates (var/std, pct-change, top-N, GROUP BY, Multi-Metric) <br> ✔ Date range filtering <br> ✔ Multi-metric correlation analysis <br> 🔄 Intent engine hardening & template coverage | Q2–Q3 2024 |
+| WS-2 | **Hybrid AI Engine** | Natural-language analytics powered by GPT | ✔ OpenAI integration <br> ✔ Intent classification API <br> ✔ Richer code templates (var/std, pct-change, top-N, GROUP BY, Multi-Metric) <br> ✔ Date range filtering <br> ✔ Multi-metric correlation analysis <br> ✔ Intent engine hardening (confidence scoring, synonym map, tricky-query harness) <br> 🔄 Template coverage (auto-viz hooks, top-N chart) | Q2–Q3 2024 |
 | WS-3 | **Data & Storage** | Scalable, durable persistence | ✔ Move saved questions to SQLite (tests + read/write) <br> ✔ Add migrations <br> ✔ Incremental ETL & Import panel with audit logging <br> ☐ Multiple-user support | Q3 2024 |
 | WS-4 | **UX & Visualization** | Intuitive interface & dashboards | ✔ Auto-visualisation mapper <br> ✔ Fix plots.py test issues <br> ✔ Tooltip hints on saved-question buttons <br> ☐ Responsive layout overhaul <br> ☐ Drag-and-drop chart builder <br> ☐ Help & onboarding tour <br> ☐ Refine follow-ups | Q3 2024 |
 | WS-5 | **Cloud Deployment** | CI/CD & managed hosting | ☐ Dockerize app <br> ☐ GitHub Actions pipeline <br> ☐ Deploy to AWS/GCP <br> ☐ Observability (logging, metrics) | Q4 2024 |
@@ -51,7 +51,7 @@ Legend: ✔ = done ☐ = pending 🔄 = in progress
 ---
 ## 6. Meta
 - **Document owner:** @gmtfr  
-- **Last updated:** 2025-07-20 # Tooltip task complete; backlog updated
+- **Last updated:** 2025-07-21 # Intent-engine hardening finished; tests green
 - **Edit instructions for AI assistants:**  
   • Maintain markdown table formatting.  
   • Use ✔/☐/🔄 symbols for status.  

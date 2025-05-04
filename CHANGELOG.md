@@ -50,3 +50,9 @@ Use reverse-chronological order (latest on top).
 ⬆️ Coverage holds at 81 % (gate 60 %) with 65 tests green.
 ✨ WS-3-D: Added DB migration engine (`app/utils/db_migrations.py`) and baseline `migrations/001_initial.sql`, `
 ✅ UX: Tooltip hints added to saved-question buttons (#WS-4)
+✅ Tests: Added 10 tricky-intent cases + matching golden & smoke tests; harness now 45 cases total
+✨ Feature: Confidence-scoring heuristic & ambiguous-phrase detection in `query_intent.py`
+✨ Feature: Expanded synonym mapping (blood sugar, HbA1c, blood-pressure aliases) & field normalisation helper
+🔧 Sandbox hardened – whitelisted `hvplot` and `unicodedata`; wrapped optional `hvplot.pandas` import to avoid blocked-dependency crashes
+🐛 Golden-harness normalised visualization key handling to prevent spurious diff when mocked plots present
+✅ All 185 tests green; coverage 74.6 %
