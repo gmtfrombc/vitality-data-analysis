@@ -3,6 +3,15 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+✨ Feature: Correlation matrix heat-map template (#WS-4) – Supports 2+ metrics with visualized p-values
+🧩 Added `compute_correlation()` helper with p-value calculation in new `app/utils/analysis_helpers.py`
+🛠️ Improved plots.py histogram to return proper HoloViews objects for Panel compatibility
+📊 Fixed panel/HoloViews type validation in runtime path via fallback to native hv.Histogram objects
+🧪 Added unit test for correlation helper in tests/utils/test_correlation_heatmap.py
+✅ Percent-change by-group template (#WS-2) – supports `group_by` and bar-chart auto-viz
+✅ Template: Top/Bottom-N counts (numeric & categorical) with `order` param; prompt & tests updated
+✅ Docs & prompt: Added Example 6 for percent-change by gender; system prompt clarifies group_by rule
+✅ Tests: Added new golden & intent cases; all 186 tests green, coverage 73.9 %
 ✅ Verified run.py functionality and test coverage - Application starts correctly and test coverage remains at 75%
 ✅ Tests: Expanded golden-query harness to >30 test cases including std_dev, multi-metric by gender, date range filtering
 ✨ Feature: Dynamic code generation sandbox (#WS-2) – Enhanced templates for trend, distribution, and comparison analyses

@@ -1520,6 +1520,39 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 results["gender_stats"] = gender_stats
                 results["weight_data"] = valid_weight
 
+            elif "correlation" in query:
+                # Simple heuristic: look for metric keywords
+                metric_map = {
+                    "weight": "weight",
+                    "bmi": "bmi",
+                    "sbp": "sbp",
+                    "dbp": "dbp",
+                    "a1c": "a1c",
+                }
+
+                metrics = [v for k, v in metric_map.items() if k in query]
+                if len(metrics) < 2:
+                    # Default to common trio when unspecified
+                    metrics = ["weight", "bmi", "sbp"]
+
+                from app.utils.analysis_helpers import compute_correlation
+                from app.utils.plots import correlation_heatmap
+
+                corr_df, p_df = compute_correlation(vitals_df, metrics)
+
+                heat = correlation_heatmap(corr_df, p_df)
+
+                results["correlation_matrix"] = corr_df
+                results["p_values"] = p_df
+                results["metrics"] = metrics
+                results["visualization"] = heat
+                # For simple pairwise correlation, include overall corr value
+                if len(metrics) == 2:
+                    results["correlation"] = corr_df.iloc[0, 1]
+
+                # Mark method used
+                results["method"] = "pearson"
+
             else:
                 # General analysis
                 stats = {
@@ -2488,7 +2521,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 button_type="default",
                 width=220,
                 margin=(0, 0, 5, 0),
-                html_attributes={"title": question_text},  # tooltip hint
+                description=question_text,  # tooltip hint
             )
 
             # Create a click handler that uses the specific question

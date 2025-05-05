@@ -142,6 +142,24 @@ def auto_visualize(
         if num_cols.any():
             return histogram(df, num_cols[0])
 
+    # ---------------- NEW: percent_change dict → bar chart ----------------
+    if analysis == "percent_change" and isinstance(data, (pd.Series, dict)):
+        # Convert to Series for uniform handling
+        if isinstance(data, dict):
+            ser = pd.Series(data)
+        else:
+            ser = data
+        # Sort absolute descending so biggest changes top
+        ser = ser.sort_values(ascending=False, key=lambda x: x.abs())
+        return ser.hvplot.bar(
+            height=height,
+            width=width,
+            rot=45,
+            title="Percent Change by "
+            + (intent.group_by[0].title() if intent.group_by else "Group"),
+            ylabel="% Change",
+        )
+
     # Trend / change over time → line plot (x=date, y=metric)
     if analysis in {"trend", "change", "average_change", "percent_change"}:
         # Heuristic: pick the first datetime column as x, metric as y.
