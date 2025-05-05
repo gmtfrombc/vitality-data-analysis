@@ -126,7 +126,8 @@ def save_questions_to_file(questions):
     try:
         with open(SAVED_QUESTIONS_FILE, "w") as f:
             json.dump(questions, f, indent=2)
-        logger.info(f"Saved {len(questions)} questions to {SAVED_QUESTIONS_FILE}")
+        logger.info(
+            f"Saved {len(questions)} questions to {SAVED_QUESTIONS_FILE}")
         return True
     except Exception as e:
         logger.error(f"Error saving questions: {str(e)}", exc_info=True)
@@ -155,7 +156,8 @@ class DataAnalysisAssistant(param.Parameterized):
         default=[], doc="List of questions to clarify user intent"
     )
     data_samples = param.Dict(default={}, doc="Sample data to show the user")
-    generated_code = param.String(default="", doc="Generated Python code for analysis")
+    generated_code = param.String(
+        default="", doc="Generated Python code for analysis")
     # Use a generic Parameter to allow scalar, Series, dict, etc.
     intermediate_results = param.Parameter(
         default=None,
@@ -164,7 +166,8 @@ class DataAnalysisAssistant(param.Parameterized):
 
     # Replace example_queries with saved_questions
     saved_questions = param.List(default=[], doc="List of saved questions")
-    question_name = param.String(default="", doc="Name for saving the current query")
+    question_name = param.String(
+        default="", doc="Name for saving the current query")
 
     def __init__(self, **params):
         super().__init__(**params)
@@ -190,12 +193,14 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Status and interaction
         self.status_message = "Ready to analyze data"
-        self.status_display = pn.pane.Markdown(f"**Status:** {self.status_message}")
+        self.status_display = pn.pane.Markdown(
+            f"**Status:** {self.status_message}")
         self.query_input = None
         self.question_name_input = None
 
         # Workflow stage displays
-        self.workflow_indicator = pn.pane.Markdown("### Analysis Workflow Status")
+        self.workflow_indicator = pn.pane.Markdown(
+            "### Analysis Workflow Status")
         self.stage_indicators = {}
 
         # Interactive components for each stage
@@ -273,9 +278,11 @@ class DataAnalysisAssistant(param.Parameterized):
                     if notifier:
                         notifier.success(f"Import complete – {summary_local}")
                     else:
-                        self._update_status(f"Import complete – {summary_local}")
+                        self._update_status(
+                            f"Import complete – {summary_local}")
                 except Exception as exc_inner:  # noqa: BLE001 – explicit
-                    logger.error("JSON ingest failed: %s", exc_inner, exc_info=True)
+                    logger.error("JSON ingest failed: %s",
+                                 exc_inner, exc_info=True)
                     notifier = getattr(pn.state, "notifications", None)
                     if notifier:
                         notifier.error(f"Import failed: {exc_inner}")
@@ -293,7 +300,8 @@ class DataAnalysisAssistant(param.Parameterized):
 
             import threading
 
-            threading.Thread(target=_worker, args=(tmp_path,), daemon=True).start()
+            threading.Thread(target=_worker, args=(
+                tmp_path,), daemon=True).start()
 
         import_button.on_click(_on_import_click)
 
@@ -383,7 +391,8 @@ class DataAnalysisAssistant(param.Parameterized):
 
         assert isinstance(intent, QueryIntent)
 
-        confidence = compute_intent_confidence(intent, getattr(intent, "raw_query", ""))
+        confidence = compute_intent_confidence(
+            intent, getattr(intent, "raw_query", ""))
 
         # Threshold grey zone: below 0.75 ask clarification
         if confidence < 0.75:
@@ -439,7 +448,8 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Update the button click handler to use the current input value
         def on_analyze_click(event):
-            logger.info(f"Analyze button clicked with query: {self.query_text}")
+            logger.info(
+                f"Analyze button clicked with query: {self.query_text}")
             # Reset workflow and start from the beginning
             self.current_stage = self.STAGE_INITIAL
             self._update_stage_indicators()
@@ -449,7 +459,8 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Create saved questions sidebar
         saved_questions_title = pn.pane.Markdown("### Saved Questions:")
-        self.saved_question_buttons_container = pn.Column(sizing_mode="stretch_width")
+        self.saved_question_buttons_container = pn.Column(
+            sizing_mode="stretch_width")
 
         # Update the saved question buttons
         self._update_saved_question_buttons()
@@ -457,7 +468,8 @@ class DataAnalysisAssistant(param.Parameterized):
         # Workflow progress display
         workflow_indicators = pn.Column(
             self.workflow_indicator,
-            *[indicator for _, indicator in sorted(self.stage_indicators.items())],
+            *[indicator for _,
+                indicator in sorted(self.stage_indicators.items())],
             sizing_mode="stretch_width",
         )
 
@@ -501,7 +513,8 @@ class DataAnalysisAssistant(param.Parameterized):
         # Save/reset & import panels
         save_reset_panel = pn.Column(
             pn.Row(
-                pn.pane.Markdown("### Save This Question", margin=(0, 0, 5, 0)),
+                pn.pane.Markdown("### Save This Question",
+                                 margin=(0, 0, 5, 0)),
                 sizing_mode="stretch_width",
             ),
             pn.Row(
@@ -511,7 +524,8 @@ class DataAnalysisAssistant(param.Parameterized):
                 sizing_mode="stretch_width",
             ),
             pn.Spacer(height=15),
-            pn.Row(pn.Spacer(), reset_button, sizing_mode="stretch_width", align="end"),
+            pn.Row(pn.Spacer(), reset_button,
+                   sizing_mode="stretch_width", align="end"),
             sizing_mode="stretch_width",
             styles={"background": "#f8f9fa", "border-radius": "5px"},
             css_classes=["card", "rounded-card"],
@@ -532,7 +546,8 @@ class DataAnalysisAssistant(param.Parameterized):
         )
 
         # Status indicator
-        self.status_display = pn.pane.Markdown(f"**Status:** {self.status_message}")
+        self.status_display = pn.pane.Markdown(
+            f"**Status:** {self.status_message}")
 
         # Combine everything in a layout
         input_row = pn.Row(
@@ -729,13 +744,16 @@ class DataAnalysisAssistant(param.Parameterized):
                 female_patients = patients_df[patients_df["gender"] == "F"][
                     "id"
                 ].tolist()
-                vitals_df = vitals_df[vitals_df["patient_id"].isin(female_patients)]
+                vitals_df = vitals_df[vitals_df["patient_id"].isin(
+                    female_patients)]
                 title = "Average Weight (Female Patients)"
             elif "male" in query or "men" in query:
                 logger.info("Filtering for male patients")
                 patients_df = db_query.get_all_patients()
-                male_patients = patients_df[patients_df["gender"] == "M"]["id"].tolist()
-                vitals_df = vitals_df[vitals_df["patient_id"].isin(male_patients)]
+                male_patients = patients_df[patients_df["gender"] == "M"]["id"].tolist(
+                )
+                vitals_df = vitals_df[vitals_df["patient_id"].isin(
+                    male_patients)]
                 title = "Average Weight (Male Patients)"
             else:
                 title = "Average Weight (All Patients)"
@@ -801,15 +819,18 @@ class DataAnalysisAssistant(param.Parameterized):
                     "id"
                 ].tolist()
                 logger.info(f"Found {len(female_patients)} female patients")
-                vitals_df = vitals_df[vitals_df["patient_id"].isin(female_patients)]
+                vitals_df = vitals_df[vitals_df["patient_id"].isin(
+                    female_patients)]
                 title = "BMI Distribution (Female Patients)"
                 filtered_desc = "female patients"
             elif "male" in query or "men" in query:
                 logger.info("Filtering BMI for male patients")
                 patients_df = db_query.get_all_patients()
-                male_patients = patients_df[patients_df["gender"] == "M"]["id"].tolist()
+                male_patients = patients_df[patients_df["gender"] == "M"]["id"].tolist(
+                )
                 logger.info(f"Found {len(male_patients)} male patients")
-                vitals_df = vitals_df[vitals_df["patient_id"].isin(male_patients)]
+                vitals_df = vitals_df[vitals_df["patient_id"].isin(
+                    male_patients)]
                 title = "BMI Distribution (Male Patients)"
                 filtered_desc = "male patients"
             else:
@@ -820,11 +841,13 @@ class DataAnalysisAssistant(param.Parameterized):
             if is_threshold_query and threshold_value is not None:
                 # Count-based threshold query
                 if threshold_direction == "above":
-                    threshold_data = vitals_df[vitals_df["bmi"] > threshold_value]
+                    threshold_data = vitals_df[vitals_df["bmi"]
+                                               > threshold_value]
                     # variable unused; placeholder to satisfy linter
                     _ = f"above {threshold_value}"
                 else:
-                    threshold_data = vitals_df[vitals_df["bmi"] < threshold_value]
+                    threshold_data = vitals_df[vitals_df["bmi"]
+                                               < threshold_value]
                     _ = f"below {threshold_value}"
 
                 # Count unique patients
@@ -844,7 +867,8 @@ class DataAnalysisAssistant(param.Parameterized):
             else:
                 # Standard BMI analysis (average and distribution)
                 # Calculate statistics
-                logger.info(f"Calculating BMI stats based on {len(vitals_df)} records")
+                logger.info(
+                    f"Calculating BMI stats based on {len(vitals_df)} records")
                 avg_bmi = round(vitals_df["bmi"].mean(), 1)
                 count = len(vitals_df["patient_id"].unique())
 
@@ -920,7 +944,8 @@ class DataAnalysisAssistant(param.Parameterized):
             # Convert the Series to a more display-friendly format
             bmi_stats = self.data_samples["bmi_stats"]
             stats_df = pd.DataFrame(
-                {"Statistic": bmi_stats.index, "Value": bmi_stats.values.round(2)}
+                {"Statistic": bmi_stats.index,
+                    "Value": bmi_stats.values.round(2)}
             )
 
             sample_panels.append(pn.pane.Markdown("#### BMI Statistics:"))
@@ -929,7 +954,8 @@ class DataAnalysisAssistant(param.Parameterized):
             )
 
         if "active_patients" in self.data_samples:
-            sample_panels.append(pn.pane.Markdown("#### Active Patients Sample:"))
+            sample_panels.append(pn.pane.Markdown(
+                "#### Active Patients Sample:"))
             sample_panels.append(
                 pn.widgets.Tabulator(
                     self.data_samples["active_patients"],
@@ -947,7 +973,8 @@ class DataAnalysisAssistant(param.Parameterized):
                 )
 
         if "patients" in self.data_samples:
-            sample_panels.append(pn.pane.Markdown("#### General Patient Data:"))
+            sample_panels.append(pn.pane.Markdown(
+                "#### General Patient Data:"))
             sample_panels.append(
                 pn.widgets.Tabulator(
                     self.data_samples["patients"],
@@ -973,7 +1000,8 @@ class DataAnalysisAssistant(param.Parameterized):
 
         try:
             # Show AI is thinking for intent analysis
-            self._start_ai_indicator("ChatGPT is analyzing your query intent...")
+            self._start_ai_indicator(
+                "ChatGPT is analyzing your query intent...")
 
             # First, get the query intent using AI
             intent = ai.get_query_intent(self.query_text)
@@ -1039,7 +1067,8 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Display code in a syntax-highlighted panel using markdown code block
         code_md = f"```python\n{self.generated_code}\n```"
-        code_panels.append(pn.pane.Markdown(code_md, sizing_mode="stretch_width"))
+        code_panels.append(pn.pane.Markdown(
+            code_md, sizing_mode="stretch_width"))
 
         # Add explanations
         explanation = """
@@ -1122,7 +1151,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
                     # Active only filter
                     active_female_patients = patients_df[
-                        (patients_df["gender"] == "F") & (patients_df["active"] == 1)
+                        (patients_df["gender"] == "F") & (
+                            patients_df["active"] == 1)
                     ]["id"].tolist()
                     active_filtered = valid_bmi[
                         valid_bmi["patient_id"].isin(active_female_patients)
@@ -1169,7 +1199,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                             & (patients_df["active"] == 1)
                         ]["id"].tolist()
                         active_filtered = valid_bmi[
-                            valid_bmi["patient_id"].isin(active_female_patients)
+                            valid_bmi["patient_id"].isin(
+                                active_female_patients)
                         ]
 
                         # Check if this is a threshold query
@@ -1270,7 +1301,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
                     # Active only filter
                     active_male_patients = patients_df[
-                        (patients_df["gender"] == "M") & (patients_df["active"] == 1)
+                        (patients_df["gender"] == "M") & (
+                            patients_df["active"] == 1)
                     ]["id"].tolist()
                     active_filtered = valid_bmi[
                         valid_bmi["patient_id"].isin(active_male_patients)
@@ -1477,13 +1509,16 @@ Intermediate results and visualisations are still shown so you can audit the pro
                         else None
                     ),
                     "std_weight": (
-                        valid_weight["weight"].std() if not valid_weight.empty else None
+                        valid_weight["weight"].std(
+                        ) if not valid_weight.empty else None
                     ),
                     "min_weight": (
-                        valid_weight["weight"].min() if not valid_weight.empty else None
+                        valid_weight["weight"].min(
+                        ) if not valid_weight.empty else None
                     ),
                     "max_weight": (
-                        valid_weight["weight"].max() if not valid_weight.empty else None
+                        valid_weight["weight"].max(
+                        ) if not valid_weight.empty else None
                     ),
                     "unique_patients": (
                         valid_weight["patient_id"].nunique()
@@ -1560,7 +1595,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     "active_patients": sum(patients_df["active"] == 1),
                     "inactive_patients": sum(patients_df["active"] == 0),
                     "percent_active": (
-                        sum(patients_df["active"] == 1) / len(patients_df) * 100
+                        sum(patients_df["active"] == 1) /
+                        len(patients_df) * 100
                         if len(patients_df) > 0
                         else 0
                     ),
@@ -1625,7 +1661,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
         # 1. If the result is a simple scalar (int, float, numpy scalar)
         if isinstance(self.intermediate_results, (int, float, np.generic)):
             self.execution_pane.objects = [
-                pn.pane.Markdown(f"**Result:** {float(self.intermediate_results):.2f}")
+                pn.pane.Markdown(
+                    f"**Result:** {float(self.intermediate_results):.2f}")
             ]
             return
 
@@ -1654,7 +1691,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
         # Handle simple scalar or Series results produced by sandbox
         if isinstance(self.intermediate_results, (int, float, np.generic)):
             self.execution_pane.objects = [
-                pn.pane.Markdown(f"**Result:** {self.intermediate_results:.2f}")
+                pn.pane.Markdown(
+                    f"**Result:** {self.intermediate_results:.2f}")
             ]
             return
 
@@ -2034,7 +2072,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                                     f"- **{k.replace('_', ' ').title()}**: {v}"
                                 )
                         result["summary"] = (
-                            "\n".join(lines) if len(lines) > 1 else "Results ready."
+                            "\n".join(lines) if len(
+                                lines) > 1 else "Results ready."
                         )
                     else:
                         result["summary"] = "Results ready."
@@ -2280,7 +2319,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 # Check if clarification needed for ambiguous intent
                 if self._is_low_confidence_intent(intent):
                     # Generate clarifying questions
-                    self._start_ai_indicator("Preparing clarifying questions...")
+                    self._start_ai_indicator(
+                        "Preparing clarifying questions...")
                     self.clarifying_questions = ai.generate_clarifying_questions(
                         self.query_text
                     )
@@ -2332,7 +2372,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
             return
 
         logger.info(
-            "Displaying %d clarifying questions", len(self.clarifying_questions)
+            "Displaying %d clarifying questions", len(
+                self.clarifying_questions)
         )
 
         # Create markdown panel with questions
@@ -2398,7 +2439,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
             logger.info(f"Clarification added: {clarification}")
             self._update_status("Clarification added to query")
         else:
-            logger.info("No clarification provided, continuing with original query")
+            logger.info(
+                "No clarification provided, continuing with original query")
 
         # Hide the clarification UI
         self.clarifying_input.visible = False
@@ -2537,7 +2579,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
             # Add the button to the container
             self.saved_question_buttons_container.append(button)
 
-        logger.info(f"Added {len(self.saved_questions)} saved question buttons")
+        logger.info(
+            f"Added {len(self.saved_questions)} saved question buttons")
 
     def _save_question(self, event=None):
         """Save the current query to the saved questions list."""
@@ -2572,7 +2615,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
             upsert_question(self.question_name, self.query_text)
             self._update_status(f"Question '{self.question_name}' saved")
         except Exception as e:
-            logger.error(f"Error saving question to database: {str(e)}", exc_info=True)
+            logger.error(
+                f"Error saving question to database: {str(e)}", exc_info=True)
             self._update_status(f"Error saving to database: {str(e)}")
 
         # Update the sidebar buttons
