@@ -3,6 +3,10 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+✨ Feature: Slot-based Smart Clarifier for intent engine hardening (#WS-2, #WS-4) - Identifies specific missing information in queries 
+🧩 Added MissingSlot and SlotType for focused, structured clarification requests in `app/utils/intent_clarification.py`
+🛠️ Implemented generic fallback template for low-confidence queries with data schema inspection and relevant visualizations
+🧪 Added tests for slot-based clarifier functionality in `tests/utils/test_intent_clarification.py`
 ✨ Feature: Correlation matrix heat-map template (#WS-4) – Supports 2+ metrics with visualized p-values
 🧩 Added `compute_correlation()` helper with p-value calculation in new `app/utils/analysis_helpers.py`
 🛠️ Improved plots.py histogram to return proper HoloViews objects for Panel compatibility

@@ -16,9 +16,9 @@ Below is a snapshot of the current work streams:
 | ID | Work Stream | Key Next Steps |
 |----|-------------|----------------|
 | WS-1 | Stability & Refactor | Unit tests ≥ 60 % · remove duplication |
-| WS-2 | Hybrid AI Engine | Multi-metric correlation ✔ · dynamic code generation |
+| WS-2 | Hybrid AI Engine | Multi-metric correlation ✔ · slot-based Smart Clarifier ✔ · dynamic code generation |
 | WS-3 | Data & Storage | Saved questions in SQLite ✔ · migrations ✔ · JSON→SQLite ETL ✔ |
-| WS-4 | UX & Viz | Auto-visualization mapper ✔ · fix plots.py test issues 🔄 · responsive layout |
+| WS-4 | UX & Viz | Auto-visualization mapper ✔ · Smart Clarifier UX ✔ · fix plots.py test issues 🔄 · responsive layout |
 | WS-5 | Cloud Deployment | Docker · CI/CD · AWS/GCP hosting |
 | WS-6 | Continuous Feedback | Feedback widget ✔ · query/response logging · nightly triage |
 
@@ -55,6 +55,7 @@ run.py                       # Panel server entry-point
 ### LLM Usage
 * All prompts & responses routed through `app/ai_helper.py`.
 * Deterministic templates now cover **median** aggregates, **distribution histograms**, and **date range filtering**.
+* Intelligent **slot-based Smart Clarifier** identifies specific missing information in queries and asks targeted questions.
 * Hardened execution sandbox blocks unsafe imports & network access.
 * Persist user queries (minus PII) for audit.
 * Post-process model output with rule-based checks before execution.

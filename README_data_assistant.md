@@ -53,6 +53,8 @@ You can ask questions like:
 
 ## Recent Updates
 
+- **July 2025**: Implemented slot-based Smart Clarifier to ask specific, targeted questions when query intent is ambiguous
+- **July 2025**: Added correlation matrix heat-map visualization with statistical significance testing
 - **April 2025**: Implemented the new Data Analysis Assistant with natural language query capabilities
 - **April 2025**: Removed the AI SQL Assistant module, replacing its functionality with the more comprehensive Data Analysis Assistant
 - **April 2025**: Added visualization capabilities to the Data Analysis Assistant
@@ -71,6 +73,8 @@ All code is available for review in the "Code" tab to ensure transparency and au
 ## Key Features
 
 - **Natural Language Interface**: Ask questions about patient data in normal English
+- **Smart Clarification**: System identifies specific missing information and asks targeted questions
+- **Intelligent Fallbacks**: Even ambiguous queries produce useful results through fallback templates
 - **Interactive Visualizations**: Get charts and graphs that answer your specific questions
 - **Data Insights**: Receive explanations and key statistics alongside visualizations
 - **Example Queries**: Browse example questions to get started quickly
@@ -81,7 +85,8 @@ The Data Assistant uses:
 1. Pandas for data processing and analysis
 2. Panel for the interactive user interface
 3. HoloViews/hvPlot for interactive visualizations
-4. Pattern matching to interpret questions (can be replaced with an LLM)
+4. GPT-4 for natural language understanding and query intent classification
+5. Slot-based clarification system for handling ambiguous queries
 
 ## Advantages Over SQL-Based Approach
 
@@ -129,9 +134,9 @@ You can extend the Data Assistant by:
 
 ## Future Enhancements
 
-The current implementation uses pattern matching for demonstration purposes. For production use, consider these enhancements:
+For future enhancements, consider:
 
-1. **LLM Integration**: Replace pattern matching with an LLM for more flexible understanding
+1. **Advanced Correlation**: Implement conditional and time-series correlation analysis
 2. **Memory**: Add conversation memory to allow follow-up questions
 3. **Custom Functions**: Allow creating and saving custom analyses
 4. **Export Features**: Add ability to export results to PDF or Excel
