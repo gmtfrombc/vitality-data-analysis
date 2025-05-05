@@ -23,7 +23,7 @@ Provide healthcare teams with an interactive, AI-assisted data exploration tool 
 | WS-3 | **Data & Storage** | Scalable, durable persistence | ✔ Move saved questions to SQLite (tests + read/write) <br> ✔ Add migrations <br> ✔ Incremental ETL & Import panel with audit logging <br> ☐ Multiple-user support | Q3 2024 |
 | WS-4 | **UX & Visualization** | Intuitive interface & dashboards | ✔ Auto-visualisation mapper <br> ✔ Fix plots.py test issues <br> ✔ Tooltip hints on saved-question buttons <br> ☐ Responsive layout overhaul <br> ☐ Drag-and-drop chart builder <br> ☐ Help & onboarding tour <br> ☐ Refine follow-ups | Q3 2024 |
 | WS-5 | **Cloud Deployment** | CI/CD & managed hosting | ☐ Dockerize app <br> ☐ GitHub Actions pipeline <br> ☐ Deploy to AWS/GCP <br> ☐ Observability (logging, metrics) | Q4 2024 |
-| WS-6 | **Continuous Feedback & Evaluation** | Human-in-the-loop iterative improvement | ✔ Add feedback widget & `assistant_feedback` table <br> ☐ Query/response logging <br> ☐ Nightly triage report <br> ☐ Weekly **Feedback Friday** loop <br> ☐ Dataset for fine-tuning | Q3 2025 |
+| WS-6 | **Continuous Feedback & Evaluation** | Human-in-the-loop iterative improvement | ✔ Add feedback widget & `assistant_feedback` table <br> ✔ Query/response logging MVP <br> ☐ Nightly triage report <br> ☐ Weekly **Feedback Friday** loop <br> ☐ Dataset for fine-tuning | Q3 2025 |
 
 Legend: ✔ = done ☐ = pending 🔄 = in progress
 
@@ -51,7 +51,7 @@ Legend: ✔ = done ☐ = pending 🔄 = in progress
 ---
 ## 6. Meta
 - **Document owner:** @gmtfr  
-- **Last updated:** 2025-07-21 # Intent-engine hardening finished; tests green
+- **Last updated:** 2025-07-22 # Query/response logging MVP complete; tests green
 - **Edit instructions for AI assistants:**  
   • Maintain markdown table formatting.  
   • Use ✔/☐/🔄 symbols for status.  

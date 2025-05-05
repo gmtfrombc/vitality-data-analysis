@@ -56,3 +56,4 @@ Use reverse-chronological order (latest on top).
 🔧 Sandbox hardened – whitelisted `hvplot` and `unicodedata`; wrapped optional `hvplot.pandas` import to avoid blocked-dependency crashes
 🐛 Golden-harness normalised visualization key handling to prevent spurious diff when mocked plots present
 ✅ All 185 tests green; coverage 74.6 %
+✅ Feature: Query/response logging MVP – migration 006, helper `query_logging.py`, DataAnalysisAssistant integration, unit test.
