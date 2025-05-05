@@ -88,12 +88,13 @@ def helper() -> AIHelper:  # noqa: D401 - fixture
         (
             QueryIntent(
                 analysis_type="percent_change",
-                target_field="bmi",
+                target_field="weight",
+                group_by=["gender"],
                 filters=[],
                 conditions=[],
                 parameters={},
             ),
-            "percent-change",  # placeholder string to check description comment
+            "percent-change by group",  # comment contains phrase
         ),
         (
             QueryIntent(

@@ -3,6 +3,10 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+✅ Percent-change by-group template (#WS-2) – supports `group_by` and bar-chart auto-viz
+✅ Template: Top/Bottom-N counts (numeric & categorical) with `order` param; prompt & tests updated
+✅ Docs & prompt: Added Example 6 for percent-change by gender; system prompt clarifies group_by rule
+✅ Tests: Added new golden & intent cases; all 186 tests green, coverage 73.9 %
 ✅ Verified run.py functionality and test coverage - Application starts correctly and test coverage remains at 75%
 ✅ Tests: Expanded golden-query harness to >30 test cases including std_dev, multi-metric by gender, date range filtering
 ✨ Feature: Dynamic code generation sandbox (#WS-2) – Enhanced templates for trend, distribution, and comparison analyses
@@ -56,3 +60,4 @@ Use reverse-chronological order (latest on top).
 🔧 Sandbox hardened – whitelisted `hvplot` and `unicodedata`; wrapped optional `hvplot.pandas` import to avoid blocked-dependency crashes
 🐛 Golden-harness normalised visualization key handling to prevent spurious diff when mocked plots present
 ✅ All 185 tests green; coverage 74.6 %
+✅ Feature: Query/response logging MVP – migration 006, helper `query_logging.py`, DataAnalysisAssistant integration, unit test.

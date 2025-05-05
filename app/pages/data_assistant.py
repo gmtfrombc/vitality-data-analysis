@@ -16,10 +16,15 @@ import os
 import re
 import tempfile
 from pathlib import Path
+import time
 from app.ai_helper import ai, get_data_schema  # Fix import path
 from app.utils.sandbox import run_snippet
 from app.utils.plots import histogram
-from app.utils.query_intent import QueryIntent
+from app.utils.query_intent import (
+    QueryIntent,
+    compute_intent_confidence,
+)  # Fix import path
+from app.utils.query_logging import log_interaction
 
 # Auto-viz & feedback helpers (WS-4, WS-6)
 
@@ -628,6 +633,9 @@ class DataAnalysisAssistant(param.Parameterized):
         """Process the natural language query and generate analysis"""
         logger.info(f"Processing query: '{self.query_text}'")
 
+        # Capture start time for duration metric
+        self._start_ts = time.perf_counter()
+
         if not self.query_text:
             self._update_status("Please enter a query")
             logger.warning("Empty query detected")
@@ -653,9 +661,7 @@ class DataAnalysisAssistant(param.Parameterized):
             # Process through all the stages until we reach results
             while self.current_stage <= self.STAGE_RESULTS:
                 self._process_current_stage()
-                # Avoid infinite loop by adding a short delay
-                import time
-
+                # Avoid tight loop; short sleep
                 time.sleep(0.1)
                 # Break if we've reached the final stage
                 if self.current_stage == self.STAGE_RESULTS:
@@ -668,6 +674,19 @@ class DataAnalysisAssistant(param.Parameterized):
 
             logger.info("Query processing completed successfully")
             self._update_status("Analysis complete")
+
+            # Duration measured here as fallback (in case final results display skipped)
+            setattr(
+                self,
+                "_duration_ms",
+                int(
+                    (
+                        time.perf_counter()
+                        - getattr(self, "_start_ts", time.perf_counter())
+                    )
+                    * 1000
+                ),
+            )
 
         except Exception as e:
             logger.error(f"Error processing query: {str(e)}", exc_info=True)
@@ -2106,6 +2125,36 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
         # Update status
         self._update_status("Analysis complete")
+
+        # --------------------------------------------------
+        # Log interaction to SQLite for WS-6 feedback loop
+        # --------------------------------------------------
+        try:
+            duration_ms = int(
+                (time.perf_counter() - getattr(self, "_start_ts", time.perf_counter()))
+                * 1000
+            )
+            self._duration_ms = duration_ms  # cache for tests/debug
+
+            # Aim for concise result summary when dict
+            result_summary: str | None
+            if isinstance(self.analysis_result, dict):
+                result_summary = (
+                    self.analysis_result.get("summary")
+                    or str(self.analysis_result)[:500]
+                )
+            else:
+                result_summary = str(self.analysis_result)[:500]
+
+            log_interaction(
+                query=self.query_text,
+                intent=getattr(self, "query_intent", None),
+                generated_code=getattr(self, "generated_code", ""),
+                result=result_summary,
+                duration_ms=duration_ms,
+            )
+        except Exception as exc:  # pragma: no cover – logging never blocks UI
+            logger.error("assistant_logs write failed: %s", exc, exc_info=True)
 
     def _advance_workflow(self, event=None):
         """Advance to the next workflow stage and trigger associated actions"""

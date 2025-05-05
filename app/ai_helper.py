@@ -195,6 +195,18 @@ class AIHelper:
           "group_by": [],
           "time_range": null
         }
+
+        Example 6 – "What is the percent change in BMI by gender over the last 6 months?":
+        {
+          "analysis_type": "percent_change",
+          "target_field": "bmi",
+          "filters": [],
+          "conditions": [],
+          "parameters": {},
+          "additional_fields": [],
+          "group_by": ["gender"],
+          "time_range": null  // LLM will convert "last 6 months" to actual dates
+        }
         """
 
         logger.debug("Intent prompt: %s", system_prompt.strip())
@@ -1236,11 +1248,18 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         else:
             table_name = "vitals"
 
+        # ---------------------------------------------------------
+        # NEW: Support single-dimension group_by for percent change
+        # ---------------------------------------------------------
+        group_by_field = intent.group_by[0] if intent.group_by else None
+
         where_clauses: list[str] = []
 
         # Add global time_range filter if present
         if intent.time_range is not None:
             date_column = "date"
+            if table_name == "patients":
+                date_column = "program_start_date"
             start_date = intent.time_range.start_date
             end_date = intent.time_range.end_date
 
@@ -1281,7 +1300,39 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
 
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
-        # Assume table has 'date' column for ordering; fallback to ROWID
+        # ---------------------------------------------------------
+        # A) Group-by path – build code returning dict {group: pct_change}
+        # ---------------------------------------------------------
+        if group_by_field is not None:
+            # Include date column for ordering (assuming "date" exists)
+            sql = (
+                f"SELECT {group_by_field}, {metric_name}, date FROM {table_name} "
+                f"{where_clause} ORDER BY date ASC;"
+            )
+            code = (
+                "# Auto-generated percent-change by group using pandas  # percent-change by group\n"
+                "from db_query import query_dataframe\nimport pandas as _pd, numpy as _np\n\n"
+                f'_df = query_dataframe("{sql}")\n'
+                "if _df.empty:\n"
+                "    results = {}\n"
+                "else:\n"
+                f"    _group_col = '{group_by_field}'\n"
+                f"    _metric = '{metric_name}'\n"
+                "    res = {}\n"
+                "    for grp, gdf in _df.groupby(_group_col):\n"
+                "        _clean = gdf[_metric].dropna()\n"
+                "        if _clean.size < 2 or _clean.iloc[0] == 0:\n"
+                "            res[grp] = _np.nan\n"
+                "        else:\n"
+                "            first, last = _clean.iloc[0], _clean.iloc[-1]\n"
+                "            res[grp] = float((last - first) / abs(first) * 100)\n"
+                "    results = res\n"
+            )
+            return code
+
+        # ---------------------------------------------------------
+        # B) Scalar path – original implementation (unchanged)
+        # ---------------------------------------------------------
         sql = (
             f"SELECT {metric_name} FROM {table_name} {where_clause} "
             "ORDER BY date ASC;"
@@ -1305,13 +1356,23 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
     # ------------------------------------------------------------------
     if intent.analysis_type == "top_n":
         n = intent.parameters.get("n", 5) if isinstance(intent.parameters, dict) else 5
+        order = "desc"
+        if isinstance(intent.parameters, dict):
+            order = intent.parameters.get("order", "desc").lower()
+            if order not in {"asc", "desc"}:
+                order = "desc"
 
+        numeric_metrics = {"bmi", "weight", "sbp", "dbp", "age", "score_value", "value"}
+
+        # Decide table heuristically
         if metric_name in {"gender", "ethnicity", "assessment_type", "score_type"}:
             table_name = (
                 "patients" if metric_name in {"gender", "ethnicity"} else "scores"
             )
+            is_numeric = False
         else:
             table_name = "vitals"
+            is_numeric = metric_name in numeric_metrics
 
         where_clauses: list[str] = []
 
@@ -1358,15 +1419,30 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
 
         where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
-        sql = f"SELECT {metric_name} FROM {table_name} {where_clause};"
+        if is_numeric:
+            # For numeric metric, select metric and optional patient_id for context
+            sql = f"SELECT {metric_name} FROM {table_name} {where_clause};"
 
-        code = (
-            "# Auto-generated top-N categorical counts using pandas\n"
-            "from db_query import query_dataframe\n\n"
-            f'_df = query_dataframe("{sql}")\n'
-            f"_top = _df['{metric_name}'].value_counts().nlargest({n})\n"
-            "results = _top.to_dict()\n"
-        )
+            code = (
+                "# Auto-generated top/bottom-N numeric counts using pandas\n"
+                "from db_query import query_dataframe\n\n"
+                f'_df = query_dataframe("{sql}")\n'
+                f"_clean = _df['{metric_name}'].dropna()\n"
+                f"_vc = _clean.value_counts()\n"
+                f"_top = _vc.nsmallest({n}) if '{order}' == 'asc' else _vc.nlargest({n})\n"
+                "results = _top.to_dict()\n"
+            )
+        else:
+            sql = f"SELECT {metric_name} FROM {table_name} {where_clause};"
+            fun = "nsmallest" if order == "asc" else "nlargest"
+
+            code = (
+                "# Auto-generated top/bottom-N counts using pandas\n"
+                "from db_query import query_dataframe\n\n"
+                f'_df = query_dataframe("{sql}")\n'
+                f"_top = _df['{metric_name}'].value_counts().{fun}({n})\n"
+                "results = _top.to_dict()\n"
+            )
         return code
 
     # ------------------------------------------------------------------
