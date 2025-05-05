@@ -29,23 +29,30 @@ else
     TEST_STATUS="FAILED"
 fi
 
-# Step 2: Generate a checklist for documentation updates
-TODAY_DATE=$(date +"%Y-%m-%d")
-LAST_SUMMARY=$(ls -t docs/summary_* 2>/dev/null | head -1 || echo "No previous summary found")
+# Step 2: Find the most recent summary and determine the next number
+# Get the last summary number
+LAST_SUMMARY=$(ls -t docs/summary_*.md 2>/dev/null | head -1 || echo "docs/summary_000.md")
+LAST_NUM=$(echo "$LAST_SUMMARY" | grep -o '[0-9]\{3\}' || echo "000")
+NEXT_NUM=$((10#$LAST_NUM + 1))
+NEXT_NUM_PADDED=$(printf "%03d" $NEXT_NUM)
+NEW_SUMMARY="docs/summary_${NEXT_NUM_PADDED}.md"
+
+# Get the 5 most recent summaries to show to the assistant
+RECENT_SUMMARIES=$(ls -t docs/summary_*.md 2>/dev/null | head -5 | sort)
 
 echo -e "${BLUE}STEP 2: Documentation update checklist${NC}"
 echo -e "Please ensure these documents are updated before handoff:\n"
 echo -e "1. ${YELLOW}CHANGELOG.md${NC} - Add entries for all new features, fixes, and changes"
 echo -e "2. ${YELLOW}ROADMAP_CANVAS.md${NC} - Update status of completed items and current priorities"
-echo -e "3. ${YELLOW}docs/summary_${TODAY_DATE}.md${NC} - Create or update today's summary (previous: ${LAST_SUMMARY})"
+echo -e "3. ${YELLOW}${NEW_SUMMARY}${NC} - Create new summary for this session (latest: ${LAST_SUMMARY})"
 
 # Generate documentation template if needed
-if [ ! -f "docs/summary_${TODAY_DATE}.md" ]; then
-    echo -e "\n${BLUE}Creating new summary template for today...${NC}"
+if [ ! -f "$NEW_SUMMARY" ]; then
+    echo -e "\n${BLUE}Creating new summary template...${NC}"
     mkdir -p docs
     
-    cat > "docs/summary_${TODAY_DATE}.md" <<-EOF
-# Metabolic Health Program - Development Summary (${TODAY_DATE})
+    cat > "$NEW_SUMMARY" <<-EOF
+# Metabolic Health Program - Development Summary (Session ${NEXT_NUM_PADDED})
 
 ## Overview
 [Brief description of today's progress and key achievements]
@@ -64,7 +71,7 @@ if [ ! -f "docs/summary_${TODAY_DATE}.md" ]; then
 - [Any implementation details worth noting]
 EOF
 
-    echo -e "${GREEN}✓ Created new summary template: docs/summary_${TODAY_DATE}.md${NC}\n"
+    echo -e "${GREEN}✓ Created new summary template: ${NEW_SUMMARY}${NC}\n"
 fi
 
 # Step 3: Generate the handoff message for the assistant
@@ -76,15 +83,18 @@ It's time to close this session. Please perform the following handoff tasks:
 1. UPDATE DOCUMENTATION:
    - Review and update CHANGELOG.md with new entries
    - Update ROADMAP_CANVAS.md to reflect current progress (mark items as complete/in-progress)
-   - Complete today's summary in docs/summary_${TODAY_DATE}.md
+   - Complete the new summary in ${NEW_SUMMARY}
 
-2. VALIDATION:
+2. RECENT CONTEXT (review these for continuity):
+   $(echo "$RECENT_SUMMARIES" | awk '{print "   - " $0}')
+
+3. VALIDATION:
    - Self-test status: ${TEST_STATUS}
    - Please address any failing tests or add notes about known issues
 
-3. VERSION CONTROL:
+4. VERSION CONTROL:
    - Stage all documentation changes
-   - Commit with message: \"docs: update summary and progress for ${TODAY_DATE}\"
+   - Commit with message: \"docs: update summary for session ${NEXT_NUM_PADDED}\"
    - Push changes to the repository if applicable
 
 Once these tasks are complete, the project will be ready for the next assistant session.
@@ -101,6 +111,6 @@ echo -e "3. Run 'git log' to confirm that the documentation changes were committ
 echo -e "${BLUE}DOCUMENTATION STATUS:${NC}"
 echo -e "CHANGELOG.md: $(git diff --name-only CHANGELOG.md | grep -q CHANGELOG.md && echo "Modified" || echo "Unchanged")"
 echo -e "ROADMAP_CANVAS.md: $(git diff --name-only ROADMAP_CANVAS.md | grep -q ROADMAP_CANVAS.md && echo "Modified" || echo "Unchanged")"
-echo -e "Today's summary: $(git ls-files --error-unmatch docs/summary_${TODAY_DATE}.md 2>/dev/null && echo "Created" || echo "Not yet added to git")\n"
+echo -e "New summary: $(git ls-files --error-unmatch "$NEW_SUMMARY" 2>/dev/null && echo "Created" || echo "Not yet added to git")\n"
 
 echo -e "${GREEN}Handoff script completed.${NC}" 
