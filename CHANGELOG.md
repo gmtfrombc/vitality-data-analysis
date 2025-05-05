@@ -3,6 +3,33 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+✨ Feature: Synthetic "Golden-Dataset" Self-Test Loop (#QA) - Automated regression testing for the assistant
+🧩 Created framework for testing against synthetic dataset with known statistical properties
+🧩 Implemented daily runner with notification system for continuous monitoring
+🧩 Added 10 test cases covering key query types and analysis patterns
+🧪 Developed unit tests for the self-test framework components
+📚 Added comprehensive documentation in README_SELF_TEST.md
+🛠️ Fixed test suite issues – Added textwrap to sandbox whitelist, fixed KeyError in test_tricky_pipeline.py
+✅ Tests now pass with 71.67% coverage (above 60% requirement)
+✅ Added automated notification system with AppleScript alerts
+🔧 Created `handoff.sh` script to automate documentation updates and assistant transitions
+🔧 Added nightly cron job setup with desktop notification system
+⚙️ Updated README with documentation on self-test framework and developer workflow
+
+✨ Feature: Auto-Visualization Template Coverage Completed (#WS-2) - Added support for top-N chart visualization
+🧩 Enhanced auto_viz_mapper.py to create bar chart visualizations for top-N analysis results
+🧩 Updated AI helper to generate code with visualization hooks for top-N templates
+🧩 Modified data_assistant.py to display top-N charts with formatted markdown tables
+🧪 Added comprehensive tests including unit tests and golden test for top-N visualization
+🔧 Fixed test failures in correlation analysis by implementing proper HoloViews mocking in test modules
+🔧 Fixed string case issues for chart titles
+🛠️ Fixed string formatting issues in _generate_correlation_code function in app/ai_helper.py
+✨ Feature: Enhanced Correlation Analysis Capabilities (#WS-2, #WS-4) - Advanced correlation tools for deeper insights
+🧩 Added conditional correlation analysis by demographic variables in `app/utils/advanced_correlation.py`
+🧩 Added time-series correlation analysis to track relationship changes over time
+🧩 Implemented specialized visualizations for conditional and time-series correlations
+🧪 Added comprehensive tests for advanced correlation functionality in `tests/utils/test_advanced_correlation.py`
+🧪 Added integration tests to verify AI-assisted correlation analysis in `tests/golden/test_enhanced_correlation.py`
 ✨ Feature: Slot-based Smart Clarifier for intent engine hardening (#WS-2, #WS-4) - Identifies specific missing information in queries 
 🧩 Added MissingSlot and SlotType for focused, structured clarification requests in `app/utils/intent_clarification.py`
 🛠️ Implemented generic fallback template for low-confidence queries with data schema inspection and relevant visualizations

@@ -16,9 +16,9 @@ Below is a snapshot of the current work streams:
 | ID | Work Stream | Key Next Steps |
 |----|-------------|----------------|
 | WS-1 | Stability & Refactor | Unit tests ≥ 60 % · remove duplication |
-| WS-2 | Hybrid AI Engine | Multi-metric correlation ✔ · slot-based Smart Clarifier ✔ · dynamic code generation |
+| WS-2 | Hybrid AI Engine | Multi-metric correlation ✔ · slot-based Smart Clarifier ✔ · auto-viz template coverage ✔ |
 | WS-3 | Data & Storage | Saved questions in SQLite ✔ · migrations ✔ · JSON→SQLite ETL ✔ |
-| WS-4 | UX & Viz | Auto-visualization mapper ✔ · Smart Clarifier UX ✔ · fix plots.py test issues 🔄 · responsive layout |
+| WS-4 | UX & Viz | Auto-visualization mapper ✔ · Smart Clarifier UX ✔ · fix plots.py test issues ✔ · responsive layout |
 | WS-5 | Cloud Deployment | Docker · CI/CD · AWS/GCP hosting |
 | WS-6 | Continuous Feedback | Feedback widget ✔ · query/response logging · nightly triage |
 
@@ -99,4 +99,67 @@ Notes:
 * **Known Issue (2025-07-15):** Tests for plot utilities (`tests/utils/test_plots.py`) are failing due to mock implementation issues. Coverage remains strong at 73.38% (above the required 60%), and a fix is in progress. See `docs/summary_2025-07-15.md` for details.
 
 ---
-*Last updated: 2025-07-15 – WS-2 Multi-metric correlation analysis & WS-4 Test improvement plan* 
+*Last updated: 2025-07-27 – WS-2 Auto-visualization template coverage completed (top-N charts)* 
+
+## Getting Started
+
+1. Clone this repository
+2. Run `pip install -r requirements.txt` to install dependencies
+3. Start the application with `python run.py`
+
+## Features
+
+- **Data Assistant**: Natural language interface for querying patient data
+- **Visualizations**: Automatic visualization generation based on query type
+- **Self-Test System**: Regression testing to ensure assistant reliability
+- **Developer Tools**: Scripts for maintaining project quality
+
+## Documentation
+
+Key project documents:
+- [ROADMAP_CANVAS.md](ROADMAP_CANVAS.md) - Project roadmap and milestones
+- [CHANGELOG.md](CHANGELOG.md) - History of changes and feature additions
+- [docs/](docs/) - Technical documentation and development summaries
+
+## Developer Workflow
+
+### Self-Test Framework
+
+The project includes a synthetic "Golden-Dataset" self-test loop that validates the Data Analysis Assistant's functionality:
+
+```bash
+# Run the self-test manually
+./run_self_test.sh
+
+# Set up as a daily cron job
+crontab -e
+# Add: 0 1 * * * cd /path/to/project && ./run_self_test.sh
+```
+
+The self-test:
+- Creates a synthetic database with controlled data
+- Runs predetermined queries with known correct answers
+- Compares results to expected values
+- Reports any discrepancies
+
+Test results are stored in `logs/self_test_*` directories with detailed reports.
+
+### Assistant Handoff Process
+
+When switching between AI assistants or ending a development session, use the handoff script:
+
+```bash
+./handoff.sh
+```
+
+This script:
+1. Runs the self-test to validate current functionality
+2. Creates a summary template for the current date if needed
+3. Generates a checklist of documentation to update
+4. Provides a standardized handoff message for the assistant
+
+The assistant will then update documentation, address any test failures, and prepare the project for the next session.
+
+## License
+
+[License information here] 
