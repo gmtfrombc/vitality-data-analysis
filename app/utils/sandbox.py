@@ -139,6 +139,10 @@ def _execute_code_in_process(code: str, queue: multiprocessing.Queue):
             "email",
             "tornado",  # Panel server runtime
             "config",  # panel.config import path during error handling
+            # Allow lightweight visual helpers
+            "hvplot",
+            # Needed by traceback formatting when logging errors
+            "unicodedata",
         }
 
         def _safe_import(
@@ -315,6 +319,10 @@ def _run_with_signal_timeout(code: str) -> SandboxResult:
         "email",
         "tornado",  # Panel server runtime
         "config",  # panel.config import path during error handling
+        # Allow lightweight visual helpers
+        "hvplot",
+        # Needed by traceback formatting when logging errors
+        "unicodedata",
     }
 
     def _safe_import(

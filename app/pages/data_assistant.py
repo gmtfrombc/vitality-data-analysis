@@ -370,46 +370,22 @@ class DataAnalysisAssistant(param.Parameterized):
 
     @staticmethod
     def _is_low_confidence_intent(intent):
-        """Return True when *intent* is too generic and needs clarification."""
+        """Return True when *intent* should trigger clarification (low confidence)."""
 
-        # If parsing already failed → low confidence
+        # If parsing failed → low confidence
         if isinstance(intent, dict):
             return True
 
         assert isinstance(intent, QueryIntent)
 
-        # Generic target fields offer no real metric information
-        GENERIC_TARGETS = {"score_value", "value"}
-        if intent.target_field in GENERIC_TARGETS:
+        confidence = compute_intent_confidence(intent, getattr(intent, "raw_query", ""))
+
+        # Threshold grey zone: below 0.75 ask clarification
+        if confidence < 0.75:
+            logger.debug(
+                "Low confidence %.2f for intent – requesting clarification", confidence
+            )
             return True
-
-        # If analysis_type is change but no conditions/filters specified
-        if intent.analysis_type == "change" and not intent.filters:
-            return True
-
-        # Special-case: counting active/inactive patients is clear enough
-        if intent.analysis_type == "count":
-            active_filter = any(f.field == "active" for f in intent.filters)
-            if intent.target_field == "active" or active_filter:
-                logger.debug(
-                    "High confidence count query detected; skipping clarification."
-                )
-                return False
-            # Counting patients with *no* additional qualifiers is still acceptable
-            if (
-                intent.target_field in {"patient", "patients", "patient_id"}
-                and not intent.filters
-            ):
-                logger.debug(
-                    "Simple patient count with no filters; treating as confident."
-                )
-                return False
-
-        # If user talks about generic "patient(s)" but gives no patient_id filter we still need clarity
-        if any(word in intent.target_field for word in ["patient", "patients"]):
-            has_patient_filter = any(f.field == "patient_id" for f in intent.filters)
-            if not has_patient_filter:
-                return True
 
         return False
 

@@ -125,6 +125,30 @@ test_cases: List[Dict[str, str]] = [
             "group_by": ["gender"],
         },
     },
+    {
+        "query": "How many patients have systolic blood pressure over 140?",
+        "expected": {
+            "analysis_type": "count",
+            "target_field": "sbp",
+            "filters": [],
+            "conditions": [{"field": "sbp", "operator": ">", "value": 140}],
+            "parameters": {},
+            "additional_fields": [],
+            "group_by": [],
+        },
+    },
+    {
+        "query": "Average blood sugar for active patients",
+        "expected": {
+            "analysis_type": "average",
+            "target_field": "score_value",
+            "filters": [{"field": "active", "value": 1}],
+            "conditions": [],
+            "parameters": {},
+            "additional_fields": [],
+            "group_by": [],
+        },
+    },
 ]
 
 

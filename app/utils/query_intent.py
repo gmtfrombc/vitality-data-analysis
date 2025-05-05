@@ -11,6 +11,15 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from datetime import date, datetime
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
+# Public symbols exposed by *query_intent* when using `from … import *`
+__all__: list[str] = [
+    "DateRange",
+    "Filter",
+    "Condition",
+    "QueryIntent",
+    "parse_intent_json",
+]
+
 # ---------------------------------------------------------------------------
 # Primitive building-blocks
 # ---------------------------------------------------------------------------
@@ -171,10 +180,11 @@ class QueryIntent(BaseModel):
     @model_validator(mode="after")
     def _basic_sanity_checks(self):  # noqa: D401
         """Ensure mandatory pieces for certain analysis types are present."""
-        if self.analysis_type == "comparison" and len(self.filters) < 1:
-            raise ValueError(
-                "comparison analysis requires at least one filter criterion"
-            )
+        if self.analysis_type == "comparison":
+            if len(self.filters) < 1 and not self.group_by:
+                raise ValueError(
+                    "comparison analysis requires at least one filter or group_by field"
+                )
         return self
 
     # Convenience helpers -------------------------------------------------
@@ -257,3 +267,163 @@ def parse_intent_json(raw: str) -> QueryIntent:
         return validate_fn(data)  # type: ignore[arg-type]
     except ValidationError as exc:
         raise ValueError(f"Intent JSON failed validation: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Field-name normalisation helpers – part of *Intent-Engine Hardening* (WS-2)
+# ---------------------------------------------------------------------------
+
+
+# Canonical column names recognised by downstream SQL & analysis layers.
+# Keep this list in sync with ai_helper.get_query_intent() prompt.
+_CANONICAL_FIELDS = {
+    "patient_id",
+    "date",
+    "score_type",
+    "score_value",
+    "gender",
+    "age",
+    "ethnicity",
+    "bmi",
+    "weight",
+    "sbp",
+    "dbp",
+    "active",
+}
+
+# Common synonyms → canonical column name (lower-case keys)
+# Extend this map as new vocabulary emerges.
+SYNONYM_MAP: dict[str, str] = {
+    # BMI variations
+    "body mass index": "bmi",
+    "b.m.i": "bmi",
+    # Weight variations
+    "body weight": "weight",
+    "wt": "weight",
+    # Blood pressure shorthand
+    "bp": "sbp",  # default to systolic if unspecified
+    "blood pressure": "sbp",
+    "systolic": "sbp",
+    "systolic bp": "sbp",
+    "diastolic": "dbp",
+    "diastolic bp": "dbp",
+    # Glycated haemoglobin
+    "a1c": "score_value",  # maps to lab_results.score_value when score_type == "A1C"
+    "hba1c": "score_value",
+    "hemoglobin a1c": "score_value",
+    "systolic blood pressure": "sbp",
+    "diastolic blood pressure": "dbp",
+    "sys bp": "sbp",
+    "dia bp": "dbp",
+    # Blood sugar / glucose
+    "blood sugar": "score_value",
+    "sugar": "score_value",
+    "glucose": "score_value",
+    # Generic score shortcut
+    "score": "score_value",
+}
+
+
+def _normalise_field_name(name: str) -> str:  # noqa: D401
+    """Return canonical field name for *name*, applying the synonym map."""
+
+    if not name:
+        return name
+    key = name.strip().lower()
+    # Direct match or synonym mapping
+    canonical = SYNONYM_MAP.get(key, key)
+    # In rare cases, LLM may return plural form "patients" – normalise to patient_id
+    if canonical in {"patient", "patients"}:
+        canonical = "patient_id"
+    return canonical
+
+
+def normalise_intent_fields(intent: "QueryIntent") -> None:  # noqa: D401
+    """In-place normalisation of *intent*'s field names according to SYNONYM_MAP."""
+
+    intent.target_field = _normalise_field_name(intent.target_field)
+    # Additional fields
+    intent.additional_fields = [
+        _normalise_field_name(f) for f in intent.additional_fields
+    ]
+    # Group-by fields
+    intent.group_by = [_normalise_field_name(g) for g in intent.group_by]
+    # Filters
+    for f in intent.filters:
+        f.field = _normalise_field_name(f.field)
+    # Conditions
+    for c in intent.conditions:
+        c.field = _normalise_field_name(c.field)
+
+    # No return – mutation in-place keeps references intact.
+
+
+# ---------------------------------------------------------------------------
+# Confidence-scoring helper – assigns 0–1 score to how "certain" the parsed
+# intent likely is.  Used by the UI to decide if clarifying questions are needed.
+# ---------------------------------------------------------------------------
+
+_AMBIGUOUS_WORDS = {
+    "stats",
+    "statistics",
+    "recent",
+    "latest",
+    "better",
+    "good",
+    "bad",
+    "okay",
+    "improve",
+    "improvement",
+}
+
+
+def compute_intent_confidence(
+    intent: "QueryIntent", raw_query: str
+) -> float:  # noqa: D401
+    """Return a heuristic confidence 0–1 for *intent* given *raw_query*.
+
+    Simple rule-based metric:
+    • Start at 1.0 and subtract penalties for potential ambiguity.
+    • Cap at [0, 1].  Not statistically grounded but useful for gating UI flow.
+    """
+
+    score = 1.0
+
+    # 1. Unknown analysis type → heavy penalty
+    if intent.analysis_type == "unknown":
+        score -= 0.6
+
+    # 2. Target field not canonical → penalty
+    if intent.target_field not in _CANONICAL_FIELDS:
+        score -= 0.2
+
+    # 3. Generic target fields with no group_by / filters
+    if intent.target_field in {"score_value", "value"} and not (
+        intent.filters or intent.group_by or intent.additional_fields
+    ):
+        score -= 0.15
+
+    # 4. Query contains ambiguous language
+    q_lower = raw_query.lower()
+    if any(word in q_lower for word in _AMBIGUOUS_WORDS):
+        score -= 0.15
+
+    # 5. No filters or conditions for analyses that usually need them
+    if intent.analysis_type in {"comparison", "change", "trend"} and not (
+        intent.filters or intent.conditions or intent.time_range
+    ):
+        score -= 0.15
+
+    # Normalise between 0 and 1
+    return max(0.0, min(1.0, score))
+
+
+# ---------------------------------------------------------------------------
+# Update __all__
+# ---------------------------------------------------------------------------
+__all__ += [
+    "SYNONYM_MAP",
+    "normalise_intent_fields",
+    "DateRange",
+    "compute_intent_confidence",
+]

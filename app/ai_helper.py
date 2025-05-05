@@ -5,7 +5,12 @@ import json
 from dotenv import load_dotenv
 import logging.handlers
 from pathlib import Path
-from app.utils.query_intent import parse_intent_json, QueryIntent, DateRange
+from app.utils.query_intent import (
+    parse_intent_json,
+    QueryIntent,
+    DateRange,
+    normalise_intent_fields,
+)
 from pydantic import BaseModel
 from app.utils.metrics import METRIC_REGISTRY
 import re
@@ -214,6 +219,9 @@ class AIHelper:
 
                 # Validate & convert
                 intent = parse_intent_json(raw_reply)
+
+                # Canonicalise field names & synonyms
+                normalise_intent_fields(intent)
 
                 # ------------------------------------------------------------------
                 # Post-processing heuristic:

@@ -483,3 +483,158 @@
     group_by: []
     time_range: null
   expected: 3
+
+# --- Tricky query set (July 21) -------------------------------------------------
+- name: hba1c_over7_count
+  query: "Total patients with HbA1c above 7"
+  intent:
+    analysis_type: count
+    target_field: score_value
+    filters:
+      - field: score_type
+        value: "A1C"
+    conditions:
+      - field: score_value
+        operator: '>'
+        value: 7
+    parameters: {}
+    additional_fields: []
+    group_by: []
+  expected: 5
+
+- name: bmi_gender_comparison
+  query: "Compare BMI between men and women"
+  intent:
+    analysis_type: comparison
+    target_field: bmi
+    filters: []
+    conditions: []
+    parameters:
+      SKIP_VIZ: true
+    additional_fields: []
+    group_by: ["gender"]
+  expected:
+    comparison:
+      F: 29.0
+      M: 31.0
+    counts:
+      F: 40
+      M: 38
+    visualization: null
+
+- name: top5_ages
+  query: "List top 5 ages"
+  intent:
+    analysis_type: top_n
+    target_field: age
+    filters: []
+    conditions: []
+    parameters:
+      n: 5
+    additional_fields: []
+    group_by: []
+  expected:
+    65: 12
+    70: 10
+    60: 9
+    75: 5
+    55: 4
+
+- name: percent_change_weight_active
+  query: "Percent change in weight for active patients"
+  intent:
+    analysis_type: percent_change
+    target_field: weight
+    filters:
+      - field: active
+        value: 1
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: []
+  expected: -4.5
+
+- name: std_dev_dbp
+  query: "Std dev of diastolic BP"
+  intent:
+    analysis_type: std_dev
+    target_field: dbp
+    filters: []
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: []
+  expected: 8.0
+
+- name: median_weight
+  query: "Median body weight"
+  intent:
+    analysis_type: median
+    target_field: weight
+    filters: []
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: []
+  expected: 180.0
+
+- name: variance_glucose
+  query: "Variance in glucose"
+  intent:
+    analysis_type: variance
+    target_field: score_value
+    filters:
+      - field: score_type
+        value: "GLUCOSE"
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: []
+  expected: 16.0
+
+- name: bmi_trend_6months
+  query: "Trend of BMI for last 6 months"
+  intent:
+    analysis_type: trend
+    target_field: bmi
+    filters: []
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: []
+  expected:
+    "2025-02": 30.0
+    "2025-03": 29.7
+    "2025-04": 29.5
+    "2025-05": 29.3
+    "2025-06": 29.0
+
+- name: inactive_patients_count
+  query: "How many patients are inactive"
+  intent:
+    analysis_type: count
+    target_field: patient_id
+    filters:
+      - field: active
+        value: 0
+    conditions: []
+    parameters: {}
+    additional_fields: []
+    group_by: []
+  expected: 7
+
+- name: top3_ethnicities
+  query: "Top 3 ethnicities by patient count"
+  intent:
+    analysis_type: top_n
+    target_field: ethnicity
+    filters: []
+    conditions: []
+    parameters:
+      n: 3
+    additional_fields: []
+    group_by: []
+  expected:
+    Hispanic: 15
+    Caucasian: 12
+    Asian: 8
