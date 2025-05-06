@@ -1,0 +1,28 @@
+# Original filename → New filename
+# Created Mon May  5 16:06:11 MDT 2025
+
+docs/summary_2025-05-01.md → docs/summary_001.md
+docs/summary_2025-05-02.md → docs/summary_002.md
+docs/summary_2025-05-03.md → docs/summary_003.md
+docs/summary_2025-05-05.md → docs/summary_004.md
+docs/summary_2025-05-06.md → docs/summary_005.md
+docs/summary_2025-07-09.md → docs/summary_006.md
+docs/summary_2025-07-10.md → docs/summary_007.md
+docs/summary_2025-07-11.md → docs/summary_008.md
+docs/summary_2025-07-12.md → docs/summary_009.md
+docs/summary_2025-07-13.md → docs/summary_010.md
+docs/summary_2025-07-14.md → docs/summary_011.md
+docs/summary_2025-07-15.md → docs/summary_012.md
+docs/summary_2025-07-16.md → docs/summary_013.md
+docs/summary_2025-07-18.md → docs/summary_014.md
+docs/summary_2025-07-20.md → docs/summary_015.md
+docs/summary_2025-07-22.md → docs/summary_016.md
+docs/summary_2025-07-23.md → docs/summary_017.md
+docs/summary_2025-07-24.md → docs/summary_018.md
+docs/summary_2025-07-25.md → docs/summary_019.md
+docs/summary_2025-07-26.md → docs/summary_020.md
+docs/summary_2025-07-27.md → docs/summary_021.md
+docs/summary_2025-07-28.md → docs/summary_022.md
+docs/summary_2025-07-29.md → docs/summary_023.md
+docs/summary_2025-05-05.md → docs/summary_024.md
+docs/summary_2025-05-08.md → docs/summary_027.md
