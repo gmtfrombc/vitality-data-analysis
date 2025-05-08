@@ -20,7 +20,7 @@ Below is a snapshot of the current work streams:
 | WS-3 | Data & Storage | Saved questions in SQLite ✔ · migrations ✔ · JSON→SQLite ETL ✔ |
 | WS-4 | UX & Viz | Auto-visualization mapper ✔ · Smart Clarifier UX ✔ · fix plots.py test issues ✔ · responsive layout |
 | WS-5 | Cloud Deployment | Docker · CI/CD · AWS/GCP hosting |
-| WS-6 | Continuous Feedback | Feedback widget ✔ · query/response logging · nightly triage |
+| WS-6 | Continuous Feedback | Feedback widget ✔ · query/response logging ✔ · Assistant Evaluation Framework ✔ · enhanced Self-Test Loop 🔄 |
 
 > ❖ Legend: ✔ complete · ☐ pending · 🔄 in-progress.  
 > See the canvas for milestones, risks, and backlog.
@@ -75,7 +75,7 @@ cp .env.example .env  # or echo "OPENAI_API_KEY=sk-..." >> .env
 #   2. Run ETL: `python -m etl.json_ingest deidentified_patients.json`
 
 # Run the app
-python run.py
+python run.py  # automatically applies any pending database migrations
 ```
 Open `http://localhost:5006` in your browser.
 
@@ -99,7 +99,7 @@ Notes:
 * **Known Issue (2025-07-15):** Tests for plot utilities (`tests/utils/test_plots.py`) are failing due to mock implementation issues. Coverage remains strong at 73.38% (above the required 60%), and a fix is in progress. See `docs/summary_2025-07-15.md` for details.
 
 ---
-*Last updated: 2025-07-27 – WS-2 Auto-visualization template coverage completed (top-N charts)* 
+*Last updated: 2025-05-06 – WS-6 Assistant Evaluation Framework implemented*
 
 ## Getting Started
 
@@ -112,6 +112,7 @@ Notes:
 - **Data Assistant**: Natural language interface for querying patient data
 - **Visualizations**: Automatic visualization generation based on query type
 - **Self-Test System**: Regression testing to ensure assistant reliability
+- **Evaluation Framework**: Metrics dashboard for measuring assistant performance
 - **Developer Tools**: Scripts for maintaining project quality
 
 ## Documentation
@@ -144,6 +145,37 @@ The self-test:
 
 Test results are stored in `logs/self_test_*` directories with detailed reports.
 
+### Assistant Evaluation Framework
+
+The Assistant Evaluation Framework provides quantitative metrics for measuring, tracking, and improving the assistant's performance:
+
+```bash
+# Calculate metrics manually
+python calculate_metrics.py --days=30
+
+# Schedule daily metrics calculation (with notification)
+crontab -e
+# Add: 0 0 * * * cd /path/to/project && python calculate_metrics.py --notify
+```
+
+#### Using the Evaluation Dashboard
+
+1. Start the application with `python run.py`
+2. Navigate to the "Evaluation Dashboard" tab
+3. Use the time period controls to view different timeframes (7/30/90 days)
+4. Click "Refresh Data" to update metrics in real-time
+
+#### Key Metrics
+
+The framework tracks metrics across multiple dimensions:
+- **Satisfaction**: User feedback ratings and comments
+- **Response Quality**: Response times and code complexity
+- **Intent Classification**: Accuracy of query intent detection
+- **Query Patterns**: Common query types and complexity
+- **Visualization**: Effectiveness of auto-generated visualizations
+
+Metrics are stored historically in the database, allowing trend analysis over time. Reports are also saved to `logs/metrics_report_*.json` for offline analysis.
+
 ### Assistant Handoff Process
 
 When switching between AI assistants or ending a development session, use the handoff script:
@@ -163,3 +195,30 @@ The assistant will then update documentation, address any test failures, and pre
 ## License
 
 [License information here] 
+
+## Project Maintainer Profile
+
+This section documents the technical background and communication preferences of the primary maintainer to help collaborators and AI assistants provide appropriate support.
+
+### Background and Expertise
+
+- **Professional Role**: Physician and designer of the Metabolic Health Program
+- **Programming Experience**:
+  - Flutter: Intermediate level
+  - Python: Beginner level (limited experience)
+  - SQL: Basic understanding of queries
+- **Data Science Knowledge**: College-level understanding of statistics and data concepts
+- **Domain Expertise**: Strong medical/clinical knowledge, especially in metabolic health
+
+### Communication Preferences
+
+- **Technical Explanations**: Prefer concepts explained without assuming deep technical background
+- **Code Examples**: Include comments explaining logic and purpose
+- **Terminology**: Define technical terms and acronyms when introducing new concepts
+- **Visual Aids**: Diagrams and flowcharts are helpful for complex processes
+
+When providing support or suggesting implementation approaches, please:
+1. Avoid overly technical jargon without explanation
+2. Break down complex tasks into smaller, manageable steps
+3. Explain the "why" behind technical decisions
+4. Provide concrete examples where possible 

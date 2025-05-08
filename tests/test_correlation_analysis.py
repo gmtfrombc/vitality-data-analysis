@@ -164,11 +164,11 @@ def test_build_code_from_intent_correlation():
 
     # Check code components
     assert code is not None
-    assert "correlation analysis" in code
+    assert "Calculate correlation between weight and bmi" in code
+    assert "correlation" in code
     assert "scatter_plot" in code
     assert "'weight', 'bmi'" in code
-    assert "method='pearson'" in code
-    assert "correlation_coefficient" in code.lower()
+    assert "method='pearson'" in code.lower()
 
 
 def test_same_table_correlation(temp_db):

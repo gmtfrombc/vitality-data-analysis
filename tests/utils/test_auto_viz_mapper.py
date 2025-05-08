@@ -202,3 +202,53 @@ def test_no_suitable_visualization():
 
     result = auto_visualize(df, intent)
     assert result is None
+
+
+def test_top_n_dict_visualization():
+    """Test auto-visualization mapper correctly generates bar charts for top-N analysis."""
+    # Create sample data - typical output of top_n analysis
+    data = {"Category A": 25, "Category B": 18, "Category C": 12, "Category D": 5}
+
+    # Create a top_n intent
+    intent = QueryIntent(
+        analysis_type="top_n",
+        target_field="category",
+        parameters={"n": 4, "order": "desc"},
+    )
+
+    # Test visualization generation
+    viz = auto_visualize(data, intent)
+
+    # Verify a visualization was returned
+    assert viz is not None
+
+    # Check if it has the expected dimension structure
+    assert hasattr(viz, "kdims")
+    assert hasattr(viz, "vdims")
+
+    # For mock objects in tests, just verify it's a Bar chart
+    # In real usage it would have the title with "Top 4"
+    assert isinstance(viz, hv.Element)
+
+
+def test_top_n_order_asc_visualization():
+    """Test auto-visualization with ascending order for top-N (actually bottom-N)."""
+    # Create sample data - typical output of top_n analysis
+    data = {"Category Z": 1, "Category Y": 2, "Category X": 3, "Category W": 4}
+
+    # Create a top_n intent with ascending order
+    intent = QueryIntent(
+        analysis_type="top_n",
+        target_field="category",
+        parameters={"n": 4, "order": "asc"},
+    )
+
+    # Test visualization generation
+    viz = auto_visualize(data, intent)
+
+    # Verify a visualization was returned
+    assert viz is not None
+
+    # For mock objects in tests, just verify it returns an Element
+    # In real usage it would have the title with "Bottom 4"
+    assert isinstance(viz, hv.Element)

@@ -354,11 +354,15 @@ class PatientView(param.Parameterized):
                         title=f'{score_type.replace("_", " ").title()} Over Time',
                         ylabel=f'{score_type.replace("_", " ").title()}',
                     )
-            score_plot = self.format_plot_time_axis(
-                score_plot, program_start_date, patient_data
-            )
-            plots.append(pn.pane.HoloViews(score_plot, sizing_mode="stretch_width"))
-            logger.info(f"Added plot for {score_type}")
+
+                    # Format plot and add to plots list - moved inside the loop
+                    score_plot = self.format_plot_time_axis(
+                        score_plot, program_start_date, patient_data
+                    )
+                    plots.append(
+                        pn.pane.HoloViews(score_plot, sizing_mode="stretch_width")
+                    )
+                    logger.info(f"Added plot for {score_type}")
         except Exception as e:
             logger.error(f"Error creating score plots: {e}", exc_info=True)
             print(f"Error creating score plots: {e}")
@@ -445,11 +449,15 @@ class PatientView(param.Parameterized):
                         title="Weight Over Time",
                         ylabel="Weight (kg)",
                     )
-            weight_plot = self.format_plot_time_axis(
-                weight_plot, program_start_date, patient_data
-            )
-            plots.append(pn.pane.HoloViews(weight_plot, sizing_mode="stretch_width"))
-            logger.info("Weight plot created and added to plots list")
+
+                    # Format weight plot and add to plots within the if block
+                    weight_plot = self.format_plot_time_axis(
+                        weight_plot, program_start_date, patient_data
+                    )
+                    plots.append(
+                        pn.pane.HoloViews(weight_plot, sizing_mode="stretch_width")
+                    )
+                    logger.info("Weight plot created and added to plots list")
 
             if not plot_df.empty and "date" in plot_df.columns:
                 bp_plots = []
@@ -468,11 +476,13 @@ class PatientView(param.Parameterized):
                             title="Blood Pressure Over Time",
                             ylabel="mmHg (Systolic)",
                         )
-                sbp_plot = self.format_plot_time_axis(
-                    sbp_plot, program_start_date, patient_data
-                )
-                bp_plots.append(sbp_plot)
-                logger.info("SBP plot created")
+
+                        # Format SBP plot inside the if block
+                        sbp_plot = self.format_plot_time_axis(
+                            sbp_plot, program_start_date, patient_data
+                        )
+                        bp_plots.append(sbp_plot)
+                        logger.info("SBP plot created")
 
                 # Create diastolic plot if data exists
                 if "dbp" in plot_df.columns:
@@ -488,11 +498,13 @@ class PatientView(param.Parameterized):
                             title="",
                             ylabel="mmHg (Diastolic)",
                         )
-                dbp_plot = self.format_plot_time_axis(
-                    dbp_plot, program_start_date, patient_data
-                )
-                bp_plots.append(dbp_plot)
-                logger.info("DBP plot created")
+
+                        # Format DBP plot inside the if block
+                        dbp_plot = self.format_plot_time_axis(
+                            dbp_plot, program_start_date, patient_data
+                        )
+                        bp_plots.append(dbp_plot)
+                        logger.info("DBP plot created")
 
                 # Combine BP plots if both exist
                 if len(bp_plots) > 1:
@@ -634,12 +646,16 @@ class PatientView(param.Parameterized):
                                 title=f"{col} Score Over Time",
                                 ylabel="Score",
                             )
-                    individual_plot = self.format_plot_time_axis(
-                        individual_plot, program_start_date, patient_data
-                    )
-                    plots.append(
-                        pn.pane.HoloViews(individual_plot, sizing_mode="stretch_width")
-                    )
+
+                            # Format the plot's x-axis and append to list
+                            individual_plot = self.format_plot_time_axis(
+                                individual_plot, program_start_date, patient_data
+                            )
+                            plots.append(
+                                pn.pane.HoloViews(
+                                    individual_plot, sizing_mode="stretch_width"
+                                )
+                            )
         except Exception as e:
             print(f"Error creating mental health plots: {e}")
 
@@ -756,10 +772,15 @@ class PatientView(param.Parameterized):
                         title=f"{lab_test} Over Time",
                         ylabel=f"{lab_test} Value",
                     )
-            lab_plot = self.format_plot_time_axis(
-                lab_plot, program_start_date, patient_data
-            )
-            plots.append(pn.pane.HoloViews(lab_plot, sizing_mode="stretch_width"))
+
+                    # Format and add plot inside the loop
+                    lab_plot = self.format_plot_time_axis(
+                        lab_plot, program_start_date, patient_data
+                    )
+                    plots.append(
+                        pn.pane.HoloViews(lab_plot, sizing_mode="stretch_width")
+                    )
+                    print(f"Added plot for {lab_test}")
         except Exception as e:
             print(f"Error creating lab plots: {e}")
 
@@ -990,15 +1011,17 @@ class PatientView(param.Parameterized):
         logger.info("Formatting plot time axis - using simple settings")
 
         try:
-            # Use only the basic options that are known to work with Curve type
-            plot = plot.opts(
-                width=600,
-                height=400,
-                tools=["hover"],
-                xrotation=45,
-                fontscale=1.0,
-                show_grid=True,
-            )
+            # Only apply options if the object supports the callable ``.opts`` API
+            if callable(getattr(plot, "opts", None)):
+                plot = plot.opts(
+                    width=600,
+                    height=400,
+                    tools=["hover"],
+                    xrotation=45,
+                    fontscale=1.0,
+                    show_grid=True,
+                )
+
             logger.info("Successfully applied basic plot formatting")
             return plot
         except Exception as e:

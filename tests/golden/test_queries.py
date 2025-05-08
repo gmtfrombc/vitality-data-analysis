@@ -1,6 +1,6 @@
 """Test natural language queries with a focus on functionality.
 
-Unlike the golden query harness, these tests use a real DataAnalysisAssistant 
+Unlike the golden query harness, these tests use a real DataAnalysisAssistant
 and run against a real (but small) test database.
 """
 

@@ -1,0 +1,365 @@
+- rule_id: PROVIDER_VISIT_FREQUENCY_CHECK
+  description: Must occur monthly until 7th visit, then every 90 days while active
+  rule_type: missing_data
+  validation_logic: date_diff_check
+  parameters:
+    field: provider_visit
+    max_days_between: 30
+  severity: warning
+- rule_id: HEALTH_COACH_VISIT_FREQUENCY_CHECK
+  description: Weekly for 6 weeks then every 14 days until 16 visits
+  rule_type: missing_data
+  validation_logic: date_diff_check
+  parameters:
+    field: health_coach_visit
+    max_days_between: 7
+  severity: warning
+- rule_id: PROGRAM_START_DATE_FREQUENCY_CHECK
+  description: Single value within 28 days of 1st provider visit
+  rule_type: missing_data
+  validation_logic: not_null_check
+  parameters:
+    field: program_start_date
+  severity: error
+- rule_id: PROGRAM_END_DATE_FREQUENCY_CHECK
+  description: Date of 7th provider visit or drop‑out
+  rule_type: missing_data
+  validation_logic: not_null_check
+  parameters:
+    field: program_end_date
+  severity: error
+- rule_id: ACTIVE_CATEGORICAL_CHECK
+  description: Patient currently active (1) or inactive (0)
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: active
+    allowed_values:
+    - '0'
+    - '1'
+    not_null: false
+  severity: warning
+- rule_id: PROVIDER_VISIT_COUNT_RANGE_CHECK
+  description: Total provider visits > 1 except new patients
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: provider_visit_count
+    min_value: 1.0
+  severity: error
+- rule_id: HEALTH_COACH_VISIT_COUNT_RANGE_CHECK
+  description: Total coach visits > 1 except new patients
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: health_coach_visit_count
+    min_value: 1.0
+  severity: error
+- rule_id: CANCELLED_VISITS_RANGE_CHECK
+  description: Cancelled visit counter (0‑20)
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: cancelled_visits
+    min_value: 0.0
+    max_value: 20.0
+  severity: error
+- rule_id: NO_SHOW_VISITS_RANGE_CHECK
+  description: No‑show visit counter (0‑20)
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: no_show_visits
+    min_value: 0.0
+    max_value: 20.0
+  severity: error
+- rule_id: RESCHEDULED_VISITS_RANGE_CHECK
+  description: Rescheduled visit counter (0‑20)
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: rescheduled_visits
+    min_value: 0.0
+    max_value: 20.0
+  severity: error
+- rule_id: INSURANCE_PLAN_CATEGORICAL_CHECK
+  description: Plan name must not be null
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: insurance_plan
+    allowed_values: null
+    not_null: true
+  severity: warning
+- rule_id: INSURANCE_TYPE_CATEGORICAL_CHECK
+  description: Plan type must not be null
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: insurance_type
+    allowed_values: null
+    not_null: true
+  severity: warning
+- rule_id: INSURANCE_PHONE_CATEGORICAL_CHECK
+  description: Plan phone must not be null
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: insurance_phone
+    allowed_values: null
+    not_null: true
+  severity: warning
+- rule_id: GLP1_FULL_CATEGORICAL_CHECK
+  description: GLP‑1 full authorization (boolean)
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: glp1_full
+    allowed_values:
+    - '0'
+    - '1'
+    not_null: false
+  severity: warning
+- rule_id: WEIGHT_RANGE_CHECK
+  description: Measured at every provider visit
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: weight
+    min_value: 70.0
+    max_value: 500.0
+  severity: error
+- rule_id: HEIGHT_RANGE_CHECK
+  description: Captured at baseline; rarely changes
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: height
+    min_value: 48.0
+    max_value: 84.0
+  severity: error
+- rule_id: BMI_RANGE_CHECK
+  description: Derived; extreme values can be waived
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: bmi
+    min_value: 12.0
+    max_value: 70.0
+  severity: error
+- rule_id: SYSTOLIC_PRESSURE_RANGE_CHECK
+  description: BP taken every other provider visit
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: systolic_pressure
+    min_value: 90.0
+    max_value: 180.0
+  severity: error
+- rule_id: DIASTOLIC_PRESSURE_RANGE_CHECK
+  description: BP taken every other provider visit
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: diastolic_pressure
+    min_value: 60.0
+    max_value: 110.0
+  severity: error
+- rule_id: VITALITY_SCORE_RANGE_CHECK
+  description: Updated every 2 months until program complete
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: vitality_score
+    min_value: 0.0
+    max_value: 100.0
+  severity: error
+- rule_id: HEART_FIT_SCORE_RANGE_CHECK
+  description: Optional VO2 max; no alerts if missing
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: heart_fit_score
+    min_value: 10.0
+    max_value: 80.0
+  severity: error
+- rule_id: PHQ9_RANGE_CHECK
+  description: Baseline & end; every 60 d if positive or dx
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: phq9
+    min_value: 0.0
+    max_value: 27.0
+  severity: error
+- rule_id: GAD7_RANGE_CHECK
+  description: Same schedule as PHQ‑9
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: gad7
+    min_value: 0.0
+    max_value: 21.0
+  severity: error
+- rule_id: TOTAL_CHOLESTEROL_RANGE_CHECK
+  description: Auto-generated rule for total_cholesterol
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: total_cholesterol
+    min_value: 100.0
+    max_value: 300.0
+  severity: error
+- rule_id: HDL_RANGE_CHECK
+  description: Auto-generated rule for hdl
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: hdl
+    min_value: 20.0
+    max_value: 100.0
+  severity: error
+- rule_id: LDL_RANGE_CHECK
+  description: Auto-generated rule for ldl
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: ldl
+    min_value: 50.0
+    max_value: 250.0
+  severity: error
+- rule_id: TRIGLYCERIDES_RANGE_CHECK
+  description: Auto-generated rule for triglycerides
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: triglycerides
+    min_value: 50.0
+    max_value: 500.0
+  severity: error
+- rule_id: GLUCOSE_RANGE_CHECK
+  description: Auto-generated rule for glucose
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: glucose
+    min_value: 60.0
+    max_value: 200.0
+  severity: error
+- rule_id: A1C_RANGE_CHECK
+  description: Auto-generated rule for a1c
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: a1c
+    min_value: 4.0
+    max_value: 14.0
+  severity: error
+- rule_id: APOLIPOPROTEIN_B_RANGE_CHECK
+  description: Auto-generated rule for apolipoprotein_b
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: apolipoprotein_b
+    min_value: 40.0
+    max_value: 140.0
+  severity: error
+- rule_id: ALT_RANGE_CHECK
+  description: Auto-generated rule for alt
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: alt
+    min_value: 0.0
+    max_value: 60.0
+  severity: error
+- rule_id: AST_RANGE_CHECK
+  description: Auto-generated rule for ast
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: ast
+    min_value: 0.0
+    max_value: 60.0
+  severity: error
+- rule_id: VS_GOAL_RANGE_CHECK
+  description: Vitality‑score goal; must exist OR weight_goal
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: vs_goal
+    min_value: 10.0
+    max_value: 40.0
+  severity: error
+- rule_id: WEIGHT_GOAL_RANGE_CHECK
+  description: Weight‑loss goal; must exist OR vs_goal
+  rule_type: range_check
+  validation_logic: range_check
+  parameters:
+    field: weight_goal
+    min_value: 10.0
+    max_value: 80.0
+  severity: error
+- rule_id: PROVIDER_ID_CATEGORICAL_CHECK
+  description: Every patient must have an assigned provider
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: provider_id
+    allowed_values: null
+    not_null: true
+  severity: warning
+- rule_id: PROVIDER_CATEGORICAL_CHECK
+  description: Provider name must not be null
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: provider
+    allowed_values: null
+    not_null: true
+  severity: warning
+- rule_id: HEALTH_COACH_ID_CATEGORICAL_CHECK
+  description: Assigned health‑coach (id) must not be null
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: health_coach_id
+    allowed_values: null
+    not_null: true
+  severity: warning
+- rule_id: HEALTH_COACH_CATEGORICAL_CHECK
+  description: Health‑coach name must not be null
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: health_coach
+    allowed_values: null
+    not_null: true
+  severity: warning
+- rule_id: INSURANCE_PLAN_CATEGORICAL_CHECK
+  description: Insurance plan required
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: insurance_plan
+    allowed_values: null
+    not_null: true
+  severity: warning
+- rule_id: INSURANCE_TYPE_CATEGORICAL_CHECK
+  description: Insurance type required
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: insurance_type
+    allowed_values: null
+    not_null: true
+  severity: warning
+- rule_id: INSURANCE_PHONE_CATEGORICAL_CHECK
+  description: Insurance phone required
+  rule_type: categorical_check
+  validation_logic: allowed_values_check
+  parameters:
+    field: insurance_phone
+    allowed_values: null
+    not_null: true
+  severity: warning

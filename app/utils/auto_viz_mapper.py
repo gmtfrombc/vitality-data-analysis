@@ -111,6 +111,73 @@ def auto_visualize(
                 )
 
     # ---------------------------------------------------------------------
+    # 3. Handle top_n analysis results specifically
+    # ---------------------------------------------------------------------
+    if intent.analysis_type == "top_n":
+        # Get the parameter n (default: 5)
+        n = intent.parameters.get("n", 5) if isinstance(intent.parameters, dict) else 5
+
+        # If the result is a dict of counts, create a bar chart
+        if isinstance(data, dict):
+            # Convert dict to Series for plotting
+            series = pd.Series(data)
+
+            if not series.empty:
+                # Sort series for better visualization (depends on order parameter)
+                order = (
+                    "asc"
+                    if (
+                        isinstance(intent.parameters, dict)
+                        and intent.parameters.get("order", "desc").lower() == "asc"
+                    )
+                    else "desc"
+                )
+
+                # Create title based on intent
+                title = f"{'Top' if order == 'desc' else 'Bottom'} {n} {intent.target_field.title()}"
+
+                # Return bar chart
+                return series.hvplot.bar(
+                    height=height,
+                    width=width,
+                    rot=45,
+                    title=title,
+                    xlabel=intent.target_field.title(),
+                    ylabel="Count",
+                )
+
+        # Handle DataFrame result with counts (fallback)
+        elif isinstance(data, pd.DataFrame) and len(data.columns) == 2:
+            # Try to identify count column and label column
+            numeric_cols = data.select_dtypes("number").columns
+            cat_cols = data.select_dtypes(exclude="number").columns
+
+            if len(numeric_cols) == 1 and len(cat_cols) == 1:
+                # Set the categorical column as index and plot the numeric column
+                plot_df = data.set_index(cat_cols[0])
+
+                # Create title based on intent
+                order = (
+                    "asc"
+                    if (
+                        isinstance(intent.parameters, dict)
+                        and intent.parameters.get("order", "desc").lower() == "asc"
+                    )
+                    else "desc"
+                )
+                title = f"{'Top' if order == 'desc' else 'Bottom'} {n} {intent.target_field.title()}"
+
+                return plot_df.hvplot.bar(
+                    y=numeric_cols[0],
+                    height=height,
+                    width=width,
+                    rot=45,
+                    title=title,
+                    xlabel=intent.target_field.title(),
+                    ylabel="Count",
+                )
+
+    # ---------------------------------------------------------------------
     # Original auto visualization code continues below
     # ---------------------------------------------------------------------
     # Ensure we are working with a DataFrame

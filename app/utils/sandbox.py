@@ -104,16 +104,14 @@ def _execute_code_in_process(code: str, queue: multiprocessing.Queue):
 
         # Minimal whitelist – expand as legitimate needs grow
         _IMPORT_WHITELIST = {
-            # Data science libs
+            # Required packages
             "pandas",
+            "pd",
             "numpy",
             "np",
-            "pd",
-            # Project helpers
             "db_query",
-            "app",  # Allow app.utils.plots and other project modules
-            "__future__",  # For from __future__ import annotations
-            # Visualization libraries
+            "app",
+            "__future__",
             "holoviews",
             "operation",  # Required for holoviews operation.element
             "data",  # Required for holoviews data module
@@ -143,6 +141,8 @@ def _execute_code_in_process(code: str, queue: multiprocessing.Queue):
             "hvplot",
             # Needed by traceback formatting when logging errors
             "unicodedata",
+            # Needed by hvplot
+            "textwrap",
         }
 
         def _safe_import(
@@ -284,16 +284,14 @@ def _run_with_signal_timeout(code: str) -> SandboxResult:
 
     # Minimal whitelist – expand as legitimate needs grow
     _IMPORT_WHITELIST = {
-        # Data science libs
+        # Required packages
         "pandas",
+        "pd",
         "numpy",
         "np",
-        "pd",
-        # Project helpers
         "db_query",
-        "app",  # Allow app.utils.plots and other project modules
-        "__future__",  # For from __future__ import annotations
-        # Visualization libraries
+        "app",
+        "__future__",
         "holoviews",
         "operation",  # Required for holoviews operation.element
         "data",  # Required for holoviews data module
@@ -323,6 +321,8 @@ def _run_with_signal_timeout(code: str) -> SandboxResult:
         "hvplot",
         # Needed by traceback formatting when logging errors
         "unicodedata",
+        # Needed by hvplot
+        "textwrap",
     }
 
     def _safe_import(

@@ -3,6 +3,19 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+⚡️ Enhancement: Added Health Scores table to display Vitality Score and Heart Fit Score data alongside visit information
+🐛 Fix: Normalized date formatting in Health Scores table to prevent duplicate entries due to inconsistent date formats
+🐛 Fix: Fixed issue with NaN dates appearing in Health Scores table by implementing regex-based date extraction
+✨ Feature: Patient Data-Quality Dashboard implemented with record quality badge, status tiles, timeline ribbon, issue table, and vitals/labs cards
+🐛 Fix: Fixed missing `db_query` import in data_validation.py to enable patient detail view functionality
+⚡️ Enhancement: Added timestamp tracking for data refresh to provide user feedback on data currency
+⚡️ Enhancement: Simplified visualization handling for labs with tabular fallback for robustness
+✨ Feature: Validation engine now supports `not_null_check` and `allowed_values_check` (categorical) with central dispatch
+⚡️ Enhancement: `seed_validation_rules.py` converts frequency rows with `0`/`not_null` to presence rules (`not_null_check`)
+⚡️ Enhancement: Data-Validation UI adds `categorical_check` filter option
+⚡️ Enhancement: Snackbar notifications show when validation starts/completes; error toast on failure
+⚡️ Enhancement: Patient list buttons now display `patient_id` prefix for quick identification
+🛑 Change: Insurance & provider spring fields temporarily skipped via `SKIPPED_FIELDS` until UI support
 🐛 Fix: Replaced invalid `sizing_mode='fixed-width'` with `fixed` in Data-Validation UI
 🐛 Fix: Removed unsupported `.on_click` on `pn.Row`; patient list now uses interactive buttons
 🐛 Fix: AttributeError in filter callback resolved by assigning parameters directly
@@ -88,3 +101,9 @@ Use reverse-chronological order (latest on top).
 🐛 Fix: AttributeError when opening correction form (param .value misuse) resolved
 🐛 Fix: Mental-health plot creation variable scope bug fixed (individual_plot)
 🛠️ Chore: `seed_validation_rules.py` script created; converts CSV → YAML and loads rules into DB
+✨ Feature: Reload Rules admin button in Data-Validation dashboard – one-click seeding from CSV → YAML → DB
+⚡️ Enhancement: Patient list counts now use DISTINCT rule IDs (shows real issue count)
+⚡️ Enhancement: Selected patient row highlights; detail pane auto-scrolls to header
+🐛 Fix: Height rule duplication removed; old cm-based rule deactivated
+🐛 Fix: Weight range & frequency issues suppressed when BMI already flagged; weight-only rules set inactive
+⚡️ Enhancement: Validation action clears previous results before re-run, preventing stale issues

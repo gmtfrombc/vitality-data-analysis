@@ -1,78 +1,62 @@
 #!/bin/bash
-# rename_summaries.sh - Convert date-based summary files to sequential numbers
+# Script to rename data validation summary files to sequential numbering
 
 # Set terminal colors for better readability
-YELLOW='\033[1;33m'
-GREEN='\033[0;32m'
 RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "\n${BLUE}========== RENAMING SUMMARY FILES ==========${NC}"
+echo -e "${YELLOW}========== RENAMING SUMMARY FILES ==========${NC}"
 echo -e "${YELLOW}Converting from date-based to sequential numbering...${NC}\n"
 
-# Navigate to project root directory
-cd "$(dirname "$0")"
+# Navigate to the docs directory
+cd "$(dirname "$0")/docs" || exit 1
 
-# Ensure docs directory exists
-mkdir -p docs
+# Function to check if a file exists
+file_exists() {
+    [ -f "$1" ]
+}
 
-# Get all summary files sorted by modification time (oldest first to maintain sequence)
-FILES=$(find docs -name "summary_*.md" | sort -t_ -k2,2 -k3,3 -k4,4)
+# Add section for data validation summaries
+echo "Converting data validation summaries to sequential numbering format..."
 
-# Initialize counter
-COUNTER=1
-
-# Mapping file to record the changes
-MAPPING_FILE="docs/summary_mapping.txt"
-echo "# Original filename → New filename" > "$MAPPING_FILE"
-echo "# Created $(date)" >> "$MAPPING_FILE"
-echo "" >> "$MAPPING_FILE"
-
-# Rename each file with padded numbers
-for FILE in $FILES; do
-    # Format counter with leading zeros
-    PADDED_NUM=$(printf "%03d" $COUNTER)
-    NEW_NAME="docs/summary_$PADDED_NUM.md"
-    
-    # Extract original date from filename for the title
-    ORIGINAL_DATE=$(echo "$FILE" | grep -o '20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
-    
-    if [ "$FILE" != "$NEW_NAME" ]; then
-        echo -e "Renaming ${BLUE}$FILE${NC} to ${GREEN}$NEW_NAME${NC}"
-        
-        # Replace the date in the content of the file if it exists in the title
-        if [ -f "$FILE" ]; then
-            # Check if file has a title line
-            FIRST_LINE=$(head -n 1 "$FILE")
-            if [[ "$FIRST_LINE" == "# "* && "$FIRST_LINE" == *"$ORIGINAL_DATE"* ]]; then
-                # Create temp file with modified content
-                TMP_FILE=$(mktemp)
-                
-                # Replace the date in the title line with "Session #123"
-                sed "1s/$ORIGINAL_DATE/Session $PADDED_NUM/" "$FILE" > "$TMP_FILE"
-                
-                # Move temp file to original location
-                mv "$TMP_FILE" "$FILE"
-                echo -e "  ${YELLOW}Updated title in $FILE${NC}"
-            fi
-        fi
-        
-        # Rename the file
-        mv "$FILE" "$NEW_NAME"
-        
-        # Record the mapping
-        echo "$FILE → $NEW_NAME" >> "$MAPPING_FILE"
+# Check if the source files exist
+if file_exists "summary_data_validation_2025-05-06.md"; then
+    # Ensure the destination doesn't already exist
+    if ! file_exists "summary_data_validation_001.md"; then
+        echo "Renaming summary_data_validation_2025-05-06.md to summary_data_validation_001.md"
+        cp "summary_data_validation_2025-05-06.md" "summary_data_validation_001.md"
+    else
+        echo "File summary_data_validation_001.md already exists. Skipping."
     fi
-    
-    COUNTER=$((COUNTER+1))
-done
+fi
 
-echo -e "\n${GREEN}✓ All summary files renamed successfully!${NC}"
-echo -e "Created mapping file: ${BLUE}$MAPPING_FILE${NC}\n"
-echo -e "${YELLOW}Please update handoff.sh to use the new naming convention...${NC}"
+if file_exists "summary_data_validation_implementation_2025-05-06.md"; then
+    # Ensure the destination doesn't already exist
+    if ! file_exists "summary_data_validation_002.md"; then
+        echo "Renaming summary_data_validation_implementation_2025-05-06.md to summary_data_validation_002.md"
+        cp "summary_data_validation_implementation_2025-05-06.md" "summary_data_validation_002.md"
+    else
+        echo "File summary_data_validation_002.md already exists. Skipping."
+    fi
+fi
 
-# Count the total number of summary files
-TOTAL_FILES=$((COUNTER-1))
-echo -e "Total summary files: ${GREEN}$TOTAL_FILES${NC}"
-echo -e "Next file will be: ${BLUE}docs/summary_$(printf "%03d" $COUNTER).md${NC}\n" 
+# Generate a simple mapping file
+echo "Generating summary mapping file..."
+echo "# Data Validation Summary Mapping" > validation_summary_mapping.txt
+echo "This file maps sequential summary numbers to their original filenames." >> validation_summary_mapping.txt
+echo "" >> validation_summary_mapping.txt
+echo "- 001: summary_data_validation_2025-05-06.md (Initial Planning)" >> validation_summary_mapping.txt
+echo "- 002: summary_data_validation_implementation_2025-05-06.md (Implementation Details)" >> validation_summary_mapping.txt
+echo "- 003: summary_data_validation_003.md (Phase 1 Review)" >> validation_summary_mapping.txt
+
+echo -e "\n${GREEN}✓ Data validation summary files renamed successfully!${NC}"
+
+# Count the total number of data validation summary files
+DATA_VAL_COUNT=$(ls summary_data_validation_*.md 2>/dev/null | wc -l)
+NEXT_NUM=$(printf "%03d" $((DATA_VAL_COUNT + 1)))
+
+echo -e "Total data validation summary files: ${BLUE}$DATA_VAL_COUNT${NC}"
+echo -e "Next file will be: ${GREEN}summary_data_validation_$NEXT_NUM.md${NC}\n" 

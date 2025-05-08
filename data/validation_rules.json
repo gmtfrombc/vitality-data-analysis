@@ -1,0 +1,118 @@
+[
+    {
+        "rule_id": "BMI_FREQUENCY_CHECK",
+        "description": "Patient should have BMI recorded at least once every two months",
+        "rule_type": "missing_data",
+        "validation_logic": "date_diff_check",
+        "parameters": {
+            "field": "bmi",
+            "max_days_between": 60
+        },
+        "severity": "warning"
+    },
+    {
+        "rule_id": "WEIGHT_FREQUENCY_CHECK",
+        "description": "Patient should have weight recorded at least once every two months",
+        "rule_type": "missing_data",
+        "validation_logic": "date_diff_check",
+        "parameters": {
+            "field": "weight",
+            "max_days_between": 60
+        },
+        "severity": "warning"
+    },
+    {
+        "rule_id": "BLOOD_PRESSURE_FREQUENCY_CHECK",
+        "description": "Patient should have blood pressure recorded at least once every three months",
+        "rule_type": "missing_data",
+        "validation_logic": "date_diff_check",
+        "parameters": {
+            "field": "systolic_bp",
+            "max_days_between": 90
+        },
+        "severity": "warning"
+    },
+    {
+        "rule_id": "A1C_FREQUENCY_CHECK",
+        "description": "Patient should have A1C recorded at least once every three months",
+        "rule_type": "missing_data",
+        "validation_logic": "date_diff_check",
+        "parameters": {
+            "field": "a1c",
+            "max_days_between": 90
+        },
+        "severity": "warning"
+    },
+    {
+        "rule_id": "VALID_BMI_RANGE",
+        "description": "BMI values should be between 15 and 70",
+        "rule_type": "range_check",
+        "validation_logic": "range_check",
+        "parameters": {
+            "field": "bmi",
+            "min_value": 15,
+            "max_value": 70
+        },
+        "severity": "error"
+    },
+    {
+        "rule_id": "VALID_WEIGHT_RANGE",
+        "description": "Weight values should be between 30 and 300 kg",
+        "rule_type": "range_check",
+        "validation_logic": "range_check",
+        "parameters": {
+            "field": "weight",
+            "min_value": 30,
+            "max_value": 300
+        },
+        "severity": "error"
+    },
+    {
+        "rule_id": "VALID_SYSTOLIC_BP_RANGE",
+        "description": "Systolic BP values should be between 70 and 250 mmHg",
+        "rule_type": "range_check",
+        "validation_logic": "range_check",
+        "parameters": {
+            "field": "systolic_bp",
+            "min_value": 70,
+            "max_value": 250
+        },
+        "severity": "error"
+    },
+    {
+        "rule_id": "VALID_DIASTOLIC_BP_RANGE",
+        "description": "Diastolic BP values should be between 40 and 150 mmHg",
+        "rule_type": "range_check",
+        "validation_logic": "range_check",
+        "parameters": {
+            "field": "diastolic_bp",
+            "min_value": 40,
+            "max_value": 150
+        },
+        "severity": "error"
+    },
+    {
+        "rule_id": "VALID_A1C_RANGE",
+        "description": "A1C values should be between 3 and 20 %",
+        "rule_type": "range_check",
+        "validation_logic": "range_check",
+        "parameters": {
+            "field": "a1c",
+            "min_value": 3,
+            "max_value": 20
+        },
+        "severity": "error"
+    },
+    {
+        "rule_id": "VALID_HEIGHT_RANGE",
+        "description": "Height values should be between 120 and 220 cm",
+        "rule_type": "range_check",
+        "validation_logic": "range_check",
+        "parameters": {
+            "field": "height",
+            "min_value": 120,
+            "max_value": 220
+        },
+        "severity": "error"
+    }
+]

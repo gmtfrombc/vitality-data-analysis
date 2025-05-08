@@ -638,3 +638,20 @@
     Hispanic: 15
     Caucasian: 12
     Asian: 8
+
+# Top-N visualization test
+- name: top5_ethnicities_program
+  query: "Show me the top 5 ethnicities in our program"
+  intent:
+    analysis_type: "top_n"
+    target_field: "ethnicity"
+    raw_query: "Show me the top 5 ethnicities in our program"
+    parameters:
+      n: 5
+      order: "desc"
+  expected:
+    Hispanic/Latino: 250
+    White: 180
+    Black/African American: 120
+    Asian: 70
+    Native American: 30

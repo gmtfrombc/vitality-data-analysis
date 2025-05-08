@@ -14,7 +14,8 @@ def _load_tricky():
     return [
         c
         for c in cases
-        if c["name"].startswith(
+        if "name" in c
+        and c["name"].startswith(
             (
                 "hba1c_",
                 "bmi_gender_",

@@ -6,16 +6,15 @@ This script launches the Panel web application.
 """
 
 import panel as pn
-from app.pages.dashboard import dashboard_page
-import app.pages.patient_view as patient_view
-import app.pages.data_assistant as data_assistant
 import logging
 import atexit
 import signal
 import sys
 import os
+from pathlib import Path
+import traceback
 
-# Configure logging
+# Configure logging first
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -60,25 +59,145 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
+def safe_import(module_path, fallback_message=None):
+    """
+    Safely import a module with error handling.
+
+    Args:
+        module_path: String path to the module to import
+        fallback_message: Message to display if import fails
+
+    Returns:
+        The imported module or a dummy module with a get_page function that displays an error message
+    """
+    try:
+        # Try to import the module
+        __import__(module_path)
+        module = sys.modules[module_path]
+        logger.info(f"Successfully imported {module_path}")
+        return module
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"Error importing {module_path}: {e}\n{error_details}")
+
+        # Create a fallback module
+        class FallbackModule:
+            def get_page():
+                message = (
+                    fallback_message or f"Error loading module {module_path}: {str(e)}"
+                )
+                return pn.Column(
+                    pn.pane.Markdown("# Module Load Error"),
+                    pn.pane.Markdown(message),
+                    pn.pane.Markdown("Check application logs for details."),
+                )
+
+        return FallbackModule
+
+
+def safe_apply_migrations(db_path):
+    """
+    Safely apply database migrations with error handling.
+
+    Args:
+        db_path: Path to the SQLite database
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Import the apply_pending_migrations function
+        from app.utils.db_migrations import apply_pending_migrations
+
+        # Apply migrations
+        logger.info("Checking for database migrations...")
+        apply_pending_migrations(db_path)
+        logger.info("Database is up to date")
+        return True
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"Error applying database migrations: {e}\n{error_details}")
+        return False
+
+
+def safe_initialize_validation_system():
+    """
+    Safely initialize the validation system with error handling.
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Import the initialize_validation_system function
+        from app.utils.validation_startup import initialize_validation_system
+
+        # Initialize the validation system
+        logger.info("Initializing validation system...")
+        result = initialize_validation_system()
+        if result:
+            logger.info("Validation system initialized successfully")
+        else:
+            logger.warning("Validation system initialization returned False")
+        return result
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"Error initializing validation system: {e}\n{error_details}")
+        return False
+
+
 def create_app():
     """Create the main Panel application."""
 
     # Configure Panel settings
-    pn.extension(sizing_mode="stretch_width")
+    pn.extension(notifications=True, sizing_mode="stretch_width")
 
-    # Create the navigation bar
-    menu = [
-        ("Dashboard", "dashboard"),
-        ("Patient View", "patient_view"),
-        ("Data Analysis Assistant", "data_assistant"),
-    ]
+    # Apply database migrations
+    db_path = os.path.join(Path(__file__).parent, "patient_data.db")
+    migration_success = safe_apply_migrations(db_path)
+
+    # Initialize validation system
+    validation_success = safe_initialize_validation_system()
+
+    # Safely import modules with fallback messages
+    dashboard = safe_import(
+        "app.pages.dashboard",
+        "Dashboard module could not be loaded. Check logs for details.",
+    )
+
+    patient_view = safe_import(
+        "app.pages.patient_view",
+        "Patient View module could not be loaded. Check logs for details.",
+    )
+
+    data_assistant = safe_import(
+        "app.pages.data_assistant",
+        "Data Assistant module could not be loaded. Check logs for details.",
+    )
+
+    evaluation_page = safe_import(
+        "app.pages.evaluation_page",
+        "Evaluation Dashboard module could not be loaded. Check logs for details.",
+    )
+
+    # Special handling for data validation page which we only import get_page from
+    validation_message = (
+        "Data Validation module could not be loaded. "
+        f"Validation system initialization: {'Success' if validation_success else 'Failed'}"
+    )
+    data_validation = safe_import("app.pages.data_validation", validation_message)
+    get_data_validation_page = getattr(
+        data_validation, "get_page", lambda: pn.pane.Markdown(validation_message)
+    )
 
     # Create tabs for navigation
     tabs = pn.Tabs(
-        ("Dashboard", dashboard_page()),
+        ("Dashboard", dashboard.dashboard_page()),
         ("Patient View", patient_view.patient_view_page()),
         ("Data Analysis Assistant", data_assistant.data_assistant_page()),
+        ("Evaluation Dashboard", evaluation_page.evaluation_page()),
+        ("Data Validation", get_data_validation_page()),
         dynamic=True,
+        css_classes=["main-tabs"],
     )
 
     # Create the template
@@ -100,7 +219,14 @@ if __name__ == "__main__":
     atexit.register(cleanup_resources)
 
     # Get the application template
-    app = create_app()
+    try:
+        logger.info("Creating application...")
+        app = create_app()
+        logger.info("Application created successfully")
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"Error creating application: {e}\n{error_details}")
+        sys.exit(1)
 
     # Start the Panel server
     logger.info("Starting VP Analytics Platform")
@@ -112,6 +238,7 @@ if __name__ == "__main__":
         # Log process info for debugging
         logger.info(f"Server running with PID: {os.getpid()}")
     except Exception as e:
-        logger.error(f"Error starting server: {str(e)}")
+        error_details = traceback.format_exc()
+        logger.error(f"Error starting server: {e}\n{error_details}")
         cleanup_resources()
         sys.exit(1)

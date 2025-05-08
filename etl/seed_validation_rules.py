@@ -62,14 +62,22 @@ def _row_to_rule(row: Dict[str, str]) -> Optional[Dict[str, Any]]:
     # ---------------------------------------------------------------------
     if rule_type_raw == "frequency":
         rule["rule_type"] = "missing_data"
-        rule["validation_logic"] = "date_diff_check"
-        freq_days = row.get("freq_days", "").strip()
-        # If value like "not_null" treat as 0 – meaning at least one value must exist
-        if freq_days and freq_days.isdigit():
-            rule["parameters"] = {"field": field, "max_days_between": int(freq_days)}
+        # Determine if this is a simple presence check or a date-gap check
+        freq_days = row.get("freq_days", "").strip().lower()
+
+        # ---- Presence / NOT-NULL rule ------------------------------------
+        if freq_days in {"", "0", "not_null"}:
+            rule["validation_logic"] = "not_null_check"
+            rule["parameters"] = {"field": field}
+            rule["severity"] = "error"  # absence of required field is critical
+        # ---- Date-gap (frequency) rule -----------------------------------
         else:
-            rule["parameters"] = {"field": field, "max_days_between": 0}
-        rule["severity"] = "warning"
+            rule["validation_logic"] = "date_diff_check"
+            rule["parameters"] = {
+                "field": field,
+                "max_days_between": int(freq_days) if freq_days.isdigit() else 60,
+            }
+            rule["severity"] = "warning"
 
     elif rule_type_raw == "range":
         rule["rule_type"] = "range_check"
@@ -146,9 +154,12 @@ def main(csv_path: str, yaml_path: str, db_path: str) -> None:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Seed validation rules from CSV.")
-    parser.add_argument("--csv", default=str(ROOT / "data" / "metric_catalogue.csv"))
-    parser.add_argument("--yaml", default=str(ROOT / "data" / "validation_rules.yaml"))
+    parser = argparse.ArgumentParser(
+        description="Seed validation rules from CSV.")
+    parser.add_argument(
+        "--csv", default=str(ROOT / "data" / "metric_catalogue.csv"))
+    parser.add_argument("--yaml", default=str(ROOT /
+                        "data" / "validation_rules.yaml"))
     parser.add_argument("--db", default=str(ROOT / "patient_data.db"))
     args = parser.parse_args()
 

@@ -23,6 +23,6 @@ jobs:
       - name: Run pre-commit
         run: |
           pre-commit run --all-files --show-diff-on-failure
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
-          pytest 
+          pytest --cov --cov-report=xml --cov-fail-under=60 -q 

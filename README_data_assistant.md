@@ -50,9 +50,15 @@ You can ask questions like:
 - "Compare blood pressure values for patients with high vs. normal A1C"
 - "What percentage of patients showed improvement in their vital signs?"
 - "Which patients have not had a visit in the last 3 months?"
+- "Show me the top 5 ethnicities in our program"
+- "Is there a correlation between weight and blood pressure over time?"
+- "Compare the correlation between BMI and A1C across different age groups"
 
 ## Recent Updates
 
+- **May 2025**: Implemented Synthetic "Golden-Dataset" Self-Test Loop for automated regression testing
+- **May 2025**: Added top-N chart visualizations for categorical and numeric analyses
+- **July 2025**: Enhanced correlation analysis with conditional and time-series capabilities
 - **July 2025**: Implemented slot-based Smart Clarifier to ask specific, targeted questions when query intent is ambiguous
 - **July 2025**: Added correlation matrix heat-map visualization with statistical significance testing
 - **April 2025**: Implemented the new Data Analysis Assistant with natural language query capabilities
@@ -78,6 +84,9 @@ All code is available for review in the "Code" tab to ensure transparency and au
 - **Interactive Visualizations**: Get charts and graphs that answer your specific questions
 - **Data Insights**: Receive explanations and key statistics alongside visualizations
 - **Example Queries**: Browse example questions to get started quickly
+- **Advanced Correlation Analysis**: Supports conditional correlations by demographics and time-series correlations
+- **Top-N Analysis**: Automatically generate bar charts for top/bottom ranking queries
+- **Automated Quality Assurance**: Self-test system validates functionality against known datasets
 
 ## How It Works
 
@@ -106,16 +115,20 @@ Here are some examples of questions you can ask:
 - "How many active patients do we have?"
 - "What is the gender distribution of our patients?"
 - "Show me the age distribution of our patients"
+- "What are the top 5 ethnicities in our program?"
 
 ### Weight Analysis
 - "How many patients lost weight during the program?"
 - "What percentage of active patients lost at least 10% body weight?"
 - "Show weight change trends by age group"
+- "Who are the top 10 patients with the most weight loss?"
 
 ### Health Metrics
 - "What's the average A1C change for patients in the program?"
 - "Show blood pressure trends over time"
 - "Compare engagement scores to health outcomes"
+- "Is there a correlation between BMI and blood pressure?"
+- "How does the correlation between weight and A1C vary by gender?"
 
 ## Getting Started
 
@@ -131,16 +144,34 @@ You can extend the Data Assistant by:
 1. Adding new analysis functions in the `_analyze_*` methods
 2. Creating new pattern matching rules in the `analyze_query` method
 3. Adding new example questions to the `data_examples.json` file
+4. Adding new test cases to the self-test system
+
+## Self-Test System
+
+The Data Analysis Assistant includes a robust self-test system that:
+
+1. Creates a synthetic database with controlled statistical properties
+2. Runs predetermined queries with known correct answers
+3. Compares results against expected values
+4. Reports any discrepancies through desktop notifications
+5. Maintains test history for regression analysis
+
+To run the self-test manually:
+```bash
+./run_self_test.sh
+```
+
+Test results are stored in the `logs/self_test_*` directories with detailed reports.
 
 ## Future Enhancements
 
 For future enhancements, consider:
 
-1. **Advanced Correlation**: Implement conditional and time-series correlation analysis
-2. **Memory**: Add conversation memory to allow follow-up questions
-3. **Custom Functions**: Allow creating and saving custom analyses
-4. **Export Features**: Add ability to export results to PDF or Excel
-5. **Data Refresh**: Add controls to refresh cached data
+1. **Memory**: Add conversation memory to allow follow-up questions
+2. **Custom Functions**: Allow creating and saving custom analyses
+3. **Export Features**: Add ability to export results to PDF or Excel
+4. **Data Refresh**: Add controls to refresh cached data
+5. **Help & Onboarding Tour**: Add interactive guidance for new users
 
 ## Importing New Patient JSON
 

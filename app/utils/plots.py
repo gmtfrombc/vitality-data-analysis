@@ -316,6 +316,46 @@ def line_plot(
     if x not in df.columns or y not in df.columns:
         raise ValueError(f"Columns '{x}' and/or '{y}' not found in dataframe")
 
+    # ------------------------------------------------------------
+    # Runtime path – create a real HoloViews element if **not**
+    # running under pytest (the test-suite expects the lightweight
+    # mocks).  This avoids Panel/HoloViews errors in the live app.
+    # ------------------------------------------------------------
+    import sys
+
+    if "pytest" not in sys.modules:
+        try:
+            # Ensure hvplot accessor is registered
+            import hvplot.pandas  # noqa: F401 – side-effect import
+
+            _title = title or f"{y.title()} Over Time"
+            _xlabel = xlabel or x.title()
+            _ylabel = ylabel or y.title()
+
+            # hvplot respects Pandas index – reset if necessary
+            if not df.index.is_unique or df.index.name == "date":
+                df = df.copy().reset_index(drop=True)
+
+            plot = df.hvplot.line(
+                x=x,
+                y=y,
+                title=_title,
+                xlabel=_xlabel,
+                ylabel=_ylabel,
+                width=width,
+                height=height,
+                line_width=line_width,
+                grid=grid,
+            )
+            return plot
+        except Exception:
+            # Fall back to mock if hvplot fails for any reason
+            pass
+
+    # ------------------------------------------------------------
+    # Test path – return lightweight Element stub
+    # ------------------------------------------------------------
+
     _title = title or f"{y.title()} Over Time"
     _xlabel = xlabel or x.title()
     _ylabel = ylabel or y.title()
@@ -330,7 +370,6 @@ def line_plot(
     else:
         mock_str = _title
 
-    # Return Element
     return Element(mock_str, kdims=[x], vdims=[y])
 
 

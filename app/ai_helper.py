@@ -14,6 +14,7 @@ from app.utils.query_intent import (
 from pydantic import BaseModel
 from app.utils.metrics import METRIC_REGISTRY
 import re
+import pandas as pd
 
 # Configure logging
 log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
@@ -146,6 +147,9 @@ class AIHelper:
         • Use "conditions" for inequalities (bmi > 30, age < 50).
         • If the user asks for multiple metrics (e.g., "average weight AND BMI"), put the first metric in "target_field" and subsequent ones in "additional_fields".
         • If the user asks for correlation or relationship between metrics (e.g., "correlation between BMI and weight"), use analysis_type="correlation", put the first metric in "target_field" and the second in "additional_fields".
+        • For conditional correlations (e.g., "correlation between weight and BMI by gender"), use analysis_type="correlation", include the condition in "group_by", and add a parameter {"correlation_type": "conditional"}.
+        • For time-series correlations (e.g., "how has the correlation between weight and BMI changed over time"), use analysis_type="correlation", add a parameter {"correlation_type": "time_series"}, and specify time_range if available.
+        • If the user wants to analyze correlations with a rolling window (e.g., "3-month rolling correlation"), include {"rolling_window": N} in the parameters.
         • If the user asks to break down results "by" or "per" a category (e.g., "by gender", "per ethnicity"), populate the "group_by" list.
         • Keep "additional_fields" and "group_by" as empty lists `[]` if not applicable.
         • If the query has a timeframe like "in January", "during Q2", or "from March to June", add a "time_range" with the appropriate dates.
@@ -224,6 +228,30 @@ class AIHelper:
           "additional_fields": [],
           "group_by": ["gender"],
           "time_range": null  // LLM will convert "last 6 months" to actual dates
+        }
+        
+        Example 7 – "How does the correlation between weight and BMI differ by gender?":
+        {
+          "analysis_type": "correlation",
+          "target_field": "weight",
+          "filters": [],
+          "conditions": [],
+          "parameters": {"correlation_type": "conditional", "method": "pearson"},
+          "additional_fields": ["bmi"],
+          "group_by": ["gender"],
+          "time_range": null
+        }
+        
+        Example 8 – "Show how the correlation between weight and BMI has changed over time":
+        {
+          "analysis_type": "correlation",
+          "target_field": "weight",
+          "filters": [],
+          "conditions": [],
+          "parameters": {"correlation_type": "time_series", "method": "pearson", "period": "month"},
+          "additional_fields": ["bmi"],
+          "group_by": [],
+          "time_range": null
         }
         """
 
@@ -721,7 +749,6 @@ def get_data_schema():
 
 def simplify_for_json(obj):
     """Convert complex objects to JSON-serializable format"""
-    import pandas as pd
     import numpy as np
 
     if isinstance(obj, dict):
@@ -1514,12 +1541,27 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
 
             code = (
                 "# Auto-generated top/bottom-N numeric counts using pandas\n"
-                "from db_query import query_dataframe\n\n"
+                "from db_query import query_dataframe\n"
+                "from app.utils.auto_viz_mapper import auto_visualize\n\n"
                 f'_df = query_dataframe("{sql}")\n'
                 f"_clean = _df['{metric_name}'].dropna()\n"
                 f"_vc = _clean.value_counts()\n"
                 f"_top = _vc.nsmallest({n}) if '{order}' == 'asc' else _vc.nlargest({n})\n"
                 "results = _top.to_dict()\n"
+                "\n# Generate visualization\n"
+                "try:\n"
+                "    from app.utils.query_intent import QueryIntent\n"
+                "    _intent = QueryIntent(\n"
+                f"        analysis_type='top_n',\n"
+                f"        target_field='{metric_name}',\n"
+                f"        parameters={{'n': {n}, 'order': '{order}'}}\n"
+                "    )\n"
+                "    _visualization = auto_visualize(results, _intent)\n"
+                "    if _visualization is not None:\n"
+                "        results = {'counts': results, 'visualization': _visualization}\n"
+                "except ImportError:\n"
+                "    # Handle case when running in restricted environment\n"
+                "    pass\n"
             )
         else:
             sql = f"SELECT {metric_name} FROM {table_name} {where_clause};"
@@ -1527,10 +1569,25 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
 
             code = (
                 "# Auto-generated top/bottom-N counts using pandas\n"
-                "from db_query import query_dataframe\n\n"
+                "from db_query import query_dataframe\n"
+                "from app.utils.auto_viz_mapper import auto_visualize\n\n"
                 f'_df = query_dataframe("{sql}")\n'
                 f"_top = _df['{metric_name}'].value_counts().{fun}({n})\n"
                 "results = _top.to_dict()\n"
+                "\n# Generate visualization\n"
+                "try:\n"
+                "    from app.utils.query_intent import QueryIntent\n"
+                "    _intent = QueryIntent(\n"
+                f"        analysis_type='top_n',\n"
+                f"        target_field='{metric_name}',\n"
+                f"        parameters={{'n': {n}, 'order': '{order}'}}\n"
+                "    )\n"
+                "    _visualization = auto_visualize(results, _intent)\n"
+                "    if _visualization is not None:\n"
+                "        results = {'counts': results, 'visualization': _visualization}\n"
+                "except ImportError:\n"
+                "    # Handle case when running in restricted environment\n"
+                "    pass\n"
             )
         return code
 
@@ -1917,7 +1974,17 @@ def _generate_dynamic_code_for_complex_intent(intent: QueryIntent) -> str | None
     Returns None if the intent should be handled by standard deterministic templates.
     """
     # Define what we consider "complex" or "uncommon" queries
-    uncommon_analysis_types = {"distribution", "comparison", "trend"}
+    uncommon_analysis_types = {
+        "distribution",
+        "comparison",
+        "trend",
+        "correlation",
+        "percentile",
+        "outlier",
+        "frequency",
+        "seasonality",
+        "change_point",
+    }
 
     # Check if this is an uncommon analysis type
     if intent.analysis_type not in uncommon_analysis_types:
@@ -1935,8 +2002,462 @@ def _generate_dynamic_code_for_complex_intent(intent: QueryIntent) -> str | None
     if intent.analysis_type == "comparison":
         return _generate_comparison_analysis_code(intent)
 
+    # Special case for correlation analysis
+    if intent.analysis_type == "correlation":
+        return _generate_correlation_code(intent)
+
+    # Special case for percentile analysis
+    if intent.analysis_type == "percentile":
+        return _generate_percentile_analysis_code(intent)
+
+    # Special case for outlier analysis
+    if intent.analysis_type == "outlier":
+        return _generate_outlier_analysis_code(intent)
+
+    # Special case for frequency analysis
+    if intent.analysis_type == "frequency":
+        return _generate_frequency_analysis_code(intent)
+
+    # Special case for seasonality analysis
+    if intent.analysis_type == "seasonality":
+        return _generate_seasonality_analysis_code(intent)
+
+    # Special case for change point analysis
+    if intent.analysis_type == "change_point":
+        return _generate_change_point_analysis_code(intent)
+
     # If we reach here, this is not a query type we have special handling for
     return None
+
+
+# Add the change point analysis function
+
+
+def _generate_change_point_analysis_code(intent: QueryIntent) -> str:
+    """Generate code for change point analysis of time-series data.
+
+    This template detects significant changes in trends over time,
+    such as sudden increases, decreases, or trend reversals.
+    """
+    metric = intent.target_field
+
+    # Optional parameters
+    # Default window size for moving average
+    window_size = intent.parameters.get("window_size", 3)
+    # Min data points needed for a segment
+    min_segment_size = intent.parameters.get("min_segment_size", 4)
+
+    # Determine table based on metric
+    table_name = "vitals"
+    if metric in {"score_value", "phq9_score", "gad7_score"}:
+        table_name = "scores"
+
+    # Build filters clause for WHERE conditions
+    filters_clause = _build_filters_clause(intent)
+    where_clause = f"WHERE {filters_clause}" if filters_clause else ""
+
+    # Add time range if specified
+    if intent.time_range is not None:
+        date_clause = f"date BETWEEN '{intent.time_range.start_date}' AND '{intent.time_range.end_date}'"
+        where_clause = (
+            where_clause + f" AND {date_clause}"
+            if where_clause
+            else f"WHERE {date_clause}"
+        )
+
+    # SQL to get data for change point analysis
+    sql = f"""
+    SELECT 
+        date,
+        {metric}
+    FROM {table_name}
+    {where_clause}
+    ORDER BY date
+    """
+
+    # Build the Python code
+    code = (
+        "# Auto-generated change point analysis\n"
+        "from db_query import query_dataframe\n"
+        "import pandas as pd\n"
+        "import numpy as np\n"
+        "from datetime import datetime\n"
+        "import scipy.stats as stats\n"
+        "from app.utils.plots import line_chart, scatter_plot\n\n"
+        f"# SQL query to get time series data\n_sql = '''{sql}'''\n\n"
+        "# Execute query and process results\n"
+        "df = query_dataframe(_sql)\n"
+        "if df.empty or len(df) < 5:  # Need at least 5 points for meaningful analysis\n"
+        "    results = {'error': 'Insufficient data available for change point analysis'}\n"
+        "else:\n"
+        "    # Ensure data is sorted by date\n"
+        "    df['date'] = pd.to_datetime(df['date'])\n"
+        "    df = df.sort_values('date')\n"
+        "    \n"
+        "    # Group by month to reduce noise and create time series\n"
+        "    df['month'] = df['date'].dt.strftime('%Y-%m')\n"
+        f"    monthly_data = df.groupby('month')['{metric}'].agg(['mean', 'count']).reset_index()\n"
+        "    \n"
+        f"    # Calculate moving average to smooth the data\n"
+        f"    window_size = {window_size}\n"
+        "    if len(monthly_data) >= window_size:\n"
+        "        monthly_data['smoothed'] = monthly_data['mean'].rolling(window=window_size, center=True).mean()\n"
+        "        # Fill NaN values at the edges with original data\n"
+        "        monthly_data['smoothed'] = monthly_data['smoothed'].fillna(monthly_data['mean'])\n"
+        "    else:\n"
+        "        monthly_data['smoothed'] = monthly_data['mean']\n"
+        "    \n"
+        "    # Detect significant changes in trend\n"
+        "    change_points = []\n"
+        "    trends = []\n"
+        f"    min_segment_size = {min_segment_size}\n"
+        "    \n"
+        "    if len(monthly_data) >= min_segment_size * 2:  # Need at least two segments to compare\n"
+        "        # Calculate first derivatives (slope of trend)\n"
+        "        monthly_data['slope'] = monthly_data['smoothed'].diff() / monthly_data['smoothed'].shift(1)\n"
+        "        \n"
+        "        # Identify potential change points based on slope changes\n"
+        "        # A change point is where the derivative changes sign or magnitude significantly\n"
+        "        for i in range(min_segment_size, len(monthly_data) - min_segment_size):\n"
+        "            segment1 = monthly_data.iloc[i-min_segment_size:i]\n"
+        "            segment2 = monthly_data.iloc[i:i+min_segment_size]\n"
+        "            \n"
+        "            # Calculate linear regression for each segment\n"
+        "            x1 = np.arange(len(segment1))\n"
+        "            x2 = np.arange(len(segment2))\n"
+        "            \n"
+        "            slope1, _, _, _, _ = stats.linregress(x1, segment1['smoothed'])\n"
+        "            slope2, _, _, _, _ = stats.linregress(x2, segment2['smoothed'])\n"
+        "            \n"
+        "            # Check if there's a significant change in slope\n"
+        "            if ((slope1 > 0 and slope2 < 0) or (slope1 < 0 and slope2 > 0) or\n"
+        "                (abs(slope2 - slope1) / (abs(slope1) + 0.001) > 0.5)):  # 50% change threshold\n"
+        "                change_points.append(i)\n"
+        "                trends.append({\n"
+        "                    'date': monthly_data.iloc[i]['month'],\n"
+        "                    'value': monthly_data.iloc[i]['smoothed'],\n"
+        "                    'before_trend': 'increasing' if slope1 > 0 else 'decreasing',\n"
+        "                    'after_trend': 'increasing' if slope2 > 0 else 'decreasing',\n"
+        "                    'change_magnitude': abs(slope2 - slope1) / (abs(slope1) + 0.001)\n"
+        "                })\n"
+        "    \n"
+        "    # Create visualization of the time series with change points highlighted\n"
+        f"    title = 'Time Series of {metric.title()} with Change Points'\n"
+        "    \n"
+        "    # Base line chart of the data\n"
+        "    line_viz = line_chart(\n"
+        "        monthly_data,\n"
+        "        x='month',\n"
+        "        y='smoothed',\n"
+        "        title=title,\n"
+        "        x_label='Month',\n"
+        f"        y_label='{metric.title()}'\n"
+        "    )\n"
+        "    \n"
+        "    # Add markers for change points\n"
+        "    if change_points:\n"
+        "        change_point_data = monthly_data.iloc[change_points]\n"
+        "        # Would add scatter points to line_viz here in a real implementation\n"
+        "        # For now, we'll create a separate scatter plot\n"
+        "        scatter_viz = scatter_plot(\n"
+        "            change_point_data,\n"
+        "            x='month',\n"
+        "            y='smoothed',\n"
+        "            title='Detected Change Points',\n"
+        "            marker_size=10\n"
+        "        )\n"
+        "    \n"
+        "    # Calculate summary statistics for changes\n"
+        "    trend_reversal_count = sum(1 for t in trends if t['before_trend'] != t['after_trend'])\n"
+        "    acceleration_count = sum(1 for t in trends if t['before_trend'] == t['after_trend'] == 'increasing' \n"
+        "                               and t['change_magnitude'] > 0.5)\n"
+        "    deceleration_count = sum(1 for t in trends if t['before_trend'] == t['after_trend'] == 'decreasing' \n"
+        "                              and t['change_magnitude'] > 0.5)\n"
+        "    \n"
+        "    # Calculate overall trend\n"
+        "    if len(monthly_data) >= 2:\n"
+        "        first_value = monthly_data.iloc[0]['smoothed']\n"
+        "        last_value = monthly_data.iloc[-1]['smoothed']\n"
+        "        total_change = last_value - first_value\n"
+        "        percent_change = (total_change / first_value * 100) if first_value != 0 else 0\n"
+        "        overall_trend = 'increasing' if total_change > 0 else 'decreasing' if total_change < 0 else 'stable'\n"
+        "    else:\n"
+        "        total_change = 0\n"
+        "        percent_change = 0\n"
+        "        overall_trend = 'undetermined'\n"
+        "    \n"
+        "    # Analyze rate of change by dividing the series into halves\n"
+        "    if len(monthly_data) >= 4:\n"
+        "        mid_point = len(monthly_data) // 2\n"
+        "        first_half = monthly_data.iloc[:mid_point]\n"
+        "        second_half = monthly_data.iloc[mid_point:]\n"
+        "        \n"
+        "        x_first = np.arange(len(first_half))\n"
+        "        x_second = np.arange(len(second_half))\n"
+        "        \n"
+        "        slope_first, _, _, _, _ = stats.linregress(x_first, first_half['smoothed'])\n"
+        "        slope_second, _, _, _, _ = stats.linregress(x_second, second_half['smoothed'])\n"
+        "        \n"
+        "        acceleration_factor = slope_second / slope_first if abs(slope_first) > 0.001 else float('inf')\n"
+        "        trend_acceleration = 'accelerating' if acceleration_factor > 1.2 else \\\n"
+        "                            'decelerating' if acceleration_factor < 0.8 else 'stable'\n"
+        "    else:\n"
+        "        slope_first = 0\n"
+        "        slope_second = 0\n"
+        "        acceleration_factor = 1\n"
+        "        trend_acceleration = 'undetermined'\n"
+        "    \n"
+        "    # Return results\n"
+        "    results = {\n"
+        "        'change_points': trends,\n"
+        "        'trend_summary': {\n"
+        "            'total_change_points': len(change_points),\n"
+        "            'trend_reversals': trend_reversal_count,\n"
+        "            'accelerations': acceleration_count,\n"
+        "            'decelerations': deceleration_count,\n"
+        "            'overall_trend': overall_trend,\n"
+        "            'total_change': total_change,\n"
+        "            'percent_change': percent_change,\n"
+        "            'trend_acceleration': trend_acceleration,\n"
+        "            'acceleration_factor': acceleration_factor\n"
+        "        },\n"
+        "        'monthly_data': monthly_data.to_dict(orient='records'),\n"
+        "        'visualization': line_viz\n"
+        "    }\n"
+        "    \n"
+        "    # Add scatter plot of change points if they exist\n"
+        "    if change_points:\n"
+        "        results['change_point_viz'] = scatter_viz\n"
+    )
+
+    return code
+
+
+def _generate_percentile_analysis_code(intent: QueryIntent) -> str:
+    """Generate code for percentile analysis of a metric.
+
+    This template divides the data into percentiles and analyzes metrics within each.
+    """
+    metric = intent.target_field
+
+    # Default to quartiles (4 buckets) if not specified
+    num_buckets = intent.parameters.get("num_buckets", 4)
+    percentile_type = "quartiles" if num_buckets == 4 else "percentiles"
+
+    # Determine table based on metric
+    table_name = "vitals"
+    if metric in {"score_value", "phq9_score", "gad7_score"}:
+        table_name = "scores"
+    elif metric in {"age", "gender", "ethnicity"}:
+        table_name = "patients"
+
+    # Build filters clause for WHERE conditions
+    filters_clause = _build_filters_clause(intent)
+    where_clause = f"WHERE {filters_clause}" if filters_clause else ""
+
+    # Add time range if specified
+    if intent.time_range is not None:
+        date_clause = f"date BETWEEN '{intent.time_range.start_date}' AND '{intent.time_range.end_date}'"
+        where_clause = (
+            where_clause + f" AND {date_clause}"
+            if where_clause
+            else f"WHERE {date_clause}"
+        )
+
+    # SQL to get raw data for percentile analysis
+    sql = f"""
+    SELECT {metric}
+    FROM {table_name}
+    {where_clause}
+    """
+
+    # Build the Python code
+    code = (
+        "# Auto-generated percentile analysis\n"
+        "from db_query import query_dataframe\n"
+        "import pandas as pd\n"
+        "import numpy as np\n"
+        "from app.utils.plots import bar_chart\n\n"
+        f"# SQL query to get data for percentile analysis\n_sql = '''{sql}'''\n\n"
+        "# Execute query and process results\n"
+        "df = query_dataframe(_sql)\n"
+        "if df.empty:\n"
+        "    results = {'error': 'No data available for percentile analysis'}\n"
+        "else:\n"
+        "    # Calculate percentiles\n"
+        f"    num_buckets = {num_buckets}\n"
+        f"    percentile_values = [round(np.percentile(df['{metric}'], p), 2) for p in np.linspace(0, 100, num_buckets+1)]\n"
+        "    \n"
+        "    # Create percentile labels\n"
+        "    labels = []\n"
+        "    for i in range(num_buckets):\n"
+        "        labels.append(f'{int(i * 100/num_buckets)}-{int((i+1) * 100/num_buckets)} percentile')\n"
+        "    \n"
+        "    # Assign each data point to a percentile bucket\n"
+        f"    df['percentile_bucket'] = pd.cut(df['{metric}'], bins=percentile_values, labels=labels, include_lowest=True)\n"
+        "    \n"
+        "    # Calculate statistics per bucket\n"
+        f"    bucket_stats = df.groupby('percentile_bucket')['{metric}'].agg(['mean', 'std', 'count']).reset_index()\n"
+        "    \n"
+        "    # Create summary stats\n"
+        "    percentile_summary = {\n"
+        "        'percentile_values': percentile_values,\n"
+        "        'mean_by_percentile': dict(zip(labels, bucket_stats['mean'].values)),\n"
+        "        'count_by_percentile': dict(zip(labels, bucket_stats['count'].values)),\n"
+        "        'std_by_percentile': dict(zip(labels, bucket_stats['std'].values))\n"
+        "    }\n"
+        "    \n"
+        "    # Create bar chart visualization\n"
+        f"    title = '{metric.title()} Distribution by {percentile_type.title()}'\n"
+        "    viz = bar_chart(bucket_stats, 'percentile_bucket', 'mean', title=title)\n"
+        "    \n"
+        "    # Return results\n"
+        "    results = {\n"
+        "        'percentile_summary': percentile_summary,\n"
+        "        'visualization': viz,\n"
+        "        'bucket_stats': bucket_stats.to_dict(orient='records')\n"
+        "    }\n"
+    )
+
+    return code
+
+
+def _generate_outlier_analysis_code(intent: QueryIntent) -> str:
+    """Generate code for outlier analysis of a metric.
+
+    This template identifies outliers using statistical methods and analyzes their characteristics.
+    """
+    metric = intent.target_field
+
+    # Get outlier detection method (default to IQR)
+    method = intent.parameters.get("method", "iqr")
+    threshold = intent.parameters.get("threshold", 1.5)  # Default IQR multiplier
+
+    # Determine table based on metric
+    table_name = "vitals"
+    if metric in {"score_value", "phq9_score", "gad7_score"}:
+        table_name = "scores"
+    elif metric in {"age", "gender", "ethnicity"}:
+        table_name = "patients"
+
+    # Add join with patients table if needed for demographic analysis
+    join_needed = intent.parameters.get("demographic_analysis", True)
+    join_clause = ""
+    if join_needed and table_name != "patients":
+        join_clause = "LEFT JOIN patients ON patients.id = {}.patient_id".format(
+            table_name
+        )
+
+    # Build filters clause for WHERE conditions
+    filters_clause = _build_filters_clause(intent)
+    where_clause = f"WHERE {filters_clause}" if filters_clause else ""
+
+    # Add time range if specified
+    if intent.time_range is not None:
+        date_clause = f"date BETWEEN '{intent.time_range.start_date}' AND '{intent.time_range.end_date}'"
+        where_clause = (
+            where_clause + f" AND {date_clause}"
+            if where_clause
+            else f"WHERE {date_clause}"
+        )
+
+    # SQL to get data for outlier analysis
+    sql = f"""
+    SELECT 
+        {table_name}.{metric}
+        {", patients.gender, patients.ethnicity, patients.age" if join_needed and table_name != "patients" else ""}
+    FROM {table_name}
+    {join_clause}
+    {where_clause}
+    """
+
+    # Build the Python code
+    code = (
+        "# Auto-generated outlier analysis\n"
+        "from db_query import query_dataframe\n"
+        "import pandas as pd\n"
+        "import numpy as np\n"
+        "from app.utils.plots import histogram, scatter_plot\n\n"
+        f"# SQL query to get data for outlier analysis\n_sql = '''{sql}'''\n\n"
+        "# Execute query and process results\n"
+        "df = query_dataframe(_sql)\n"
+        "if df.empty:\n"
+        "    results = {'error': 'No data available for outlier analysis'}\n"
+        "else:\n"
+        "    # Identify outliers using specified method\n"
+        f"    method = '{method}'\n"
+        f"    threshold = {threshold}\n"
+        "    \n"
+        "    if method == 'iqr':\n"
+        f"        Q1 = df['{metric}'].quantile(0.25)\n"
+        f"        Q3 = df['{metric}'].quantile(0.75)\n"
+        "        IQR = Q3 - Q1\n"
+        f"        lower_bound = Q1 - threshold * IQR\n"
+        f"        upper_bound = Q3 + threshold * IQR\n"
+        f"        outliers = df[(df['{metric}'] < lower_bound) | (df['{metric}'] > upper_bound)]\n"
+        "        non_outliers = df[~df.index.isin(outliers.index)]\n"
+        "    elif method == 'zscore':\n"
+        f"        mean = df['{metric}'].mean()\n"
+        f"        std = df['{metric}'].std()\n"
+        f"        z_scores = abs((df['{metric}'] - mean) / std)\n"
+        f"        outliers = df[z_scores > threshold]\n"
+        "        non_outliers = df[~df.index.isin(outliers.index)]\n"
+        "    else:  # Default to IQR if unknown method\n"
+        f"        Q1 = df['{metric}'].quantile(0.25)\n"
+        f"        Q3 = df['{metric}'].quantile(0.75)\n"
+        "        IQR = Q3 - Q1\n"
+        f"        lower_bound = Q1 - threshold * IQR\n"
+        f"        upper_bound = Q3 + threshold * IQR\n"
+        f"        outliers = df[(df['{metric}'] < lower_bound) | (df['{metric}'] > upper_bound)]\n"
+        "        non_outliers = df[~df.index.isin(outliers.index)]\n"
+        "    \n"
+        "    # Calculate outlier statistics\n"
+        "    outlier_stats = {\n"
+        "        'num_outliers': len(outliers),\n"
+        "        'outlier_percent': len(outliers) / len(df) * 100 if len(df) > 0 else 0,\n"
+        f"        'min_value': outliers['{metric}'].min() if not outliers.empty else None,\n"
+        f"        'max_value': outliers['{metric}'].max() if not outliers.empty else None,\n"
+        f"        'mean_value': outliers['{metric}'].mean() if not outliers.empty else None\n"
+        "    }\n"
+        "    \n"
+        "    # Histogram with outliers highlighted\n"
+        f"    title = 'Distribution of {metric.title()} with Outliers Highlighted'\n"
+        f"    combined_df = df.copy()\n"
+        f"    combined_df['outlier'] = combined_df.index.isin(outliers.index)\n"
+        "    combined_df['category'] = combined_df['outlier'].map({True: 'Outlier', False: 'Normal'})\n"
+        "    \n"
+        "    # Create visualization\n"
+        f"    hist = histogram(df, '{metric}', bins=20, title=title)\n"
+        "    \n"
+        "    # Analyze demographics of outliers if patient data available\n"
+        "    demographic_analysis = {}\n"
+        "    if 'gender' in outliers.columns and not outliers.empty:\n"
+        "        gender_counts = outliers['gender'].value_counts().to_dict()\n"
+        "        gender_pcts = (outliers['gender'].value_counts() / len(outliers) * 100).to_dict()\n"
+        "        demographic_analysis['gender'] = {'counts': gender_counts, 'percentages': gender_pcts}\n"
+        "    \n"
+        "    if 'ethnicity' in outliers.columns and not outliers.empty:\n"
+        "        ethnicity_counts = outliers['ethnicity'].value_counts().to_dict()\n"
+        "        ethnicity_pcts = (outliers['ethnicity'].value_counts() / len(outliers) * 100).to_dict()\n"
+        "        demographic_analysis['ethnicity'] = {'counts': ethnicity_counts, 'percentages': ethnicity_pcts}\n"
+        "    \n"
+        "    if 'age' in outliers.columns and not outliers.empty:\n"
+        "        age_mean = outliers['age'].mean()\n"
+        "        age_std = outliers['age'].std()\n"
+        "        demographic_analysis['age'] = {'mean': age_mean, 'std': age_std}\n"
+        "    \n"
+        "    # Return results\n"
+        "    results = {\n"
+        "        'outlier_stats': outlier_stats,\n"
+        "        'demographic_analysis': demographic_analysis,\n"
+        "        'method': method,\n"
+        "        'threshold': threshold,\n"
+        "        'visualization': hist,\n"
+        "        'outliers': outliers.head(10).to_dict(orient='records') if not outliers.empty else []\n"
+        "    }\n"
+    )
+
+    return code
 
 
 def _generate_trend_analysis_code(intent: QueryIntent) -> str:
@@ -2269,6 +2790,687 @@ finally:
 
 # Return the fallback results
 result
+"""
+
+    return code
+
+
+def _generate_correlation_code(intent):
+    """Generate code for correlation analysis between two metrics.
+
+    Supports:
+    - Basic correlations (simple scatter with regression line)
+    - Conditional correlations (by demographic or other categorical variable)
+    - Time-series correlations (how correlation changes over time)
+    """
+    # Extract metrics for correlation
+    if len(intent.additional_fields) == 0:
+        logger.warning("Correlation analysis requested but no second metric specified")
+        # Fallback to common pair
+        metric_x = intent.target_field
+        metric_y = "bmi" if metric_x != "bmi" else "weight"
+    else:
+        metric_x = intent.target_field
+        metric_y = intent.additional_fields[0]
+
+    # Get correlation method (default to pearson)
+    method = intent.parameters.get("method", "pearson")
+
+    # Check for correlation type
+    correlation_type = intent.parameters.get("correlation_type", "simple")
+
+    # Build code based on correlation type
+    if correlation_type == "conditional" and intent.group_by:
+        # Conditional correlation (by demographic/category)
+        condition_field = intent.group_by[0]
+
+        # Format title values outside the string template
+        metric_x_title = metric_x.title() if hasattr(metric_x, "title") else metric_x
+        metric_y_title = metric_y.title() if hasattr(metric_y, "title") else metric_y
+        condition_field_title = (
+            condition_field.title()
+            if hasattr(condition_field, "title")
+            else condition_field
+        )
+
+        title_text = f"Correlation between {metric_x_title} and {metric_y_title} by {condition_field_title}"
+
+        code = f"""
+# Calculate conditional correlations between {metric_x} and {metric_y} by {condition_field}
+import pandas as pd
+from db_query import query_dataframe
+from app.utils.advanced_correlation import conditional_correlation, conditional_correlation_heatmap
+
+# SQL query to fetch required data
+sql = '''
+SELECT v.{metric_x}, v.{metric_y}, p.{condition_field}
+FROM vitals v
+JOIN patients p ON v.patient_id = p.id
+'''
+
+# Add filters if any
+where_clauses = []
+"""
+
+        # Add filters
+        if intent.filters:
+            code += """
+# Process filters
+"""
+            for i, filter in enumerate(intent.filters):
+                field = filter.field
+                if hasattr(filter, "value"):
+                    value = (
+                        f"'{filter.value}'"
+                        if isinstance(filter.value, str)
+                        else filter.value
+                    )
+                    code += f'where_clauses.append("p.{field} = {value}")\n'
+                # Handle other filter types similarly...
+
+        # Complete the SQL query
+        code += """
+# Finalize the SQL query with WHERE clause if needed
+if where_clauses:
+    sql += " WHERE " + " AND ".join(where_clauses)
+
+# Execute query
+df = query_dataframe(sql)
+
+# Calculate conditional correlations
+results = conditional_correlation(
+    df, 
+    metric_x='{metric_x}', 
+    metric_y='{metric_y}', 
+    condition_field='{condition_field}',
+    method='{method}'
+)
+
+# Calculate overall correlation for comparison
+overall_corr = df['{metric_x}'].corr(df['{metric_y}'], method='{method}')
+
+# Create visualization
+viz = conditional_correlation_heatmap(
+    results,
+    main_correlation=overall_corr,
+    title='{title_text}'
+)
+
+# Prepare results
+correlation_by_group = {{k: v[0] for k, v in results.items()}}
+p_values_by_group = {{k: v[1] for k, v in results.items()}}
+
+final_results = {{
+    'correlation_by_group': correlation_by_group,
+    'p_values': p_values_by_group,
+    'overall_correlation': overall_corr,
+    'method': '{method}',
+    'visualization': viz
+}}
+
+# Return results
+results = final_results
+""".format(
+            metric_x=metric_x,
+            metric_y=metric_y,
+            condition_field=condition_field,
+            method=method,
+            title_text=title_text,
+        )
+
+    elif correlation_type == "time_series":
+        # Time-series correlation (correlation over time)
+        period = intent.parameters.get("period", "month")
+        rolling_window = intent.parameters.get("rolling_window", None)
+
+        # Format title values outside the string template
+        metric_x_title = metric_x.title() if hasattr(metric_x, "title") else metric_x
+        metric_y_title = metric_y.title() if hasattr(metric_y, "title") else metric_y
+
+        title_text = (
+            f"Correlation between {metric_x_title} and {metric_y_title} Over Time"
+        )
+
+        # Build code for time-series correlation
+        code = f"""
+# Calculate how correlation between {metric_x} and {metric_y} changes over time
+import pandas as pd
+from db_query import query_dataframe
+from app.utils.advanced_correlation import time_series_correlation, time_series_correlation_plot
+
+# SQL query to fetch required data with dates
+sql = '''
+SELECT v.{metric_x}, v.{metric_y}, v.date
+FROM vitals v
+'''
+"""
+
+        # Add time range filter if present
+        if intent.time_range:
+            start_date = intent.time_range.start_date
+            end_date = intent.time_range.end_date
+
+            code += f"""
+# Add time range filter
+sql += " WHERE v.date BETWEEN '{start_date}' AND '{end_date}'"
+"""
+
+        # Complete the code
+        rolling_window_param = (
+            f", rolling_window={rolling_window}" if rolling_window else ""
+        )
+
+        code += f"""
+# Execute query
+df = query_dataframe(sql)
+
+# Calculate time-series correlations
+results_df = time_series_correlation(
+    df,
+    metric_x='{metric_x}',
+    metric_y='{metric_y}',
+    date_column='date',
+    period='{period}'{rolling_window_param},
+    method='{method}'
+)
+
+# Create visualization
+viz = time_series_correlation_plot(
+    results_df,
+    title='{title_text}',
+)
+
+# Prepare results dictionary
+correlations_over_time = dict(zip(results_df['period'], results_df['correlation']))
+p_values_over_time = dict(zip(results_df['period'], results_df['p_value']))
+
+final_results = {{
+    'correlations_over_time': correlations_over_time,
+    'p_values': p_values_over_time,
+    'method': '{method}',
+    'period': '{period}',
+    'visualization': viz
+}}
+
+# Return results
+results = final_results
+"""
+
+    else:
+        # Simple correlation (existing implementation)
+        # Format title values outside the string template
+        metric_x_title = metric_x.title() if hasattr(metric_x, "title") else metric_x
+        metric_y_title = metric_y.title() if hasattr(metric_y, "title") else metric_y
+
+        title_text = f"Correlation: {metric_x_title} vs {metric_y_title}"
+
+        code = f"""
+# Calculate correlation between {metric_x} and {metric_y}
+import pandas as pd
+from db_query import query_dataframe
+from app.utils.plots import scatter_plot
+
+# SQL query to fetch required data
+sql = '''
+SELECT v.{metric_x}, v.{metric_y}
+FROM vitals v
+'''
+
+# Add filters if any
+where_clauses = []
+"""
+
+        # Add filters
+        if intent.filters:
+            code += """
+# Process filters
+"""
+            for i, filter in enumerate(intent.filters):
+                field = filter.field
+                if hasattr(filter, "value"):
+                    value = (
+                        f"'{filter.value}'"
+                        if isinstance(filter.value, str)
+                        else filter.value
+                    )
+                    code += f'where_clauses.append("{field} = {value}")\n'
+                # Handle other filter types similarly...
+
+        # Complete the SQL query
+        code += """
+# Finalize the SQL query with WHERE clause if needed
+if where_clauses:
+    sql += " WHERE " + " AND ".join(where_clauses)
+
+# Execute query
+df = query_dataframe(sql)
+
+# Calculate correlation
+correlation = df['{metric_x}'].corr(df['{metric_y}'], method='{method}')
+
+# Generate scatter plot with regression line
+viz = scatter_plot(
+    df,
+    x='{metric_x}',
+    y='{metric_y}',
+    title='{title_text}',
+    correlation=True,
+    regression=True
+)
+
+# Return results
+results = {{
+    'correlation_coefficient': correlation,
+    'correlation_matrix': pd.DataFrame([[1.0, correlation], [correlation, 1.0]], 
+                          index=['{metric_x}', '{metric_y}'], 
+                          columns=['{metric_x}', '{metric_y}']),
+    'metrics': ['{metric_x}', '{metric_y}'],
+    'method': '{method}',
+    'visualization': viz
+}}
+""".format(
+            metric_x=metric_x, metric_y=metric_y, method=method, title_text=title_text
+        )
+
+    return code
+
+
+# Add the frequency and seasonality functions
+
+
+def _generate_frequency_analysis_code(intent: QueryIntent) -> str:
+    """Generate code for frequency analysis of categorical data.
+
+    This template analyzes the frequency distribution of categorical variables,
+    and can handle more sophisticated analysis than simple counts.
+    """
+    field = intent.target_field
+
+    # Determine table based on field
+    table_name = "patients"  # Default for most categorical fields
+    if field in {"diagnosis", "assessment_type", "score_type"}:
+        table_name = "scores"
+
+    # Check if we need to normalize or weight the frequencies
+    normalize = intent.parameters.get("normalize", False)
+    weight_field = intent.parameters.get("weight_field", None)
+
+    # Build filters clause for WHERE conditions
+    filters_clause = _build_filters_clause(intent)
+    where_clause = f"WHERE {filters_clause}" if filters_clause else ""
+
+    # Add time range if specified
+    if intent.time_range is not None:
+        date_clause = f"date BETWEEN '{intent.time_range.start_date}' AND '{intent.time_range.end_date}'"
+        where_clause = (
+            where_clause + f" AND {date_clause}"
+            if where_clause
+            else f"WHERE {date_clause}"
+        )
+
+    # SQL to get data for frequency analysis
+    select_clause = f"{field}"
+    if weight_field:
+        select_clause += f", {weight_field}"
+
+    sql = f"""
+    SELECT {select_clause}
+    FROM {table_name}
+    {where_clause}
+    """
+
+    # Build the Python code
+    code = (
+        "# Auto-generated frequency analysis\n"
+        "from db_query import query_dataframe\n"
+        "import pandas as pd\n"
+        "import numpy as np\n"
+        "from app.utils.plots import bar_chart, pie_chart\n\n"
+        f"# SQL query to get data for frequency analysis\n_sql = '''{sql}'''\n\n"
+        "# Execute query and process results\n"
+        "df = query_dataframe(_sql)\n"
+        "if df.empty:\n"
+        "    results = {'error': 'No data available for frequency analysis'}\n"
+        "else:\n"
+    )
+
+    # Add frequency calculation based on parameters
+    if weight_field:
+        code += f"""
+    # Calculate weighted frequencies
+    weighted_counts = df.groupby('{field}')['{weight_field}'].sum().sort_values(ascending=False)
+    total_weight = weighted_counts.sum()
+    weighted_pct = (weighted_counts / total_weight * 100).round(2) if total_weight > 0 else weighted_counts * 0
+    
+    # Prepare results
+    frequency_data = pd.DataFrame({{
+        'category': weighted_counts.index,
+        'weighted_count': weighted_counts.values,
+        'weighted_percent': weighted_pct.values
+    }})
+    
+    # Create visualizations
+    title = 'Weighted Frequency Distribution of {field.title()}'
+    bar_viz = bar_chart(frequency_data, 'category', 'weighted_count', title=title)
+    pie_viz = pie_chart(frequency_data, 'category', 'weighted_count', 
+                       title=f'Weighted Distribution of {field.title()}')
+    
+    # Return results
+    results = {{
+        'frequency_data': frequency_data.to_dict(orient='records'),
+        'weighted_counts': dict(zip(weighted_counts.index, weighted_counts.values)),
+        'weighted_percent': dict(zip(weighted_pct.index, weighted_pct.values)),
+        'bar_chart': bar_viz,
+        'pie_chart': pie_viz
+    }}
+"""
+    elif normalize:
+        code += f"""
+    # Calculate normalized frequencies
+    value_counts = df['{field}'].value_counts()
+    total_count = len(df)
+    percentages = (value_counts / total_count * 100).round(2)
+    
+    # Prepare results
+    frequency_data = pd.DataFrame({{
+        'category': value_counts.index,
+        'count': value_counts.values,
+        'percent': percentages.values
+    }})
+    
+    # Create visualizations
+    title = 'Frequency Distribution of {field.title()}'
+    bar_viz = bar_chart(frequency_data, 'category', 'percent', title=title)
+    pie_viz = pie_chart(frequency_data, 'category', 'count', 
+                       title=f'Distribution of {field.title()}')
+    
+    # Return results
+    results = {{
+        'frequency_data': frequency_data.to_dict(orient='records'),
+        'counts': dict(zip(value_counts.index, value_counts.values)),
+        'percentages': dict(zip(percentages.index, percentages.values)),
+        'bar_chart': bar_viz,
+        'pie_chart': pie_viz
+    }}
+"""
+    else:
+        code += f"""
+    # Calculate raw frequencies
+    value_counts = df['{field}'].value_counts().sort_values(ascending=False)
+    total_count = len(df)
+    percentages = (value_counts / total_count * 100).round(2)
+    
+    # Prepare results
+    frequency_data = pd.DataFrame({{
+        'category': value_counts.index,
+        'count': value_counts.values,
+        'percent': percentages.values
+    }})
+    
+    # Create visualizations
+    title = 'Frequency Distribution of {field.title()}'
+    bar_viz = bar_chart(frequency_data, 'category', 'count', title=title)
+    pie_viz = pie_chart(frequency_data, 'category', 'count', 
+                       title=f'Distribution of {field.title()}')
+    
+    # Return results
+    results = {{
+        'frequency_data': frequency_data.to_dict(orient='records'),
+        'counts': dict(zip(value_counts.index, value_counts.values)),
+        'percentages': dict(zip(percentages.index, percentages.values)),
+        'bar_chart': bar_viz,
+        'pie_chart': pie_viz
+    }}
+"""
+
+    return code
+
+
+def _generate_seasonality_analysis_code(intent: QueryIntent) -> str:
+    """Generate code for seasonality analysis of time-series data.
+
+    This template analyzes seasonal patterns in time-series data, such as
+    variations by month, day of week, or hour of day.
+    """
+    metric = intent.target_field
+
+    # Determine seasonality type (month, day_of_week, hour_of_day)
+    seasonality_type = intent.parameters.get("seasonality_type", "month")
+
+    # Determine table based on metric
+    table_name = "vitals"
+    if metric in {"score_value", "phq9_score", "gad7_score"}:
+        table_name = "scores"
+
+    # Build filters clause for WHERE conditions
+    filters_clause = _build_filters_clause(intent)
+    where_clause = f"WHERE {filters_clause}" if filters_clause else ""
+
+    # Add time range if specified
+    if intent.time_range is not None:
+        date_clause = f"date BETWEEN '{intent.time_range.start_date}' AND '{intent.time_range.end_date}'"
+        where_clause = (
+            where_clause + f" AND {date_clause}"
+            if where_clause
+            else f"WHERE {date_clause}"
+        )
+
+    # SQL to get data for seasonality analysis
+    time_extract = ""
+    if seasonality_type == "month":
+        time_extract = "strftime('%m', date) AS month"
+    elif seasonality_type == "day_of_week":
+        time_extract = "strftime('%w', date) AS day_of_week"
+    elif seasonality_type == "hour_of_day":
+        time_extract = "strftime('%H', date) AS hour_of_day"
+    else:
+        # Default to month if unrecognized
+        time_extract = "strftime('%m', date) AS month"
+        seasonality_type = "month"
+
+    sql = f"""
+    SELECT 
+        {time_extract},
+        {metric},
+        date
+    FROM {table_name}
+    {where_clause}
+    """
+
+    # Build the Python code
+    code = (
+        "# Auto-generated seasonality analysis\n"
+        "from db_query import query_dataframe\n"
+        "import pandas as pd\n"
+        "import numpy as np\n"
+        "from app.utils.plots import bar_chart, line_chart\n\n"
+        f"# SQL query to get data for seasonality analysis\n_sql = '''{sql}'''\n\n"
+        "# Execute query and process results\n"
+        "df = query_dataframe(_sql)\n"
+        "if df.empty:\n"
+        "    results = {'error': 'No data available for seasonality analysis'}\n"
+        "else:\n"
+    )
+
+    # Add code based on seasonality type
+    if seasonality_type == "month":
+        code += f"""
+    # Convert month numbers to month names for better readability
+    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    df['month'] = df['month'].astype(int)
+    df['month_name'] = df['month'].apply(lambda x: month_names[x-1])
+    
+    # Group by month and calculate statistics
+    monthly_stats = df.groupby('month').agg({{
+        '{metric}': ['mean', 'std', 'count'],
+        'month_name': 'first'  # Carry over the month name
+    }})
+    
+    # Flatten multi-index columns
+    monthly_stats.columns = ['mean', 'std', 'count', 'month_name']
+    monthly_stats = monthly_stats.reset_index()
+    
+    # Sort by month for chronological order
+    monthly_stats = monthly_stats.sort_values('month')
+    
+    # Create visualization
+    title = 'Monthly Pattern of {metric.title()}'
+    line_viz = line_chart(
+        monthly_stats, 
+        x='month_name', 
+        y='mean', 
+        title=title,
+        x_label='Month',
+        y_label='Average {metric.title()}'
+    )
+    
+    # Calculate seasonal statistics
+    peak_month_idx = monthly_stats['mean'].idxmax()
+    peak_month = monthly_stats.loc[peak_month_idx, 'month_name']
+    peak_value = monthly_stats.loc[peak_month_idx, 'mean']
+    
+    low_month_idx = monthly_stats['mean'].idxmin()
+    low_month = monthly_stats.loc[low_month_idx, 'month_name']
+    low_value = monthly_stats.loc[low_month_idx, 'mean']
+    
+    seasonal_range = peak_value - low_value
+    seasonal_range_pct = (seasonal_range / low_value * 100) if low_value != 0 else 0
+    
+    # Return results
+    results = {{
+        'seasonal_stats': monthly_stats.to_dict(orient='records'),
+        'peak_month': peak_month,
+        'peak_value': peak_value,
+        'low_month': low_month,
+        'low_value': low_value,
+        'seasonal_range': seasonal_range,
+        'seasonal_range_pct': seasonal_range_pct,
+        'visualization': line_viz
+    }}
+"""
+    elif seasonality_type == "day_of_week":
+        code += f"""
+    # Convert day numbers to day names for better readability
+    day_names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    df['day_of_week'] = df['day_of_week'].astype(int)
+    df['day_name'] = df['day_of_week'].apply(lambda x: day_names[x])
+    
+    # Group by day of week and calculate statistics
+    daily_stats = df.groupby('day_of_week').agg({{
+        '{metric}': ['mean', 'std', 'count'],
+        'day_name': 'first'  # Carry over the day name
+    }})
+    
+    # Flatten multi-index columns
+    daily_stats.columns = ['mean', 'std', 'count', 'day_name']
+    daily_stats = daily_stats.reset_index()
+    
+    # Sort by day for chronological order
+    daily_stats = daily_stats.sort_values('day_of_week')
+    
+    # Create visualization
+    title = 'Day of Week Pattern of {metric.title()}'
+    bar_viz = bar_chart(
+        daily_stats, 
+        x='day_name', 
+        y='mean', 
+        title=title,
+        x_label='Day of Week',
+        y_label='Average {metric.title()}'
+    )
+    
+    # Calculate weekday vs weekend difference
+    weekday_data = daily_stats[daily_stats['day_of_week'].isin([1, 2, 3, 4, 5])]  # Mon-Fri
+    weekend_data = daily_stats[daily_stats['day_of_week'].isin([0, 6])]  # Sat-Sun
+    
+    weekday_avg = weekday_data['mean'].mean() if not weekday_data.empty else None
+    weekend_avg = weekend_data['mean'].mean() if not weekend_data.empty else None
+    
+    weekday_weekend_diff = (weekend_avg - weekday_avg) if (weekday_avg is not None and weekend_avg is not None) else None
+    
+    # Find peak and low days
+    peak_day_idx = daily_stats['mean'].idxmax()
+    peak_day = daily_stats.loc[peak_day_idx, 'day_name']
+    peak_value = daily_stats.loc[peak_day_idx, 'mean']
+    
+    low_day_idx = daily_stats['mean'].idxmin()
+    low_day = daily_stats.loc[low_day_idx, 'day_name']
+    low_value = daily_stats.loc[low_day_idx, 'mean']
+    
+    # Return results
+    results = {{
+        'daily_stats': daily_stats.to_dict(orient='records'),
+        'weekday_avg': weekday_avg,
+        'weekend_avg': weekend_avg,
+        'weekday_weekend_diff': weekday_weekend_diff,
+        'peak_day': peak_day,
+        'peak_value': peak_value,
+        'low_day': low_day,
+        'low_value': low_value,
+        'visualization': bar_viz
+    }}
+"""
+    else:  # hour_of_day (default for any other value)
+        code += f"""
+    # Convert to integers and ensure hours are in 24-hour format
+    df['hour_of_day'] = df['hour_of_day'].astype(int)
+    
+    # Group by hour and calculate statistics
+    hourly_stats = df.groupby('hour_of_day').agg({{
+        '{metric}': ['mean', 'std', 'count']
+    }})
+    
+    # Flatten multi-index columns
+    hourly_stats.columns = ['mean', 'std', 'count']
+    hourly_stats = hourly_stats.reset_index()
+    
+    # Sort by hour for chronological order
+    hourly_stats = hourly_stats.sort_values('hour_of_day')
+    
+    # Create visualization
+    title = 'Hourly Pattern of {metric.title()}'
+    line_viz = line_chart(
+        hourly_stats, 
+        x='hour_of_day', 
+        y='mean', 
+        title=title,
+        x_label='Hour of Day',
+        y_label='Average {metric.title()}'
+    )
+    
+    # Calculate time-of-day averages
+    morning_hours = list(range(6, 12))
+    afternoon_hours = list(range(12, 18))
+    evening_hours = list(range(18, 24))
+    night_hours = list(range(0, 6))
+    
+    morning_avg = hourly_stats[hourly_stats['hour_of_day'].isin(morning_hours)]['mean'].mean() if not hourly_stats.empty else None
+    afternoon_avg = hourly_stats[hourly_stats['hour_of_day'].isin(afternoon_hours)]['mean'].mean() if not hourly_stats.empty else None
+    evening_avg = hourly_stats[hourly_stats['hour_of_day'].isin(evening_hours)]['mean'].mean() if not hourly_stats.empty else None
+    night_avg = hourly_stats[hourly_stats['hour_of_day'].isin(night_hours)]['mean'].mean() if not hourly_stats.empty else None
+    
+    # Find peak and low hours
+    peak_hour_idx = hourly_stats['mean'].idxmax()
+    peak_hour = hourly_stats.loc[peak_hour_idx, 'hour_of_day']
+    peak_value = hourly_stats.loc[peak_hour_idx, 'mean']
+    
+    low_hour_idx = hourly_stats['mean'].idxmin()
+    low_hour = hourly_stats.loc[low_hour_idx, 'hour_of_day']
+    low_value = hourly_stats.loc[low_hour_idx, 'mean']
+    
+    # Return results
+    results = {{
+        'hourly_stats': hourly_stats.to_dict(orient='records'),
+        'morning_avg': morning_avg,
+        'afternoon_avg': afternoon_avg,
+        'evening_avg': evening_avg,
+        'night_avg': night_avg,
+        'peak_hour': peak_hour,
+        'peak_value': peak_value,
+        'low_hour': low_hour,
+        'low_value': low_value,
+        'visualization': line_viz
+    }}
 """
 
     return code

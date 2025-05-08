@@ -1,0 +1,42 @@
+field,type,min,max,freq_days,allowed,unit,editable,description
+provider_visit,frequency,,,30,,,yes,"Must occur monthly until 7th visit, then every 90 days while active"
+health_coach_visit,frequency,,,7,,,yes,Weekly for 6 weeks then every 14 days until 16 visits
+program_start_date,frequency,,,0,not_null,date,no,Single value within 28 days of 1st provider visit
+program_end_date,frequency,,,0,not_null,date,yes,Date of 7th provider visit or drop‑out
+active,categorical,,,,0|1,,yes,Patient currently active (1) or inactive (0)
+provider_visit_count,range,1,,,,visits,yes,Total provider visits > 1 except new patients
+health_coach_visit_count,range,1,,,,visits,yes,Total coach visits > 1 except new patients
+cancelled_visits,range,0,20,,not_null,visits,yes,Cancelled visit counter (0‑20)
+no_show_visits,range,0,20,,not_null,visits,yes,No‑show visit counter (0‑20)
+rescheduled_visits,range,0,20,,,visits,yes,Rescheduled visit counter (0‑20)
+insurance_plan,categorical,,,,not_null,,yes,Plan name must not be null
+insurance_type,categorical,,,,not_null,,yes,Plan type must not be null
+insurance_phone,categorical,,,,not_null,phone,yes,Plan phone must not be null
+glp1_full,categorical,,,,0|1,,yes,GLP‑1 full authorization (boolean)
+weight,range,70,500,30,,lb,yes,Measured at every provider visit
+height,range,48,84,365,,in,yes,Captured at baseline; rarely changes
+bmi,range,12,70,30,,,yes,Derived; extreme values can be waived
+systolic_pressure,range,90,180,60,,mmHg,yes,BP taken every other provider visit
+diastolic_pressure,range,60,110,60,,mmHg,yes,BP taken every other provider visit
+vitality_score,range,0,100,60,,,yes,Updated every 2 months until program complete
+heart_fit_score,range,10,80,,,ml/kg/min,yes,Optional VO2 max; no alerts if missing
+phq9,range,0,27,60,,,yes,Baseline & end; every 60 d if positive or dx
+gad7,range,0,21,60,,,yes,Same schedule as PHQ‑9
+total_cholesterol,range,100,300,60,,mg/dL,yes,
+hdl,range,20,100,60,,mg/dL,yes,
+ldl,range,50,250,60,,mg/dL,yes,
+triglycerides,range,50,500,60,,mg/dL,yes,
+glucose,range,60,200,60,,mg/dL,yes,
+a1c,range,4,14,60,,%,yes,
+apolipoprotein_b,range,40,140,60,,mg/dL,yes,
+alt,range,0,60,60,,U/L,yes,
+ast,range,0,60,60,,U/L,yes,
+vs_goal,range,10,40,365,,,yes,Vitality‑score goal; must exist OR weight_goal
+weight_goal,range,10,80,365,,lb,yes,Weight‑loss goal; must exist OR vs_goal
+provider_id,categorical,,,,not_null,,yes,Every patient must have an assigned provider
+provider,categorical,,,,not_null,,yes,Provider name must not be null
+health_coach_id,categorical,,,,not_null,,yes,Assigned health‑coach (id) must not be null
+health_coach,categorical,,,,not_null,,yes,Health‑coach name must not be null
+insurance_plan,categorical,,,,not_null,,yes,Insurance plan required
+insurance_type,categorical,,,,not_null,,yes,Insurance type required
+insurance_phone,categorical,,,,not_null,phone,yes,Insurance phone required
