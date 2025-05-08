@@ -3,6 +3,11 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+⚡️ Enhancement: Added GitHub Actions CI workflow with test coverage validation (60% threshold)
+✅ Test: Added unit tests for rule_loader duplicate handling and date normalization utilities
+✨ Feature: Refactored date normalization into reusable helper `normalize_date_series` for consistent date formatting
+🧪 Test: Added validation engine deep checks testing various rule types including categorical
+🛠️ Fix: Fixed test coverage on core utilities that handle date normalization and validation
 ⚡️ Enhancement: Added Health Scores table to display Vitality Score and Heart Fit Score data alongside visit information
 🐛 Fix: Normalized date formatting in Health Scores table to prevent duplicate entries due to inconsistent date formats
 🐛 Fix: Fixed issue with NaN dates appearing in Health Scores table by implementing regex-based date extraction
