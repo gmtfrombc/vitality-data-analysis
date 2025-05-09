@@ -399,21 +399,24 @@ class SyntheticDataGenerator:
 
                 # Add some noise to make it realistic while maintaining statistical properties
                 noise_factor = 0.05
-                weight = (
+                weight_kg = (
                     base_weight
                     + weight_trend
                     + np.random.normal(0, base_weight * noise_factor)
                 )
+                # Convert to pounds for imperial units
+                weight = weight_kg * 2.20462
+
                 bmi = base_bmi + (weight_trend / 10) + np.random.normal(0, 0.5)
                 sbp = base_sbp + np.random.normal(0, 3)
                 dbp = base_dbp + np.random.normal(0, 2)
 
-                # Derive height in meters from weight (kg) and BMI, then convert to cm
-                height_m = (weight / bmi) ** 0.5
-                height_cm = height_m * 100
+                # Derive height in meters from weight_kg and BMI, convert to inches
+                height_m = (weight_kg / bmi) ** 0.5
+                height_in = height_m * 39.3701
 
-                # Height as integer in cm
-                height_int = int(round(height_cm))
+                # Height as integer inches
+                height_int = int(round(height_in))
 
                 vitals_data.append(
                     (patient_id, measurement_date, weight, height_int, bmi, sbp, dbp)

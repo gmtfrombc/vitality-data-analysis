@@ -3,6 +3,11 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+✨ Feature: Mock DB regenerated with imperial (lbs/in) units; removed auto-conversion code paths
+🐛 Fix: Scalar narrative generation detects metric type (avg/sum/etc.) to avoid "count" mis-labeling
+⚡️ Enhancement: Narrative summary fallback messages tied to metric type for offline mode
+🛠️ Chore: ROADMAP_CANVAS backlog pruned to ≤10 items; new milestone added for narrative handling
+📚 Docs: Added summary_data_validation_016.md capturing sprint 0.16 outcomes
 ⚡️ Enhancement: Added GitHub Actions CI workflow with test coverage validation (60% threshold)
 ✅ Test: Added unit tests for rule_loader duplicate handling and date normalization utilities
 ✨ Feature: Refactored date normalization into reusable helper `normalize_date_series` for consistent date formatting

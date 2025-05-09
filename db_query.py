@@ -757,6 +757,7 @@ def get_patient_vitals(patient_id, start_date=None, end_date=None, db_path=DB_PA
 
     df = query_dataframe(query, params=tuple(params), db_path=db_path)
     # logger.debug("get_patient_vitals returned %s rows", len(df))
+
     return df
 
 
@@ -954,7 +955,9 @@ def get_all_vitals(db_path=DB_PATH):
         ORDER BY date DESC
     """
 
-    return query_dataframe(query, db_path=db_path)
+    df = query_dataframe(query, db_path=db_path)
+
+    return df
 
 
 def get_all_scores(db_path=DB_PATH):

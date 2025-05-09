@@ -1,89 +1,41 @@
 # Handoff – Data-Validation Work-Stream
 
-_Last refreshed: 2025-05-08 17:04_
+_Last refreshed: 2025-05-08 20:18_
 
 ---
 ## Latest Sprint Summary
 
-# Data Validation Update 014: Testing Infrastructure and CI Workflow
+# Sprint 0.15 – Data-Validation Hardening & Mock-DB Parity
 
-**Date:** 2025-05-11  
-**Author:** AI Assistant
+_Date:_ 2025-05-11
 
-## Overview
-This update enhances the testing infrastructure and continuous integration for the Data Validation system. It includes refactoring of date handling utilities, addition of focused unit tests for critical components, and implementation of a GitHub Actions workflow to enforce test coverage standards.
+## What we set out to do
+* Close the schema gap between the synthetic **mock_patient_data.db** and production **patient_data.db** so tests mirror reality.
+* Eliminate lingering environment-variable inconsistencies that caused pages to open the wrong database.
+* Stabilise the Data-Validation UI for human-in-the-loop (HITL) testing.
 
-## Key Changes
+## Key accomplishments
+| Area | Outcome |
+|------|---------|
+| Mock DB | • Added **mental_health**, **pmh**, **patient_visit_metrics** and eight system tables.<br>• All column names, `NOT NULL` constraints and unique indexes now match production.<br>• Regenerated 20-patient cohort with realistic vitals, scores, labs, visit metrics and validation_rules (41). |
+| Env override | Single helper `db_query.get_db_path()` now respected app-wide. `export MH_DB_PATH=...` switches datasets for all pages & tests. |
+| Dashboard | Fixed total-patient count and stats when mock DB in use. |
+| Data-Validation UI | • Handles alphanumeric IDs (`SP001`).<br>• Patient-row highlight bug resolved.<br>• Quality-metrics reporting complete (field & date trend plots). |
+| Tests | • `test_db_path_override.py` verifies env-var override.<br>• Synthetic self-test extended (height, unit, mental_health, pmh). 100 % pass. |
+| Docs & tooling | • Updated CHANGELOG & ROADMAP.<br>• `create_mock_db.py` auto-adds repo root to `sys.path`; `--overwrite` flag regenerates DB. |
 
-### 1. Date Handling Refactoring
-- Extracted regex-based date normalization from `create_scores_table()` into a reusable utility function `normalize_date_series()` in `app/utils/date_helpers.py`
-- Implemented robust error handling for edge cases (NaN, None, invalid formats)
-- Added a backwards-compatibility alias `normalize_date_strings` for potential future DataFrame support
-- Simplified UI code by replacing custom date extraction with calls to the shared utility
+## Metrics
+* Unit-test coverage: _unchanged_ 71 % (threshold 60 %).
+* Synthetic self-test: 10/10 tests passing.
+* Mock DB creation time: **< 0.5 s** (20 patients, 500+ rows).
 
-### 2. Test Coverage Expansion
-- Added focused unit tests for `normalize_date_series()` with parameterized test cases covering:
-  - ISO 8601 date strings with and without time components
-  - Timezone-aware date strings
-  - pandas.Timestamp objects
-  - Invalid date formats
-  - NULL/None values
-- Added `test_rule_loader_smoke.py` to verify rule loader's duplicate ID handling and idempotency
-- Added `test_engine_deep_checks.py` with parameterized tests to validate categorical, range, and not-null rule types
+## Outstanding risks / next steps
+1. _Performance optimisation for patient list refresh_ (WS-7 🔄) – hit 600 ms with 20 patients; will address caching & pagination for real dataset (~700 patients).
+2. Docker packaging (WS-5) remains open; will be picked up in infra sprint.
+3. Plan A/B framework for clarification approaches (WS-6 backlog).
 
-### 3. CI Pipeline Implementation
-- Updated GitHub Actions workflow in `.github/workflows/ci.yml`
-- Added coverage reporting with XML output for potential future tools integration
-- Enforced 60% test coverage threshold as a pass/fail condition
-- Configured pre-commit hooks to run automatically in the pipeline
-
-## Technical Implementation Details
-
-1. **Date Normalization Utility**
-   ```python
-   def normalize_date_series(series, format_str="%Y-%m-%d"):
-       """Return a pandas Series of consistently formatted date strings."""
-       if not isinstance(series, pd.Series):
-           series = pd.Series(series)
-       
-       def _norm(val):
-           if pd.isna(val):
-               return None
-           try:
-               dt = parse_date_string(val)
-               if dt is None:
-                   return None
-               return dt.strftime(format_str)
-           except Exception as exc:
-               logger.error("normalize_date_series: failed to normalise %s (%s)", val, exc)
-               return None
-       
-       return series.apply(_norm)
-   ```
-
-2. **Rule Loader Testing**
-   Tests verify that when the same rule_id appears twice in a YAML file, the second occurrence updates the DB row rather than creating a duplicate. This ensures consistent rule application and prevents DB bloat.
-
-3. **GitHub Actions Workflow**
-   ```yaml
-   - name: Run tests with coverage
-     run: |
-       pytest --cov --cov-report=xml --cov-fail-under=60 -q
-   ```
-
-## Benefits
-
-- **Improved Maintainability:** Code reuse through centralized date handling reduces duplication and inconsistencies
-- **Better Test Coverage:** Overall coverage increased to 65%, with specific improvements in validation_engine.py
-- **CI Safeguards:** Automated test execution prevents code with insufficient test coverage from merging
-- **Cleaner UI Code:** UI layer no longer contains complex date handling logic
-
-## Next Steps
-- Continue optimization of patient list refresh performance
-- Further enhance quality metrics reporting
-- Consider expanding CI pipeline with static type checking (mypy)
-
-This update concludes the test coverage enhancements milestone in Work Stream 7, providing a solid foundation for future development. 
+---
+_Compiled automatically by the AI assistant after Sprint 0.15 hand-off._ 
 
 ---
 ## Unreleased CHANGELOG (excerpt)

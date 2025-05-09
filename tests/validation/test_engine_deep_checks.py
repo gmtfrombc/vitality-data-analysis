@@ -19,12 +19,12 @@ from tests.validation.test_engine_rules import mock_validation_db  # noqa: F401
         (4, "WEIGHT_RANGE_CHECK"),
     ],
 )
-def test_engine_flags_expected_rules(patient_id, expected_rule):
+def test_engine_flags_expected_rules(patient_id, expected_rule, db_path):
     """Engine should raise / not raise the specified rules per patient."""
-    engine = ValidationEngine(mock_validation_db)
+    engine = ValidationEngine(db_path)
     engine.validate_patient(str(patient_id))
 
-    conn = sqlite3.connect(mock_validation_db)
+    conn = sqlite3.connect(db_path)
     df = pd.read_sql_query(
         "SELECT rule_id FROM validation_results WHERE patient_id = ?",
         conn,
@@ -37,19 +37,19 @@ def test_engine_flags_expected_rules(patient_id, expected_rule):
     if expected_rule is None:
         assert not rule_ids, f"Patient {patient_id} unexpectedly has issues: {rule_ids}"
     else:
-        assert expected_rule in rule_ids, (
-            f"Patient {patient_id} missing expected rule {expected_rule}; got {rule_ids}"
-        )
+        assert (
+            expected_rule in rule_ids
+        ), f"Patient {patient_id} missing expected rule {expected_rule}; got {rule_ids}"
 
 
 @pytest.mark.validation
-def test_allowed_values_check_detects_invalid_value():
+def test_allowed_values_check_detects_invalid_value(db_path):
     """Insert a patient with active = 2 to trigger ACTIVE_CATEGORICAL_CHECK."""
     # Prepare DB – add bad patient row
-    conn = sqlite3.connect(mock_validation_db)
+    conn = sqlite3.connect(db_path)
 
     # make sure rules already seeded
-    initialize_validation_rules(mock_validation_db)
+    initialize_validation_rules(db_path)
 
     cursor = conn.cursor()
     cursor.execute(
@@ -61,10 +61,10 @@ def test_allowed_values_check_detects_invalid_value():
     conn.commit()
     conn.close()
 
-    engine = ValidationEngine(mock_validation_db)
+    engine = ValidationEngine(db_path)
     engine.validate_patient("5")
 
-    conn = sqlite3.connect(mock_validation_db)
+    conn = sqlite3.connect(db_path)
     df = pd.read_sql_query(
         "SELECT rule_id FROM validation_results WHERE patient_id = 5",
         conn,

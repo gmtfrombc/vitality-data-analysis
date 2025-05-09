@@ -673,22 +673,23 @@ class DataAnalysisAssistant(param.Parameterized):
 
         if _in_test or not os.getenv("OPENAI_API_KEY"):
             logger.info("Test environment detected - short circuit workflow")
-            # Jump straight to stage expected by smoke tests
-            self.current_stage = self.STAGE_EXECUTION
+            # Accelerate workflow indicators but let regular processing pipeline run
+            self.current_stage = self.STAGE_INITIAL
             self._update_stage_indicators()
             self._update_status("Test mode - workflow accelerated")
-            return
+            # Do NOT early-return – continue into the standard multi-stage loop below.
 
-        # Reset workflow states
-        self.clarifying_pane.objects = []
-        self.clarifying_input.visible = False
-        self.code_generation_pane.objects = []
-        self.execution_pane.objects = []
+        else:
+            # Reset workflow states (online / normal path)
+            self.clarifying_pane.objects = []
+            self.clarifying_input.visible = False
+            self.code_generation_pane.objects = []
+            self.execution_pane.objects = []
 
-        # Reset result displays
-        self.result_pane.object = "Enter a query to analyze data"
-        self.code_display.object = ""
-        self.visualization_pane.object = hv.Div("")
+            # Reset result displays
+            self.result_pane.object = "Enter a query to analyze data"
+            self.code_display.object = ""
+            self.visualization_pane.object = hv.Div("")
 
         try:
             # Set up workflow
@@ -904,18 +905,51 @@ class DataAnalysisAssistant(param.Parameterized):
                     ),
                 }
 
-        elif "active patients" in query:
-            # Get active patients data
+        # Add sample data collection for all query types
+        # Initialize patients_df if not already defined in another branch
+        if "patients_df" not in locals():
+            patients_df = db_query.get_all_patients()
+
+        # Store samples based on query intent
+        if "active patients" in query and "active_patients" not in samples:
+            # If we handle "active patients" earlier, we should still collect samples
             active_patients = patients_df[patients_df["active"] == 1]
             samples["active_patients"] = active_patients.head(5)
             samples["active_count"] = len(active_patients)
-
+        elif "bmi" in query and "patients" not in samples:
+            # Add samples for BMI queries
+            samples["patients"] = patients_df.head(5)
         else:
             # Default to sample of general patient data
             samples["patients"] = patients_df.head(5)
 
         self.data_samples = samples
         logger.info(f"Retrieved {len(samples)} data sample types")
+
+    # --------------------------------------------------
+    # Visualization helper methods
+    # --------------------------------------------------
+
+    def _create_count_visualization(self, count: int, title: str):
+        """Return a simple Panel/HoloViews visualization for a single numeric count."""
+        try:
+            # Display the count prominently in the centre
+            html = f"""<div style='display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;'>
+            <span style='font-size:48px;font-weight:bold;color:#2c3e50'>{count}</span>
+            <span style='font-size:16px;color:#7f8c8d'>{title}</span>
+            </div>"""
+            return hv.Div(html)
+        except Exception as exc:
+            logger.error("Error creating count visualization: %s", exc, exc_info=True)
+            return hv.Div(str(count))
+
+    def _create_histogram(self, df: pd.DataFrame, column: str, title: str):
+        """Wrapper around utils.plots.histogram with graceful fallback."""
+        try:
+            return histogram(df, column, bins=20, title=title)
+        except Exception as exc:
+            logger.error("Error creating histogram: %s", exc, exc_info=True)
+            return hv.Div("Visualization error")
 
     def _display_data_samples(self):
         """Display the retrieved data samples to the user"""
@@ -1017,12 +1051,12 @@ class DataAnalysisAssistant(param.Parameterized):
             intent = self._get_query_intent_safe(self.query_text)
 
             # Always store the original query for downstream processing
-            if isinstance(intent, QueryIntent):
-                # Try to attach raw query string for downstream heuristics
+            if isinstance(intent, QueryIntent) and hasattr(intent, "raw_query"):
+                # Attach raw query if the field exists and is mutable
                 try:
                     intent.raw_query = self.query_text
-                except AttributeError:
-                    # Safe no-op when attribute cannot be set (frozen model)
+                except Exception:
+                    # Some Pydantic models are frozen – ignore
                     pass
 
             # Update status for code generation
@@ -1053,7 +1087,7 @@ class DataAnalysisAssistant(param.Parameterized):
                 f"Error generating AI-powered analysis code: {str(e)}", exc_info=True
             )
 
-            # Fall back to rule-based code generation
+            # Fall back to rule-based code generation (deterministic)
             self.generated_code = self._generate_fallback_code()
             logger.info("Generated fallback rule-based analysis code")
 
@@ -1866,12 +1900,31 @@ Intermediate results and visualisations are still shown so you can audit the pro
                         )
 
                         gender_series = pie_data.set_index("Gender")["Count"]
-                        gender_pie = gender_series.hvplot.pie(
-                            title="Active Patients by Gender",
-                            height=300,
-                            width=300,
-                            legend="right",
-                        )
+                        try:
+                            if hasattr(gender_series.hvplot, "pie"):
+                                gender_pie = gender_series.hvplot.pie(
+                                    title="Active Patients by Gender",
+                                    height=300,
+                                    width=300,
+                                    legend="right",
+                                )
+                            else:
+                                # Fallback to simple bar chart when pie not available
+                                gender_pie = gender_series.hvplot.bar(
+                                    title="Active Patients by Gender",
+                                    height=300,
+                                    width=400,
+                                    color="Count",
+                                )
+                        except Exception as _plot_exc:
+                            logger.warning(
+                                "Pie plot failed – using bar fallback: %s", _plot_exc
+                            )
+                            gender_pie = gender_series.hvplot.bar(
+                                title="Active Patients by Gender",
+                                height=300,
+                                width=400,
+                            )
                         result_panels.append(pn.pane.HoloViews(gender_pie))
 
                 # Program duration if available
@@ -2014,14 +2067,56 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 or self._show_narrative_checkbox.value
             ):
                 try:
+                    # Determine an appropriate metric label based on the
+                    # detected analysis type (via stored query_intent when
+                    # available) or simple keyword heuristics.  Passing an
+                    # accurate label helps the LLM craft a correct narrative
+                    # instead of assuming every scalar is a *count*.
+
+                    metric_label = "count"  # sensible default
+
+                    _intent = getattr(self, "query_intent", None)
+                    if _intent is not None:
+                        try:
+                            atype = (_intent.analysis_type or "").lower()
+                            if atype in {"average", "avg", "mean"}:
+                                metric_label = "average"
+                            elif atype in {"sum", "total"}:
+                                metric_label = "sum"
+                            elif atype in {"percent_change", "percentage_change"}:
+                                metric_label = "percent_change"
+                        except Exception:
+                            pass  # be resilient – fall back to default
+
+                    # Quick keyword heuristic as a fallback (handles cases
+                    # where query_intent is missing or failed to parse).
+                    _ql = query.lower()
+                    if ("average" in _ql or "mean" in _ql) and metric_label == "count":
+                        metric_label = "average"
+
                     narrative = ai.interpret_results(
-                        query,
-                        {"count": result_val},
-                        [],
+                        query, {metric_label: result_val}, []
                     )
-                    result["summary"] = (
-                        narrative or f"There are {int(result_val)} active patients."
-                    )
+
+                    # Provide a sensible plain-text fallback aligned with the
+                    # metric label we just determined.
+                    if narrative:
+                        result["summary"] = narrative
+                    else:
+                        if metric_label == "average":
+                            result["summary"] = (
+                                f"The average value is {result_val:.1f}."
+                            )
+                        elif metric_label == "sum":
+                            result["summary"] = f"The total is {result_val:.1f}."
+                        elif metric_label == "percent_change":
+                            result["summary"] = (
+                                f"The percent change is {result_val:.1f}%."
+                            )
+                        else:
+                            result["summary"] = (
+                                f"There are {int(result_val)} active patients."
+                            )
                 except Exception as _exc:
                     # Fallback to plain summary if AI fails
                     result["summary"] = f"There are {int(result_val)} active patients."
@@ -2136,12 +2231,15 @@ Intermediate results and visualisations are still shown so you can audit the pro
         else:
             results_markdown = "### Analysis Complete\n\nResults are available in the Visualization tab."
 
+        # Helper flag
+        _ir_is_dict = isinstance(self.intermediate_results, dict)
+
         # Display visualizations in the Visualization tab
         visualization_displayed = False
 
         # Check for correlation matrix visualization
         if (
-            isinstance(self.intermediate_results, dict)
+            _ir_is_dict
             and "visualization" in self.intermediate_results
             and "correlation_matrix" in self.intermediate_results
         ):
@@ -2179,7 +2277,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 results_markdown = result_md
 
         # Handle conditional correlation results
-        elif "correlation_by_group" in self.intermediate_results:
+        elif _ir_is_dict and "correlation_by_group" in self.intermediate_results:
             correlation_by_group = self.intermediate_results["correlation_by_group"]
             method = self.intermediate_results.get("method", "pearson")
             overall_correlation = self.intermediate_results.get("overall_correlation")
@@ -2231,7 +2329,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
             results_markdown = result_md
 
         # Handle time-series correlation results
-        elif "correlations_over_time" in self.intermediate_results:
+        elif _ir_is_dict and "correlations_over_time" in self.intermediate_results:
             correlations_over_time = self.intermediate_results["correlations_over_time"]
             method = self.intermediate_results.get("method", "pearson")
             period = self.intermediate_results.get("period", "month")
@@ -2309,8 +2407,10 @@ Intermediate results and visualisations are still shown so you can audit the pro
             pn.pane.Markdown(results_markdown), self.feedback_widget
         )
 
-        # Update the result pane with combined content
-        self.result_pane.object = results_column
+        # We cannot assign a Column to a Markdown pane.  Display the summary
+        # markdown and omit the interactive feedback widget in head-less test
+        # mode (a future refactor can swap result_pane to a generic container).
+        self.result_pane.object = results_markdown
 
         # --------------------------------------------------
         # Log interaction to SQLite for WS-6 feedback loop
@@ -2826,6 +2926,48 @@ Intermediate results and visualisations are still shown so you can audit the pro
         self.analysis_result = {}
 
         self._update_status("Interface reset")
+
+    # --------------------------------------------------
+    # Minimal deterministic fallback when AI code-gen fails
+    # --------------------------------------------------
+
+    def _generate_fallback_code(self) -> str:
+        """Return a tiny snippet that just calls the legacy rule-engine.
+
+        This keeps the UI happy when LLM code generation is unavailable.
+        """
+        return (
+            "import db_query\n"
+            "from app.pages.data_assistant import DataAnalysisAssistant\n\n"
+            "# Use the same quick pandas pipeline used in offline mode\n"
+            "assistant = DataAnalysisAssistant()\n"
+            "assistant._generate_analysis()\n"
+            "results = assistant.analysis_result\n"
+        )
+
+    # --------------------------------------------------
+    # Unit-handling helpers
+    # --------------------------------------------------
+
+    @staticmethod
+    def _to_lbs(series: pd.Series) -> pd.Series:
+        """Return *series* converted to pounds when values are likely in kg.
+
+        Heuristic: if the median value is < 100 we assume kilograms and multiply
+        by 2.20462.  Otherwise we assume the data are already in pounds.
+        """
+        if series.empty:
+            return series
+
+        try:
+            median_val = series.median()
+            if pd.isna(median_val):
+                return series
+            if median_val < 100:  # very unlikely for adult body-weight lbs
+                return series * 2.20462
+            return series
+        except Exception:
+            return series
 
 
 def data_assistant_page():

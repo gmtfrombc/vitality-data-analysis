@@ -19,7 +19,7 @@ Provide healthcare teams with an interactive, AI-assisted data exploration tool 
 | ID | Work Stream | Goal | Milestones | Target Quarter |
 |----|-------------|------|------------|----------------|
 | WS-1 | **Stability & Refactor** | Solid baseline with tests and CI | ✔ Persist saved questions (file) <br> ✔ Unit test coverage ≥ 60 % <br> ✔ Golden query harness <br> ☐ Refactor duplicated code | Q2 2024 |
-| WS-2 | **Hybrid AI Engine** | Natural-language analytics powered by GPT | ✔ OpenAI integration <br> ✔ Intent classification API <br> ✔ Richer code templates (var/std, pct-change, top-N, GROUP BY, Multi-Metric) <br> ✔ Date range filtering <br> ✔ Multi-metric correlation analysis <br> ✔ Enhanced correlation analysis (conditional, time-series) <br> ✔ Intent engine hardening (confidence scoring, synonym map, tricky-query harness) <br> ✔ Slot-based Smart Clarifier with fallback template <br> ✔ Template coverage (auto-viz hooks, top-N chart) | Q2–Q3 2024 |
+| WS-2 | **Hybrid AI Engine** | Natural-language analytics powered by GPT | ✔ OpenAI integration <br> ✔ Intent classification API <br> ✔ Richer code templates (var/std, pct-change, top-N, GROUP BY, Multi-Metric) <br> ✔ Date range filtering <br> ✔ Multi-metric correlation analysis <br> ✔ Enhanced correlation analysis (conditional, time-series) <br> ✔ Intent engine hardening (confidence scoring, synonym map, tricky-query harness) <br> ✔ Slot-based Smart Clarifier with fallback template <br> ✔ Template coverage (auto-viz hooks, top-N chart) <br> ✔ Scalar-metric narrative handling (avg/sum vs count) | Q2–Q3 2024 |
 | WS-3 | **Data & Storage** | Scalable, durable persistence | ✔ Move saved questions to SQLite (tests + read/write) <br> ✔ Add migrations <br> ✔ Incremental ETL & Import panel with audit logging <br> ☐ Multiple-user support | Q3 2024 |
 | WS-4 | **UX & Visualization** | Intuitive interface & dashboards | ✔ Smart clarifier upgrade (slot-based follow-ups) <br> ✔ Correlation heat-map template <br> ✔ Enhanced correlation visualizations (conditional heatmaps, time-series plots) <br> ✔ Auto-visualisation mapper <br> ☐ Help & onboarding tour | Q3 2024 |
 | WS-5 | **Cloud Deployment** | CI/CD & managed hosting | ☐ Dockerize app <br> ☐ GitHub Actions pipeline <br> ☐ Deploy to AWS/GCP <br> ☐ Observability (logging, metrics) | Q4 2024 |
@@ -30,17 +30,14 @@ Legend: ✔ = done ☐ = pending 🔄 = in progress
 
 ---
 ## 4. Backlog (Next-Up Tasks)
-- [x] **AI:** Intent engine hardening for ask-anything reliability (#ai)
-- [x] **AI:** Expand code-generation template coverage to 100 % common stats (#ai)
 - [ ] **AI:** Confidence-based follow-up & generic fallback template (#ai)
 - [ ] **UI:** Responsive layout overhaul – defer until multi-user support or v1 launch (#ux)
 - [ ] **UI:** Drag-and-drop chart builder – defer until multi-user support or v1 launch (#ux)
-- [x] **Feedback:** Query/response logging MVP (#feedback)
 - [ ] **Perf:** In-memory schema introspection cache (#perf)
 - [ ] **Dev:** IPython `%assistant` magic for rapid notebook testing (#dev)
-- [ ] **Refactor:** Extract plotting utilities into `plots.py` (#code-health) <br> [ ] **Docs:** Consolidate rolling handoff doc for assistants (#devx)
+- [ ] **Refactor:** Extract plotting utilities into `plots.py` (#code-health)
+- [ ] **Docs:** Consolidate rolling handoff doc for assistants (#devx)
 - [ ] **Deployment:** Draft minimal Dockerfile & GH Action (#devops)
-- [x] **QA:** Synthetic "golden‑dataset" self‑test loop (#qa)
 - [ ] **Metrics:** Performance dashboard for assistant evaluation (#feedback)
 - [ ] **Testing:** A/B testing framework for clarification approaches (#feedback)
 
@@ -58,7 +55,7 @@ Legend: ✔ = done ☐ = pending 🔄 = in progress
 ---
 ## 6. Meta
 - **Document owner:** @gmtfr  
-- **Last updated:** 2025-05-11 # Sprint 0.15 – Mock DB parity & env-var fixes
+- **Last updated:** 2025-05-12 # Sprint 0.16 – Imperial units & narrative fix
 - **Edit instructions for AI assistants:**  
   • Maintain markdown table formatting.  
   • Use ✔/☐/🔄 symbols for status.  
