@@ -41,39 +41,93 @@ logger = logging.getLogger("synthetic_self_test")
 SCHEMA_SQL = """
 CREATE TABLE patients (
     id TEXT PRIMARY KEY,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    birth_date TEXT,
     gender TEXT,
-    age INTEGER,
     ethnicity TEXT,
-    active INTEGER
+    engagement_score INTEGER,
+    program_start_date TEXT,
+    program_end_date TEXT,
+    active INTEGER DEFAULT 0,
+    etoh INTEGER DEFAULT 0,
+    tobacco INTEGER DEFAULT 0,
+    glp1_full INTEGER DEFAULT 0,
+    provider_id INTEGER,
+    health_coach_id INTEGER,
+    lesson_status TEXT,
+    lessons_completed INTEGER,
+    provider_visits INTEGER,
+    health_coach_visits INTEGER,
+    cancelled_visits INTEGER,
+    no_show_visits INTEGER,
+    rescheduled_visits INTEGER,
+    roles TEXT
 );
 
 CREATE TABLE vitals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id TEXT,
+    vital_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id TEXT NOT NULL,
     date TEXT,
     weight REAL,
+    height INTEGER,
     bmi REAL,
     sbp INTEGER,
     dbp INTEGER,
-    FOREIGN KEY (patient_id) REFERENCES patients(id)
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
 );
 
 CREATE TABLE scores (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id TEXT,
+    score_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id TEXT NOT NULL,
     date TEXT,
     score_type TEXT,
-    score_value REAL,
-    FOREIGN KEY (patient_id) REFERENCES patients(id)
+    score_value INTEGER,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
 );
 
 CREATE TABLE lab_results (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id TEXT,
+    lab_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id TEXT NOT NULL,
     date TEXT,
     test_name TEXT,
-    result_value REAL,
-    units TEXT,
+    value REAL,
+    unit TEXT,
+    reference_range TEXT,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+);
+
+CREATE TABLE pmh (
+    pmh_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id TEXT NOT NULL,
+    condition TEXT,
+    onset_date TEXT,
+    status TEXT,
+    notes TEXT,
+    code TEXT,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+);
+
+CREATE TABLE mental_health (
+    mh_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id TEXT NOT NULL,
+    date TEXT,
+    assessment_type TEXT,
+    score INTEGER,
+    risk_level TEXT,
+    notes TEXT,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+);
+
+CREATE TABLE patient_visit_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id TEXT NOT NULL,
+    provider_visits INTEGER DEFAULT 0,
+    health_coach_visits INTEGER DEFAULT 0,
+    cancelled_visits INTEGER DEFAULT 0,
+    no_show_visits INTEGER DEFAULT 0,
+    rescheduled_visits INTEGER DEFAULT 0,
+    last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (patient_id) REFERENCES patients(id)
 );
 
@@ -85,6 +139,129 @@ CREATE TABLE test_runs (
     passed_tests INTEGER,
     details TEXT
 );
+
+-- Add all other tables needed by the application
+CREATE TABLE saved_questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    query TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE assistant_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL,
+    intent_json TEXT,
+    generated_code TEXT,
+    result_summary TEXT,
+    duration_ms INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE assistant_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT DEFAULT 'anon',
+    question TEXT NOT NULL,
+    rating TEXT CHECK(rating IN ('up','down')) NOT NULL,
+    comment TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE assistant_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    metric_type TEXT NOT NULL,
+    metric_name TEXT NOT NULL,
+    metric_value REAL,
+    metric_details TEXT,
+    period_start TEXT,
+    period_end TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(metric_type, metric_name, period_start, period_end)
+);
+
+CREATE TABLE validation_results (
+    result_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id TEXT NOT NULL,
+    patient_id TEXT NOT NULL,
+    field_name TEXT,
+    issue_description TEXT NOT NULL,
+    detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status TEXT DEFAULT 'open',
+    FOREIGN KEY (rule_id) REFERENCES validation_rules(rule_id)
+);
+
+CREATE TABLE data_corrections (
+    correction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    result_id INTEGER,
+    patient_id TEXT NOT NULL,
+    field_name TEXT NOT NULL,
+    table_name TEXT NOT NULL,
+    record_id INTEGER NOT NULL,
+    original_value TEXT,
+    new_value TEXT NOT NULL,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    applied_by TEXT,
+    FOREIGN KEY (result_id) REFERENCES validation_results(result_id)
+);
+
+CREATE TABLE correction_audit (
+    audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    correction_id INTEGER,
+    result_id INTEGER,
+    action_type TEXT NOT NULL,
+    action_reason TEXT,
+    action_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    action_by TEXT,
+    FOREIGN KEY (correction_id) REFERENCES data_corrections(correction_id),
+    FOREIGN KEY (result_id) REFERENCES validation_results(result_id)
+);
+
+CREATE TABLE validation_rules (
+    rule_id TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    rule_type TEXT NOT NULL CHECK (rule_type IN (
+        'missing_data',
+        'range_check',
+        'consistency_check',
+        'categorical_check',
+        'not_null',
+        'conditional_not_null'
+    )),
+    validation_logic TEXT NOT NULL,
+    parameters TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    is_active INTEGER
+);
+
+CREATE TABLE ingest_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    imported_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    patients INTEGER DEFAULT 0,
+    vitals INTEGER DEFAULT 0,
+    scores INTEGER DEFAULT 0,
+    mental_health INTEGER DEFAULT 0,
+    lab_results INTEGER DEFAULT 0,
+    pmh INTEGER DEFAULT 0
+);
+
+-- Create indexes for performance
+CREATE INDEX idx_patient_visit_metrics_patient_id ON patient_visit_metrics(patient_id);
+CREATE INDEX idx_feedback_created_at ON assistant_feedback(created_at DESC);
+CREATE INDEX idx_feedback_rating ON assistant_feedback(rating);
+CREATE INDEX idx_assistant_logs_created_at ON assistant_logs(created_at);
+CREATE INDEX idx_assistant_metrics_type_period ON assistant_metrics(metric_type, period_end);
+CREATE INDEX idx_validation_results_patient_id ON validation_results(patient_id);
+CREATE INDEX idx_validation_results_status ON validation_results(status);
+CREATE INDEX idx_data_corrections_patient_id ON data_corrections(patient_id);
+
+-- Create unique indexes for data integrity
+CREATE UNIQUE INDEX uq_vitals_patient_date ON vitals(patient_id, date);
+CREATE UNIQUE INDEX uq_scores_patient_date_type ON scores(patient_id, date, score_type);
+CREATE UNIQUE INDEX uq_mh_patient_date_type ON mental_health(patient_id, date, assessment_type);
+CREATE UNIQUE INDEX uq_lab_patient_date_test ON lab_results(patient_id, date, test_name);
 """
 
 
@@ -110,6 +287,8 @@ class SyntheticDataGenerator:
         vitals_data = []
         scores_data = []
         lab_results_data = []
+        mental_health_data = []
+        pmh_data = []
 
         # Define our synthetic cohort
         # 20 patients with known demographics and statistical properties
@@ -129,7 +308,69 @@ class SyntheticDataGenerator:
             # 15 active, 5 inactive
             active = active_status[1] if i <= 15 else active_status[0]
 
-            patients_data.append((patient_id, gender, age, ethnicity, active))
+            # Simple deterministic names
+            first_name = f"Patient{i:03d}"
+            last_name = "Test"
+
+            # Calculate birth date from age
+            birth_year = 2025 - age
+            birth_date = f"{birth_year}-01-01"
+
+            # Program details
+            program_start = "2025-01-01"
+            program_end = None if active == 1 else "2025-03-15"
+            engagement_score = 85 if active == 1 else 40
+
+            # Risk factors - more common in inactive patients
+            etoh = 1 if (i % 3 == 0) else 0
+            tobacco = 1 if (i % 4 == 0) else 0
+            glp1_full = 1 if (i % 5 == 0) else 0
+
+            # Provider info
+            provider_id = (i % 3) + 1
+            health_coach_id = (i % 2) + 1
+
+            # Program progress
+            lesson_status = "Completed" if active == 1 else "In Progress"
+            lessons_completed = 12 if active == 1 else (i % 7) + 2
+
+            # Visit history
+            provider_visits = (i % 4) + 1
+            health_coach_visits = (i % 5) + 1
+            cancelled_visits = 0 if active == 1 else (i % 3)
+            no_show_visits = 0 if active == 1 else (i % 2)
+            rescheduled_visits = (i % 2) if active == 1 else (i % 4)
+
+            # Role (all patients are 'patient')
+            roles = "patient"
+
+            patients_data.append(
+                (
+                    patient_id,
+                    first_name,
+                    last_name,
+                    birth_date,
+                    gender,
+                    ethnicity,
+                    engagement_score,
+                    program_start,
+                    program_end,
+                    active,
+                    etoh,
+                    tobacco,
+                    glp1_full,
+                    provider_id,
+                    health_coach_id,
+                    lesson_status,
+                    lessons_completed,
+                    provider_visits,
+                    health_coach_visits,
+                    cancelled_visits,
+                    no_show_visits,
+                    rescheduled_visits,
+                    roles,
+                )
+            )
 
             # Generate vitals for each patient (6 months of data, monthly measurements)
             base_date = datetime(2025, 1, 1)
@@ -167,9 +408,101 @@ class SyntheticDataGenerator:
                 sbp = base_sbp + np.random.normal(0, 3)
                 dbp = base_dbp + np.random.normal(0, 2)
 
+                # Derive height in meters from weight (kg) and BMI, then convert to cm
+                height_m = (weight / bmi) ** 0.5
+                height_cm = height_m * 100
+
+                # Height as integer in cm
+                height_int = int(round(height_cm))
+
                 vitals_data.append(
-                    (patient_id, measurement_date, weight, bmi, sbp, dbp)
+                    (patient_id, measurement_date, weight, height_int, bmi, sbp, dbp)
                 )
+
+                # Generate past medical history entries (1-3 conditions per patient)
+                medical_conditions = [
+                    "Hypertension",
+                    "Type 2 Diabetes",
+                    "Hyperlipidemia",
+                    "Obesity",
+                    "Depression",
+                    "Anxiety",
+                    "Asthma",
+                    "COPD",
+                    "Arthritis",
+                    "Hypothyroidism",
+                ]
+
+                # Each patient gets 1-3 random conditions
+                # 1-3 conditions based on patient ID
+                num_conditions = min(3, max(1, i % 4))
+
+                for j in range(num_conditions):
+                    condition = medical_conditions[(i + j) % len(medical_conditions)]
+                    # Onset between 1-5 years ago
+                    years_ago = 1 + (i % 5)
+                    onset_date = (base_date - timedelta(days=365 * years_ago)).strftime(
+                        "%Y-%m-%d"
+                    )
+                    status = (
+                        "Active" if i % 3 != 0 else "Resolved"
+                    )  # 2/3 active, 1/3 resolved
+
+                    pmh_data.append(
+                        (
+                            patient_id,
+                            condition,
+                            onset_date,
+                            status,
+                            "Diagnosed by Dr. Smith",
+                            "",
+                        )
+                    )
+
+                # Generate mental health assessments (PHQ-9 and GAD-7)
+                assessment_types = ["PHQ-9", "GAD-7"]
+
+                for assessment_type in assessment_types:
+                    # Base score - higher for inactive patients
+                    base_score = 10 if active == 1 else 14
+                    # Improvement trend for active patients
+                    score_trend = -0.8 * month if active == 1 else -0.2 * month
+                    score = max(
+                        0, round(base_score + score_trend + np.random.normal(0, 1))
+                    )
+
+                    # Add risk level based on score
+                    if assessment_type == "PHQ-9":
+                        if score <= 4:
+                            risk_level = "Minimal"
+                        elif score <= 9:
+                            risk_level = "Mild"
+                        elif score <= 14:
+                            risk_level = "Moderate"
+                        elif score <= 19:
+                            risk_level = "Moderately Severe"
+                        else:
+                            risk_level = "Severe"
+                    else:  # GAD-7
+                        if score <= 4:
+                            risk_level = "Minimal"
+                        elif score <= 9:
+                            risk_level = "Mild"
+                        elif score <= 14:
+                            risk_level = "Moderate"
+                        else:
+                            risk_level = "Severe"
+
+                    mental_health_data.append(
+                        (
+                            patient_id,
+                            measurement_date,
+                            assessment_type,
+                            score,
+                            risk_level,
+                            f"Self-reported {assessment_type}",
+                        )
+                    )
 
                 # Generate scores (PHQ-9 for mental health, A1C for diabetes)
                 # PHQ-9 scores - slight improvement for active patients
@@ -182,26 +515,41 @@ class SyntheticDataGenerator:
                 a1c_trend = -0.1 * month if active == 1 else 0
                 a1c_score = max(4.0, a1c_base + a1c_trend + np.random.normal(0, 0.2))
 
-                scores_data.append((patient_id, measurement_date, "PHQ-9", phq9_score))
-                scores_data.append((patient_id, measurement_date, "A1C", a1c_score))
+                # Convert to integer scores
+                phq9_score_int = int(round(phq9_score))
+                # Store A1C as integer
+                a1c_score_int = int(round(a1c_score * 10))
+
+                scores_data.append(
+                    (patient_id, measurement_date, "PHQ-9", phq9_score_int)
+                )
+                scores_data.append((patient_id, measurement_date, "A1C", a1c_score_int))
 
                 # Add lab results
+                cholesterol = 180 + np.random.normal(0, 10)
+                reference_range = "125-200 mg/dL"
+
                 lab_results_data.append(
                     (
                         patient_id,
                         measurement_date,
                         "Cholesterol",
-                        180 + np.random.normal(0, 10),
+                        cholesterol,
                         "mg/dL",
+                        reference_range,
                     )
                 )
+                glucose = 100 + (10 * (a1c_score - 5)) + np.random.normal(0, 5)
+                reference_range = "70-99 mg/dL"
+
                 lab_results_data.append(
                     (
                         patient_id,
                         measurement_date,
                         "Glucose",
-                        100 + (10 * (a1c_score - 5)) + np.random.normal(0, 5),
+                        glucose,
                         "mg/dL",
+                        reference_range,
                     )
                 )
 
@@ -209,12 +557,18 @@ class SyntheticDataGenerator:
         conn = sqlite3.connect(self.db_path)
 
         conn.executemany(
-            "INSERT INTO patients (id, gender, age, ethnicity, active) VALUES (?, ?, ?, ?, ?)",
+            """INSERT INTO patients (
+                id, first_name, last_name, birth_date, gender, ethnicity, 
+                engagement_score, program_start_date, program_end_date, active, 
+                etoh, tobacco, glp1_full, provider_id, health_coach_id, 
+                lesson_status, lessons_completed, provider_visits, health_coach_visits, 
+                cancelled_visits, no_show_visits, rescheduled_visits, roles
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             patients_data,
         )
 
         conn.executemany(
-            "INSERT INTO vitals (patient_id, date, weight, bmi, sbp, dbp) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO vitals (patient_id, date, weight, height, bmi, sbp, dbp) VALUES (?, ?, ?, ?, ?, ?, ?)",
             vitals_data,
         )
 
@@ -224,8 +578,41 @@ class SyntheticDataGenerator:
         )
 
         conn.executemany(
-            "INSERT INTO lab_results (patient_id, date, test_name, result_value, units) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO lab_results (patient_id, date, test_name, value, unit, reference_range) VALUES (?, ?, ?, ?, ?, ?)",
             lab_results_data,
+        )
+
+        # Insert past medical history data
+        conn.executemany(
+            "INSERT INTO pmh (patient_id, condition, onset_date, status, notes, code) VALUES (?, ?, ?, ?, ?, ?)",
+            pmh_data,
+        )
+
+        # Insert mental health data
+        conn.executemany(
+            "INSERT INTO mental_health (patient_id, date, assessment_type, score, risk_level, notes) VALUES (?, ?, ?, ?, ?, ?)",
+            mental_health_data,
+        )
+
+        # ------------------------------------------------------------------
+        # Insert visit metrics – simple default values
+        # ------------------------------------------------------------------
+        visit_metrics_rows = [
+            (
+                pid,
+                np.random.randint(1, 5),  # provider_visits
+                np.random.randint(1, 5),  # health_coach_visits
+                0,
+                0,
+                0,
+                datetime.now().strftime("%Y-%m-%d"),
+            )
+            for pid, *_ in [row for row in patients_data]
+        ]
+
+        conn.executemany(
+            "INSERT INTO patient_visit_metrics (patient_id, provider_visits, health_coach_visits, cancelled_visits, no_show_visits, rescheduled_visits, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            visit_metrics_rows,
         )
 
         conn.commit()
@@ -818,7 +1205,8 @@ class SyntheticSelfTestLoop:
             TestCase(
                 name="count_by_gender",
                 query="Show me the count of patients by gender",
-                expected_result={"F": 10, "M": 10},  # We have even distribution
+                # We have even distribution
+                expected_result={"F": 10, "M": 10},
             ),
             TestCase(
                 name="active_count_by_ethnicity",
@@ -862,7 +1250,8 @@ class SyntheticSelfTestLoop:
             TestCase(
                 name="bmi_distribution",
                 query="Show me the distribution of BMI across all patients",
-                expected_result="visualization",  # Special case - just check we get a visualization
+                # Special case - just check we get a visualization
+                expected_result="visualization",
             ),
         ]
 

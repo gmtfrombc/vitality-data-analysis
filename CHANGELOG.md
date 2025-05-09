@@ -112,3 +112,12 @@ Use reverse-chronological order (latest on top).
 🐛 Fix: Height rule duplication removed; old cm-based rule deactivated
 🐛 Fix: Weight range & frequency issues suppressed when BMI already flagged; weight-only rules set inactive
 ⚡️ Enhancement: Validation action clears previous results before re-run, preventing stale issues
+✨ Feature: Mock-database schema now mirrors production (patients, vitals, scores, lab_results, mental_health, pmh, patient_visit_metrics plus 8 system tables)
+🐛 Fix: Dashboard `get_program_stats()` resolves `MH_DB_PATH`; total-patient count reflects selected DB
+🐛 Fix: Data-Validation page no longer crashes on alphanumeric patient IDs; button highlight logic updated
+⚡️ Enhancement: All UI modules now derive DB path via `db_query.get_db_path()`; single-point override using `export MH_DB_PATH=...`
+✅ Test: Added `tests/utils/test_db_path_override.py` ensuring env-var override works
+✅ Test: Expanded synthetic_self_test generator to include height, unit, mental_health, pmh tables and reference ranges
+🛠️ Chore: `scripts/create_mock_db.py` auto-adds project root to `sys.path` for reliable import, accepts `--overwrite`
+⚡️ Enhancement: Self-test harness regenerates mock DB with 20-patient cohort and 41 validation rules
+📚 Docs: Added summary_data_validation_015.md and updated roadmap canvas WS-7 progress

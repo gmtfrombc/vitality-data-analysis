@@ -57,11 +57,11 @@ def _extract_unreleased(changelog: Path) -> str:
 # Main
 # ----------------------------------------------------------------------------
 
+
 def main() -> None:
     summary_path = _latest_summary()
     if summary_path is None:
-        raise FileNotFoundError(
-            "No summary_data_validation_*.md found in docs/")
+        raise FileNotFoundError("No summary_data_validation_*.md found in docs/")
 
     summary_text = summary_path.read_text(encoding="utf-8")
     unreleased = _extract_unreleased(CHANGELOG)

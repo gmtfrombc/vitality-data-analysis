@@ -1,5 +1,4 @@
 import sqlite3
-from pathlib import Path
 
 import pytest
 import yaml
@@ -61,7 +60,8 @@ def test_rule_loader_upserts_duplicate_id(tmp_path, tmp_db):
 
     conn = sqlite3.connect(tmp_db)
     cur = conn.execute(
-        "SELECT description, severity FROM validation_rules WHERE rule_id = 'DUP_TEST'")
+        "SELECT description, severity FROM validation_rules WHERE rule_id = 'DUP_TEST'"
+    )
     row = cur.fetchone()
     conn.close()
 
@@ -70,6 +70,7 @@ def test_rule_loader_upserts_duplicate_id(tmp_path, tmp_db):
     # Ensure only one row exists
     conn = sqlite3.connect(tmp_db)
     total = conn.execute(
-        "SELECT COUNT(*) FROM validation_rules WHERE rule_id = 'DUP_TEST'").fetchone()[0]
+        "SELECT COUNT(*) FROM validation_rules WHERE rule_id = 'DUP_TEST'"
+    ).fetchone()[0]
     conn.close()
     assert total == 1

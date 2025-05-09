@@ -47,5 +47,4 @@ def test_normalize_date_series_mixed_list():
 def test_normalize_date_strings_alias():
     """Alias should point to the same implementation."""
     data = ["2025-07-15T00:00:00Z"]
-    assert list(normalize_date_series(data)) == list(
-        normalize_date_strings(data))
+    assert list(normalize_date_series(data)) == list(normalize_date_strings(data))

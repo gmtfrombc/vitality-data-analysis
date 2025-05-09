@@ -6,6 +6,7 @@ including basic CRUD operations for the "patients" table and
 utilities to execute SQL queries and return Pandas DataFrames.
 """
 
+import os
 import sqlite3
 import pandas as pd
 import logging
@@ -16,39 +17,70 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DB_PATH = "patient_data.db"
+# ---------------------------------------------------------------------------
+# Database path resolution helpers
+# ---------------------------------------------------------------------------
+
+# Default on-disk database that ships with the app.
+DEFAULT_DB_PATH = "patient_data.db"
 
 
-def get_db_path():
+def get_db_path() -> str:  # noqa: D401 – helper
+    """Return the *active* SQLite database path.
+
+    The path can be overridden at runtime via the ``MH_DB_PATH`` environment
+    variable (e.g. ``export MH_DB_PATH=/tmp/mock.db``) or programmatically with
+    :pyfunc:`set_db_path`.
     """
-    Get the database path used by this module.
 
-    Returns:
-        str: Path to the SQLite database file
+    return os.getenv("MH_DB_PATH", DEFAULT_DB_PATH)
+
+
+def set_db_path(path: str | os.PathLike) -> None:  # noqa: D401 – setter
+    """Override the SQLite database path for the current Python process.
+
+    This is primarily useful in tests or when launching the UI against a
+    synthetic database.  Under the hood it simply sets the ``MH_DB_PATH``
+    environment variable so subsequent calls to :pyfunc:`get_db_path` pick it
+    up automatically.
     """
-    return DB_PATH
+
+    os.environ["MH_DB_PATH"] = str(path)
 
 
-def query_dataframe(query, params=None, db_path=DB_PATH):
+# Keep a backwards-compat alias so older code continues to work *until* we do a
+# full sweep replacement.  Note:  this is *only* evaluated if a caller passes
+# the constant explicitly.  All internal helpers resolve the final path at
+# runtime via :pyfunc:`_resolve_db_path`.
+DB_PATH = DEFAULT_DB_PATH
+
+
+def _resolve_db_path(db_path: str | None) -> str:  # noqa: D401 – tiny helper
+    """Return *db_path* if explicitly provided, otherwise the active path."""
+
+    if db_path is None or db_path == DEFAULT_DB_PATH:
+        return get_db_path()
+    return db_path
+
+
+def query_dataframe(query, params=None, db_path=None):
+    """Execute *query* and return the result as a DataFrame.
+
+    If *db_path* is ``None`` or still pointing at the original
+    ``patient_data.db`` string, we resolve it to the active path returned by
+    :pyfunc:`get_db_path` so callers inherit any runtime overrides.
     """
-    Execute a SQL query and return the results as a Pandas DataFrame.
 
-    Args:
-        query (str): The SQL query to execute.
-        params (tuple, optional): Parameters to pass with the query.
-        db_path (str): Path to the SQLite database file.
+    db_path = _resolve_db_path(db_path)
 
-    Returns:
-        DataFrame: Query results.
-    """
     conn = None
     try:
         conn = sqlite3.connect(db_path)
-        logger.debug(f"Executing query: {query} with params: {params}")
+        logger.debug("Executing query: %s | params=%s | db=%s", query, params, db_path)
         df = pd.read_sql_query(query, conn, params=params)
         return df
-    except sqlite3.Error as e:
-        logger.error(f"Database error in query: {e}")
+    except sqlite3.Error as exc:
+        logger.error("Database error in query: %s", exc)
         return pd.DataFrame()
     finally:
         if conn:
@@ -373,7 +405,7 @@ if __name__ == "__main__":
 # ----- AGGREGATION FUNCTIONS -----
 
 
-def get_program_stats(db_path=DB_PATH):
+def get_program_stats(db_path: str | None = None):
     """
     Get aggregated statistics about the patient population.
 
@@ -383,6 +415,9 @@ def get_program_stats(db_path=DB_PATH):
     Returns:
         dict: Statistics about the program
     """
+    # Resolve path so env-var override is honoured
+    db_path = _resolve_db_path(db_path)
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     stats = {}

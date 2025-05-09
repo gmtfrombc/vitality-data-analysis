@@ -177,8 +177,7 @@ class ValidationEngine:
 
             # Check if rule already exists
             cursor.execute(
-                "SELECT 1 FROM validation_rules WHERE rule_id = ?", (
-                    rule.rule_id,)
+                "SELECT 1 FROM validation_rules WHERE rule_id = ?", (rule.rule_id,)
             )
             exists = cursor.fetchone() is not None
 
@@ -280,8 +279,7 @@ class ValidationEngine:
                     f"Vitals data for patient {patient_id}: {len(vitals)} rows"
                 )
                 logger.debug(f"Vitals columns: {list(vitals.columns)}")
-                logger.debug(
-                    f"Sample vitals data: {vitals.head(1).to_dict('records')}")
+                logger.debug(f"Sample vitals data: {vitals.head(1).to_dict('records')}")
 
                 # Use our new helper to convert date strings to datetime objects
                 # Important: set utc=False to maintain tz-naive datetimes
@@ -320,8 +318,11 @@ class ValidationEngine:
 
         # Apply each rule
         for rule in self.rules:
-            field_name = rule.parameters.get("field") if isinstance(
-                rule.parameters, dict) else None
+            field_name = (
+                rule.parameters.get("field")
+                if isinstance(rule.parameters, dict)
+                else None
+            )
             # Skip temporarily disabled fields
             if field_name and field_name in self.SKIPPED_FIELDS:
                 continue
@@ -400,8 +401,9 @@ class ValidationEngine:
                     # Unsupported logic – skip for now
                     continue
             except Exception as exc:
-                logger.error("Rule %s failed for patient %s: %s",
-                             rule.rule_id, patient_id, exc)
+                logger.error(
+                    "Rule %s failed for patient %s: %s", rule.rule_id, patient_id, exc
+                )
 
         # Save results to database
         for result in results:
@@ -563,11 +565,7 @@ class ValidationEngine:
             # This prevents double-counting of essentially the
             # same clinical problem.
             # ---------------------------------------------
-            if (
-                field == "weight"
-                and "bmi" in row
-                and pd.notna(row["bmi"])
-            ):
+            if field == "weight" and "bmi" in row and pd.notna(row["bmi"]):
                 bmi_val = row["bmi"]
                 # Hard-coded to current rule limits (12-70) until we
                 # introduce dynamic cross-rule look-ups.

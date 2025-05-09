@@ -1,6 +1,4 @@
-import os
 import sqlite3
-import tempfile
 from typing import Dict, List
 
 import pandas as pd
@@ -87,7 +85,7 @@ def mock_validation_db(tmp_path_factory):
             "bmi": 24.0,
             "weight": 160.0,
             "provider": "Dr. Clean",
-            "health_coach": "Coach Clean"
+            "health_coach": "Coach Clean",
         },
         # Patient 2 – missing program_start_date (triggers not_null_check)
         {
@@ -101,7 +99,7 @@ def mock_validation_db(tmp_path_factory):
             "bmi": 25.0,
             "weight": 170.0,
             "provider": "Dr. Missing",
-            "health_coach": "Coach Missing"
+            "health_coach": "Coach Missing",
         },
         # Patient 3 – extreme BMI (triggers BMI_RANGE_CHECK)
         {
@@ -115,7 +113,7 @@ def mock_validation_db(tmp_path_factory):
             "bmi": 85.0,  # way above 70
             "weight": 400.0,
             "provider": "Dr. High",
-            "health_coach": "Coach High"
+            "health_coach": "Coach High",
         },
         # Patient 4 – extreme weight (triggers WEIGHT_RANGE_CHECK)
         {
@@ -129,7 +127,7 @@ def mock_validation_db(tmp_path_factory):
             "bmi": 35.0,
             "weight": 600.0,  # above 500
             "provider": "Dr. Heavy",
-            "health_coach": "Coach Heavy"
+            "health_coach": "Coach Heavy",
         },
     ]
 
@@ -170,7 +168,8 @@ def mock_validation_db(tmp_path_factory):
 def _count_results(conn):
     """Utility: return mapping of rule_id → count in validation_results."""
     df = pd.read_sql_query(
-        "SELECT rule_id, COUNT(*) as cnt FROM validation_results GROUP BY rule_id", conn)
+        "SELECT rule_id, COUNT(*) as cnt FROM validation_results GROUP BY rule_id", conn
+    )
     return {row["rule_id"]: int(row["cnt"]) for _, row in df.iterrows()}
 
 
@@ -188,7 +187,8 @@ def test_validation_engine_detects_known_issues(mock_validation_db):
 
     # Clean patient (id=1) should not have any issues
     df_clean = pd.read_sql_query(
-        "SELECT * FROM validation_results WHERE patient_id = 1", conn)
+        "SELECT * FROM validation_results WHERE patient_id = 1", conn
+    )
     assert df_clean.empty, "Clean patient unexpectedly has validation issues"
 
     # Patient 2 – program start date missing

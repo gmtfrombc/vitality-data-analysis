@@ -24,7 +24,7 @@ Provide healthcare teams with an interactive, AI-assisted data exploration tool 
 | WS-4 | **UX & Visualization** | Intuitive interface & dashboards | ✔ Smart clarifier upgrade (slot-based follow-ups) <br> ✔ Correlation heat-map template <br> ✔ Enhanced correlation visualizations (conditional heatmaps, time-series plots) <br> ✔ Auto-visualisation mapper <br> ☐ Help & onboarding tour | Q3 2024 |
 | WS-5 | **Cloud Deployment** | CI/CD & managed hosting | ☐ Dockerize app <br> ☐ GitHub Actions pipeline <br> ☐ Deploy to AWS/GCP <br> ☐ Observability (logging, metrics) | Q4 2024 |
 | WS-6 | **Continuous Feedback & Evaluation** | Human-in-the-loop iterative improvement | ✔ Add feedback widget & `assistant_feedback` table <br> ✔ Query/response logging MVP <br> ✔ Nightly triage report <br> ✔ Assistant Evaluation Framework <br> 🔄 Weekly **Feedback Friday** loop <br> 🔄 Enhanced Self-Test Loop with AI-driven testing <br> ☐ Dataset for fine-tuning | Q3 2025 |
-| WS-7 | **Data Quality & Validation** | Identify and correct missing/inaccurate data | ✔ Validation rule schema <br> ✔ Patient-centric validation UI <br> ✔ Data quality dashboard <br> ✔ Correction tracking & audit <br> ✔ Fix UI, plotting and date handling issues <br> ✔ Patient list filtering operational <br> ✔ Validation Inbox (Ring 1 MVP) <br> ✔ Rule catalogue (YAML) & nightly validation job <br> ✔ Patient Data-Quality Dashboard <br> ✔ Health scores data table <br> ✔ Robust date handling and normalization utilities <br> ✔ Unit testing for validation, rule-loader, and date handling <br> ✔ GitHub Actions CI workflow with test coverage enforcement <br> 🔄 Quality metrics reporting <br> 🔄 Performance optimisation for patient list refresh <br> ✔ Admin Reload Rules button & rule-duplication clean-up <br> ✔ Categorical & Not-Null rule support w/ UI notifications | Q4 2025 |
+| WS-7 | **Data Quality & Validation** | Identify and correct missing/inaccurate data | ✔ Validation rule schema <br> ✔ Patient-centric validation UI <br> ✔ Data quality dashboard <br> ✔ Correction tracking & audit <br> ✔ Fix UI, plotting and date handling issues <br> ✔ Patient list filtering operational <br> ✔ Validation Inbox (Ring 1 MVP) <br> ✔ Rule catalogue (YAML) & nightly validation job <br> ✔ Patient Data-Quality Dashboard <br> ✔ Health scores data table <br> ✔ Robust date handling and normalization utilities <br> ✔ Unit testing for validation, rule-loader, and date handling <br> ✔ GitHub Actions CI workflow with test coverage enforcement <br> ✔ Quality metrics reporting <br> 🔄 Performance optimisation for patient list refresh <br> ✔ Admin Reload Rules button & rule-duplication clean-up <br> ✔ Categorical & Not-Null rule support w/ UI notifications | Q4 2025 |
 
 Legend: ✔ = done ☐ = pending 🔄 = in progress
 
@@ -58,7 +58,7 @@ Legend: ✔ = done ☐ = pending 🔄 = in progress
 ---
 ## 6. Meta
 - **Document owner:** @gmtfr  
-- **Last updated:** 2025-05-11 # Data Validation test coverage and CI workflow
+- **Last updated:** 2025-05-11 # Sprint 0.15 – Mock DB parity & env-var fixes
 - **Edit instructions for AI assistants:**  
   • Maintain markdown table formatting.  
   • Use ✔/☐/🔄 symbols for status.  

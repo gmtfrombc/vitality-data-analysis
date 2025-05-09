@@ -5,10 +5,8 @@ This module provides functions to initialize the validation system
 when the application starts.
 """
 
-import os
 import logging
 import sqlite3
-from pathlib import Path
 
 from app.utils.validation_engine import ValidationEngine
 from app.utils.rule_loader import initialize_validation_rules
@@ -19,9 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def get_db_path():
-    """Get the path to the SQLite database."""
-    base_dir = Path(__file__).parent.parent.parent
-    return os.path.join(base_dir, "patient_data.db")
+    """Get the path to the SQLite database from db_query for consistency."""
+    # Import here to avoid circular imports
+    import db_query
+
+    return db_query.get_db_path()
 
 
 def check_validation_tables():

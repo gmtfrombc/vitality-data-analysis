@@ -21,6 +21,6 @@ def test_patient_list_refresh_is_cached():
     second_duration = time.perf_counter() - start
 
     # Allow small fluctuations but expect ≥ 30 % speed-up
-    assert second_duration <= first_duration * 0.7 + 0.001, (
-        f"Caching ineffective: first={first_duration:.4f}s second={second_duration:.4f}s"
-    )
+    assert (
+        second_duration <= first_duration * 0.7 + 0.001
+    ), f"Caching ineffective: first={first_duration:.4f}s second={second_duration:.4f}s"

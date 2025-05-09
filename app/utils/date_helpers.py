@@ -166,11 +166,9 @@ def convert_df_dates(df, date_columns, utc=False):
         if col in df_copy.columns:
             try:
                 # Using errors='coerce' to convert invalid dates to NaT
-                df_copy[col] = pd.to_datetime(
-                    df_copy[col], utc=utc, errors="coerce")
+                df_copy[col] = pd.to_datetime(df_copy[col], utc=utc, errors="coerce")
             except Exception as e:
-                logger.error(
-                    f"Failed to convert column {col} to datetime: {e}")
+                logger.error(f"Failed to convert column {col} to datetime: {e}")
 
     return df_copy
 
@@ -220,8 +218,7 @@ def normalize_date_series(series, format_str="%Y-%m-%d"):
                 return None
             return dt.strftime(format_str)
         except Exception as exc:  # pragma: no cover – defensive
-            logger.error(
-                "normalize_date_series: failed to normalise %s (%s)", val, exc)
+            logger.error("normalize_date_series: failed to normalise %s (%s)", val, exc)
             return None
 
     return series.apply(_norm)

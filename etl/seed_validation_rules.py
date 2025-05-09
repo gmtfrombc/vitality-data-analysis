@@ -154,12 +154,9 @@ def main(csv_path: str, yaml_path: str, db_path: str) -> None:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Seed validation rules from CSV.")
-    parser.add_argument(
-        "--csv", default=str(ROOT / "data" / "metric_catalogue.csv"))
-    parser.add_argument("--yaml", default=str(ROOT /
-                        "data" / "validation_rules.yaml"))
+    parser = argparse.ArgumentParser(description="Seed validation rules from CSV.")
+    parser.add_argument("--csv", default=str(ROOT / "data" / "metric_catalogue.csv"))
+    parser.add_argument("--yaml", default=str(ROOT / "data" / "validation_rules.yaml"))
     parser.add_argument("--db", default=str(ROOT / "patient_data.db"))
     args = parser.parse_args()
 

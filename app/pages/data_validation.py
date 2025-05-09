@@ -10,12 +10,9 @@ import logging
 import panel as pn
 import param
 import pandas as pd
-import holoviews as hv
 import sqlite3
 from pathlib import Path
 import time
-from functools import lru_cache
-import hashlib
 
 # Internal data-access helpers
 import db_query  # noqa: F401 -- used throughout for DB reads
@@ -30,7 +27,11 @@ from app.utils.validation_engine import ValidationEngine
 from app.utils.rule_loader import initialize_validation_rules
 
 # Import date helpers
-from app.utils.date_helpers import format_date_for_display, convert_df_dates, normalize_date_series
+from app.utils.date_helpers import (
+    format_date_for_display,
+    convert_df_dates,
+    normalize_date_series,
+)
 
 # For re-seeding validation rules on demand
 from etl.seed_validation_rules import main as seed_validation_rules_main
@@ -45,14 +46,11 @@ pn.extension()
 
 
 def get_db_path():
-    # Allow override via environment variable so developers can switch to
-    # the lightweight mock-validation database without code edits.
-    env_db = os.getenv("DATA_DB_PATH")
-    if env_db:
-        return env_db
+    """Get the database path from db_query module to ensure consistent source."""
+    # Import here to avoid circular imports
+    import db_query
 
-    base_dir = Path(__file__).parent.parent.parent
-    return os.path.join(base_dir, "patient_data.db")
+    return db_query.get_db_path()
 
 
 # CSS for the page
@@ -104,7 +102,7 @@ class DataValidationPage(param.Parameterized):
     """
 
     # Parameters - renamed to avoid reserved name conflicts
-    selected_patient_id = param.Integer(default=None, allow_None=True)
+    selected_patient_id = param.String(default=None, allow_None=True)
     selected_issue_id = param.Integer(default=None)
     # Renamed from current_correction_value
     correction_value = param.String(default="")
@@ -157,10 +155,8 @@ class DataValidationPage(param.Parameterized):
 
         # Paths for rule seeding (defaults)
         base_dir = Path(__file__).parent.parent.parent
-        self._csv_rules_path = os.path.join(
-            base_dir, "data", "metric_catalogue.csv")
-        self._yaml_rules_path = os.path.join(
-            base_dir, "data", "validation_rules.yaml")
+        self._csv_rules_path = os.path.join(base_dir, "data", "metric_catalogue.csv")
+        self._yaml_rules_path = os.path.join(base_dir, "data", "validation_rules.yaml")
 
         # Loading spinner for patient list refresh
         self.patient_list_spinner = (
@@ -191,11 +187,10 @@ class DataValidationPage(param.Parameterized):
         self._cache_ttl_sec: int = 30  # seconds
 
         # Store mapping of patient_id to its button for easy style updates
-        self.patient_buttons: dict[int, pn.widgets.Button] = {}
+        self.patient_buttons: dict[str, pn.widgets.Button] = {}
 
         # Container that will hold patient rows so we can refresh dynamically
-        self.patient_list_column = pn.Column(
-            sizing_mode="stretch_width", width=300)
+        self.patient_list_column = pn.Column(sizing_mode="stretch_width", width=300)
 
         # Placeholder for the patient-detail view; will be swapped on patient selection
         self.patient_view_panel = pn.Column(
@@ -247,6 +242,7 @@ class DataValidationPage(param.Parameterized):
 
             # Timestamp for UI header
             from datetime import datetime
+
             self._last_refresh_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         except Exception as e:
             logger.error(f"Error refreshing data: {e}")
@@ -273,8 +269,7 @@ class DataValidationPage(param.Parameterized):
                 GROUP BY vru.severity
             """
             )
-            self.severity_counts = {row[0]: row[1]
-                                    for row in cursor.fetchall()}
+            self.severity_counts = {row[0]: row[1] for row in cursor.fetchall()}
 
             # Get counts by rule type
             cursor.execute(
@@ -285,12 +280,10 @@ class DataValidationPage(param.Parameterized):
                 GROUP BY vru.rule_type
             """
             )
-            self.rule_type_counts = {row[0]: row[1]
-                                     for row in cursor.fetchall()}
+            self.rule_type_counts = {row[0]: row[1] for row in cursor.fetchall()}
 
             # Get patient count
-            cursor.execute(
-                "SELECT COUNT(DISTINCT patient_id) FROM validation_results")
+            cursor.execute("SELECT COUNT(DISTINCT patient_id) FROM validation_results")
             self.patient_count = cursor.fetchone()[0]
 
             conn.close()
@@ -307,8 +300,7 @@ class DataValidationPage(param.Parameterized):
         """Load aggregated issue counts by field and over time (daily)."""
         try:
             conn = sqlite3.connect(self.db_path)
-            query = (
-                """
+            query = """
                 SELECT vr.field_name            AS field,
                        date(vr.detected_at)     AS dt,
                        vru.severity             AS severity,
@@ -318,7 +310,6 @@ class DataValidationPage(param.Parameterized):
                 WHERE vr.field_name IS NOT NULL
                 GROUP BY field, dt, severity
                 """
-            )
             df = pd.read_sql_query(query, conn)
             conn.close()
 
@@ -329,20 +320,15 @@ class DataValidationPage(param.Parameterized):
                 return
 
             # Pivot for field summary (rows = field, cols = severity)
-            field_summary = (
-                df.groupby(["field", "severity"], as_index=False)["n"].sum()
-            )
+            field_summary = df.groupby(["field", "severity"], as_index=False)["n"].sum()
             self.quality_field_df = (
-                field_summary.pivot(
-                    index="field", columns="severity", values="n")
+                field_summary.pivot(index="field", columns="severity", values="n")
                 .fillna(0)
                 .reset_index()
             )
 
             # Daily summary (rows = date, cols = severity)
-            date_summary = (
-                df.groupby(["dt", "severity"], as_index=False)["n"].sum()
-            )
+            date_summary = df.groupby(["dt", "severity"], as_index=False)["n"].sum()
             self.quality_date_df = (
                 date_summary.pivot(index="dt", columns="severity", values="n")
                 .fillna(0)
@@ -477,8 +463,7 @@ class DataValidationPage(param.Parameterized):
         try:
             # Get patient data
             self.patient_demographics, self.patient_vitals = (
-                self.validation_engine.get_patient_data(
-                    self.selected_patient_id)
+                self.validation_engine.get_patient_data(self.selected_patient_id)
             )
 
             # Convert dates to datetime using our helper function
@@ -503,7 +488,7 @@ class DataValidationPage(param.Parameterized):
             patient_id: ID of the selected patient
         """
         logger.info("Patient %s selected", patient_id)
-        self.selected_patient_id = patient_id
+        self.selected_patient_id = str(patient_id)
         self.selected_issue_id = None
         self.show_correction_form = False
         self._load_patient_issues()
@@ -555,8 +540,7 @@ class DataValidationPage(param.Parameterized):
         try:
             self.patient_view_panel.objects = [self._build_patient_view()]
         except Exception as exc:
-            logger.error(
-                "Error rebuilding patient view after show_correction: %s", exc)
+            logger.error("Error rebuilding patient view after show_correction: %s", exc)
 
     def submit_correction(self, event=None):
         """Submit a correction for an issue."""
@@ -592,8 +576,7 @@ class DataValidationPage(param.Parameterized):
                 (result_id, patient_id, field_name, table_name, record_id, new_value, applied_by)
                 VALUES (?, ?, ?, 'vitals', 0, ?, 'current_user')
             """,
-                (self.selected_issue_id, patient_id,
-                 field_name, self.correction_value),
+                (self.selected_issue_id, patient_id, field_name, self.correction_value),
             )
 
             correction_id = cursor.lastrowid
@@ -690,9 +673,11 @@ class DataValidationPage(param.Parameterized):
             # Purge previous results so we don't accumulate outdated records
             if patient_id:
                 cursor.execute(
-                    "DELETE FROM validation_results WHERE patient_id = ?", (patient_id,))
+                    "DELETE FROM validation_results WHERE patient_id = ?", (patient_id,)
+                )
                 logger.info(
-                    "Cleared previous validation results for patient %s", patient_id)
+                    "Cleared previous validation results for patient %s", patient_id
+                )
             else:
                 cursor.execute("DELETE FROM validation_results")
                 logger.info("Cleared all previous validation results")
@@ -721,8 +706,12 @@ class DataValidationPage(param.Parameterized):
     def create_patient_row(self, row):
         """Create an interactive row (button) representing a patient in the list."""
         try:
-            # Ensure patient_id is a native Python int (param.Integer validates)
-            patient_id = int(row["patient_id"])  # type: ignore[arg-type]
+            # Patient IDs can be numeric or alphanumeric; treat as string for display
+            patient_id_raw = row["patient_id"]
+            try:
+                patient_id = int(patient_id_raw)  # convert if purely numeric
+            except (ValueError, TypeError):
+                patient_id = str(patient_id_raw)
             name = f"{row['first_name']} {row['last_name']}"
             # Display issue counts in the button label
             issues_text = f"{row['issue_count']} issues ({row['open_count']} open)"
@@ -730,8 +719,7 @@ class DataValidationPage(param.Parameterized):
             button_label = f"{patient_id}: {name} — {issues_text}"
 
             # Choose button colour based on severity (red tint if any errors)
-            button_type = "danger" if row.get(
-                "has_errors", 0) == 1 else "default"
+            button_type = "danger" if row.get("has_errors", 0) == 1 else "default"
 
             patient_button = pn.widgets.Button(
                 name=button_label,
@@ -749,7 +737,7 @@ class DataValidationPage(param.Parameterized):
             patient_button._default_type = button_type
 
             # Store reference for later highlighting
-            self.patient_buttons[patient_id] = patient_button
+            self.patient_buttons[str(patient_id_raw)] = patient_button
 
             return patient_button
         except Exception as e:
@@ -775,12 +763,14 @@ class DataValidationPage(param.Parameterized):
             # Create card layout
             occurrences = issue.get("occurrences", 1)
             occ_text = f" (×{occurrences})" if occurrences > 1 else ""
-            title = f"Issue with {field_name}{occ_text}" if field_name else f"Validation Issue{occ_text}"
-            title_md = pn.pane.Markdown(
-                f"### {title}", sizing_mode="stretch_width")
+            title = (
+                f"Issue with {field_name}{occ_text}"
+                if field_name
+                else f"Validation Issue{occ_text}"
+            )
+            title_md = pn.pane.Markdown(f"### {title}", sizing_mode="stretch_width")
 
-            description_md = pn.pane.Markdown(
-                description, sizing_mode="stretch_width")
+            description_md = pn.pane.Markdown(description, sizing_mode="stretch_width")
 
             status_md = pn.pane.Markdown(
                 f"**Status:** {status} | **Severity:** {severity} | **Detected:** {detected_date}",
@@ -805,8 +795,7 @@ class DataValidationPage(param.Parameterized):
             correct_button.on_click(correct_handler)
             review_button.on_click(review_handler)
 
-            buttons = pn.Row(correct_button, review_button,
-                             sizing_mode="fixed")
+            buttons = pn.Row(correct_button, review_button, sizing_mode="fixed")
 
             # Combine elements into card
             card = pn.Column(
@@ -833,61 +822,68 @@ class DataValidationPage(param.Parameterized):
                 return pn.Column(
                     pn.pane.Markdown("### Health Scores"),
                     pn.pane.Markdown("No health scores recorded"),
-                    sizing_mode="stretch_width"
+                    sizing_mode="stretch_width",
                 )
 
             # Keep only vitality_score and heart_fit_score
-            valid_score_types = ['vitality_score', 'heart_fit_score']
-            filtered_scores = scores_df[scores_df['score_type'].isin(
-                valid_score_types)]
+            valid_score_types = ["vitality_score", "heart_fit_score"]
+            filtered_scores = scores_df[scores_df["score_type"].isin(valid_score_types)]
 
             # Normalise date strings to YYYY-MM-DD and deduplicate (using shared helper)
             # ------------------------------------------------------------
-            filtered_scores['display_date'] = normalize_date_series(
-                filtered_scores['date']
+            filtered_scores["display_date"] = normalize_date_series(
+                filtered_scores["date"]
             )
 
             # Drop rows where dates could not be parsed
-            filtered_scores = filtered_scores.dropna(subset=['display_date'])
+            filtered_scores = filtered_scores.dropna(subset=["display_date"])
 
             # Drop duplicates keeping newest by original date order (assuming DB already sorted)
             filtered_scores = filtered_scores.drop_duplicates(
-                subset=['display_date', 'score_type'], keep='first')
+                subset=["display_date", "score_type"], keep="first"
+            )
 
             if filtered_scores.empty:
                 return pn.Column(
                     pn.pane.Markdown("### Health Scores"),
-                    pn.pane.Markdown(
-                        "No vitality or heart fit scores recorded"),
-                    sizing_mode="stretch_width"
+                    pn.pane.Markdown("No vitality or heart fit scores recorded"),
+                    sizing_mode="stretch_width",
                 )
 
             # Build display DataFrame
-            scores_display_df = filtered_scores[['display_date', 'score_type', 'score_value']].rename(
-                columns={'display_date': 'Date', 'score_type': 'Score Type', 'score_value': 'Value'})
+            scores_display_df = filtered_scores[
+                ["display_date", "score_type", "score_value"]
+            ].rename(
+                columns={
+                    "display_date": "Date",
+                    "score_type": "Score Type",
+                    "score_value": "Value",
+                }
+            )
 
             # Human-readable names
-            scores_display_df['Score Type'] = scores_display_df['Score Type'].map({
-                'vitality_score': 'Vitality Score',
-                'heart_fit_score': 'Heart Fit Score'
-            })
+            scores_display_df["Score Type"] = scores_display_df["Score Type"].map(
+                {
+                    "vitality_score": "Vitality Score",
+                    "heart_fit_score": "Heart Fit Score",
+                }
+            )
 
             # Sort by date descending
-            scores_display_df = scores_display_df.sort_values(
-                'Date', ascending=False)
+            scores_display_df = scores_display_df.sort_values("Date", ascending=False)
 
             scores_table = pn.widgets.Tabulator(
                 scores_display_df,
                 header_filters=False,
                 show_index=False,
                 sizing_mode="stretch_width",
-                height=250  # Match the height of the other tables
+                height=250,  # Match the height of the other tables
             )
 
             return pn.Column(
                 pn.pane.Markdown("### Health Scores"),
                 scores_table,
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             )
 
         except Exception as e:
@@ -895,7 +891,7 @@ class DataValidationPage(param.Parameterized):
             return pn.Column(
                 pn.pane.Markdown("### Health Scores"),
                 pn.pane.Markdown("Error loading health scores data"),
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             )
 
     def create_timeline_plot(self):
@@ -903,15 +899,17 @@ class DataValidationPage(param.Parameterized):
         try:
             # Get visit metrics info
             visits = self._fetch_visit_metrics(self.selected_patient_id)
-            prov_visits = int(visits.get("provider_visits", 0)
-                              ) if not visits.empty else 0
-            coach_visits = int(visits.get("health_coach_visits", 0)
-                               ) if not visits.empty else 0
+            prov_visits = (
+                int(visits.get("provider_visits", 0)) if not visits.empty else 0
+            )
+            coach_visits = (
+                int(visits.get("health_coach_visits", 0)) if not visits.empty else 0
+            )
 
             # Create provider visits section
             provider_section = pn.Column(
                 pn.pane.Markdown("### Provider Visits Schedule"),
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             )
 
             # Create provider visits table
@@ -921,8 +919,7 @@ class DataValidationPage(param.Parameterized):
 
                 # Use patient_id as a seed for consistent random-looking dates
                 patient_id_str = str(self.selected_patient_id)
-                hash_val = int(hashlib.md5(
-                    patient_id_str.encode()).hexdigest(), 16)
+                hash_val = int(hashlib.md5(patient_id_str.encode()).hexdigest(), 16)
                 # Generate a value between 1 and 60 for days ago
                 first_visit_days_ago = (hash_val % 60) + 1
 
@@ -935,8 +932,7 @@ class DataValidationPage(param.Parameterized):
                     visit_num = prov_visits - i  # Count down from total
                     visit_date = last_visit_date - timedelta(days=i * 30)
                     date_str = visit_date.strftime("%Y-%m-%d")
-                    visit_dates.append(
-                        {"Visit Number": visit_num, "Date": date_str})
+                    visit_dates.append({"Visit Number": visit_num, "Date": date_str})
 
                 # Convert to DataFrame for table display
                 visit_df = pd.DataFrame(visit_dates)
@@ -945,17 +941,16 @@ class DataValidationPage(param.Parameterized):
                     header_filters=False,
                     show_index=False,
                     sizing_mode="stretch_width",
-                    height=250  # Increased height for more vertical spacing
+                    height=250,  # Increased height for more vertical spacing
                 )
                 provider_section.append(provider_table)
             else:
-                provider_section.append(pn.pane.Markdown(
-                    "No provider visits recorded"))
+                provider_section.append(pn.pane.Markdown("No provider visits recorded"))
 
             # Create health coach visits section
             coach_section = pn.Column(
                 pn.pane.Markdown("### Health Coach Visits Schedule"),
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             )
 
             # Create health coach visits table
@@ -965,13 +960,14 @@ class DataValidationPage(param.Parameterized):
                 # Use patient_id plus a constant to generate a different but consistent number of days
                 # This ensures coach visits are different from provider visits but still consistent per patient
                 patient_id_str = str(self.selected_patient_id) + "coach"
-                hash_val = int(hashlib.md5(
-                    patient_id_str.encode()).hexdigest(), 16)
+                hash_val = int(hashlib.md5(patient_id_str.encode()).hexdigest(), 16)
                 # Generate a value between 1 and 20 days using the hash (coaches seen more recently)
                 first_coach_visit_days_ago = (hash_val % 20) + 1
 
                 # Start from a more recent date for health coach visits (they're more frequent)
-                last_coach_visit_date = datetime.now() - timedelta(days=first_coach_visit_days_ago)
+                last_coach_visit_date = datetime.now() - timedelta(
+                    days=first_coach_visit_days_ago
+                )
                 coach_visit_dates = []
 
                 # Create a visit every 14 days (roughly bi-weekly)
@@ -980,7 +976,8 @@ class DataValidationPage(param.Parameterized):
                     visit_date = last_coach_visit_date - timedelta(days=i * 14)
                     date_str = visit_date.strftime("%Y-%m-%d")
                     coach_visit_dates.append(
-                        {"Visit Number": visit_num, "Date": date_str})
+                        {"Visit Number": visit_num, "Date": date_str}
+                    )
 
                 # Convert to DataFrame for table display
                 coach_visits_df = pd.DataFrame(coach_visit_dates)
@@ -989,12 +986,13 @@ class DataValidationPage(param.Parameterized):
                     header_filters=False,
                     show_index=False,
                     sizing_mode="stretch_width",
-                    height=250  # Increased height for more vertical spacing
+                    height=250,  # Increased height for more vertical spacing
                 )
                 coach_section.append(coach_table)
             else:
-                coach_section.append(pn.pane.Markdown(
-                    "No health coach visits recorded"))
+                coach_section.append(
+                    pn.pane.Markdown("No health coach visits recorded")
+                )
 
             # Create the scores table
             scores_section = self.create_scores_table()
@@ -1004,7 +1002,7 @@ class DataValidationPage(param.Parameterized):
                 provider_section,
                 coach_section,
                 scores_section,
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             )
 
         except Exception as e:
@@ -1026,20 +1024,23 @@ class DataValidationPage(param.Parameterized):
         mrn = demo.get("id", "–")
         # Age computation
         from datetime import datetime
+
         age = "–"
         try:
             if pd.notnull(demo.get("birth_date")):
                 birth = datetime.fromisoformat(str(demo.get("birth_date")))
                 today = datetime.today()
-                age = today.year - birth.year - \
-                    ((today.month, today.day) < (birth.month, birth.day))
+                age = (
+                    today.year
+                    - birth.year
+                    - ((today.month, today.day) < (birth.month, birth.day))
+                )
         except Exception:
             pass
         sex = demo.get("gender", "–")
 
         # Record quality badge
-        ratio, colour_key = self._compute_record_quality(
-            self.selected_patient_id)
+        ratio, colour_key = self._compute_record_quality(self.selected_patient_id)
         badge = pn.indicators.Number(
             name="Record Quality",
             value=round(ratio * 100, 1),
@@ -1055,13 +1056,12 @@ class DataValidationPage(param.Parameterized):
         last_refresh = getattr(self, "_last_refresh_ts", None)
         if not last_refresh:
             from datetime import datetime
+
             last_refresh = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         # Create a "Mark as Verified" button
         verify_button = pn.widgets.Button(
-            name="Mark as Verified",
-            button_type="success",
-            width=150
+            name="Mark as Verified", button_type="success", width=150
         )
 
         # Button handler
@@ -1081,7 +1081,8 @@ class DataValidationPage(param.Parameterized):
             verify_button,
             pn.Spacer(),
             pn.pane.Markdown(
-                f"*Last refresh*: {last_refresh}", styles={"font-size": "12px"}),
+                f"*Last refresh*: {last_refresh}", styles={"font-size": "12px"}
+            ),
             sizing_mode="stretch_width",
         )
 
@@ -1089,18 +1090,16 @@ class DataValidationPage(param.Parameterized):
         # 2. Status tiles
         # ------------------------------------------------------------------
         visits = self._fetch_visit_metrics(self.selected_patient_id)
-        prov_visits = int(visits.get("provider_visits", 0)
-                          ) if not visits.empty else 0
-        coach_visits = int(visits.get("health_coach_visits", 0)
-                           ) if not visits.empty else 0
+        prov_visits = int(visits.get("provider_visits", 0)) if not visits.empty else 0
+        coach_visits = (
+            int(visits.get("health_coach_visits", 0)) if not visits.empty else 0
+        )
 
         # Calculate days since most recent provider visit using last_updated field
-        last_updated_str = str(visits.get("last_updated")
-                               ) if not visits.empty else None
+        last_updated_str = str(visits.get("last_updated")) if not visits.empty else None
         days_since_provider = self._days_since(last_updated_str)
 
-        vitality_val = self._latest_vitality_score(
-            self.selected_patient_id) or "—"
+        vitality_val = self._latest_vitality_score(self.selected_patient_id) or "—"
 
         stage = "Active"
         if demo.get("active", 1) == 0:
@@ -1121,7 +1120,8 @@ class DataValidationPage(param.Parameterized):
             return pn.Column(
                 pn.pane.Markdown(f"**{title}**"),
                 pn.pane.Markdown(
-                    value, styles={"font-size": "22px", "font-weight": "bold"}),
+                    value, styles={"font-size": "22px", "font-weight": "bold"}
+                ),
                 css_classes=["summary-card"],
                 width=160,
             )
@@ -1130,8 +1130,10 @@ class DataValidationPage(param.Parameterized):
             _tile("Start Date", start_date),
             _tile("Provider Visits", f"✓ {prov_visits}/7"),
             _tile("Coach Visits", f"✓ {coach_visits}/16"),
-            _tile("Days Since Provider", str(days_since_provider)
-                  if days_since_provider is not None else "—"),
+            _tile(
+                "Days Since Provider",
+                str(days_since_provider) if days_since_provider is not None else "—",
+            ),
             _tile("Vitality Score", vitality_val),
             _tile("Program Stage", stage),
             sizing_mode="stretch_width",
@@ -1191,42 +1193,40 @@ class DataValidationPage(param.Parameterized):
         if not vit_df.empty:
             # Format date for display
             vit_display_df = vit_df.copy()
-            if 'date' in vit_display_df.columns:
-                vit_display_df['date'] = vit_display_df['date'].apply(
-                    lambda d: format_date_for_display(d) if pd.notnull(d) else "")
-                vit_display_df = vit_display_df.rename(
-                    columns={'date': 'Date'})
+            if "date" in vit_display_df.columns:
+                vit_display_df["date"] = vit_display_df["date"].apply(
+                    lambda d: format_date_for_display(d) if pd.notnull(d) else ""
+                )
+                vit_display_df = vit_display_df.rename(columns={"date": "Date"})
 
             # Create a clean subset with only needed columns in a specific order
-            vital_cols = ['Date']
-            if 'weight' in vit_display_df.columns:
-                vital_cols.append('weight')
-            if 'height' in vit_display_df.columns:
-                vital_cols.append('height')
-            if 'bmi' in vit_display_df.columns:
-                vital_cols.append('bmi')
-            if 'sbp' in vit_display_df.columns:
-                vital_cols.append('sbp')
-            if 'dbp' in vit_display_df.columns:
-                vital_cols.append('dbp')
+            vital_cols = ["Date"]
+            if "weight" in vit_display_df.columns:
+                vital_cols.append("weight")
+            if "height" in vit_display_df.columns:
+                vital_cols.append("height")
+            if "bmi" in vit_display_df.columns:
+                vital_cols.append("bmi")
+            if "sbp" in vit_display_df.columns:
+                vital_cols.append("sbp")
+            if "dbp" in vit_display_df.columns:
+                vital_cols.append("dbp")
 
             # Create a clean subset
             vit_display_subset = vit_display_df[vital_cols].copy()
 
             # Rename columns for better display
             column_mapping = {
-                'weight': 'Weight (kg)',
-                'height': 'Height (cm)',
-                'bmi': 'BMI',
-                'sbp': 'SBP (mmHg)',
-                'dbp': 'DBP (mmHg)'
+                "weight": "Weight (kg)",
+                "height": "Height (cm)",
+                "bmi": "BMI",
+                "sbp": "SBP (mmHg)",
+                "dbp": "DBP (mmHg)",
             }
-            vit_display_subset = vit_display_subset.rename(
-                columns=column_mapping)
+            vit_display_subset = vit_display_subset.rename(columns=column_mapping)
 
             # Sort by date (most recent first)
-            vit_display_subset = vit_display_subset.sort_values(
-                'Date', ascending=False)
+            vit_display_subset = vit_display_subset.sort_values("Date", ascending=False)
 
             # Create table with the clean data
             vitals_table = pn.widgets.Tabulator(
@@ -1234,18 +1234,18 @@ class DataValidationPage(param.Parameterized):
                 header_filters=False,
                 show_index=False,
                 sizing_mode="stretch_width",
-                height=250
+                height=250,
             )
             vit_cards = pn.Column(
                 pn.pane.Markdown("### Vitals"),
                 vitals_table,
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             )
         else:
             vit_cards = pn.Column(
                 pn.pane.Markdown("### Vitals"),
                 pn.pane.Markdown("No vitals data available"),
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             )
 
         # Improved labs table - format the labs dataframe for date-based pivot
@@ -1254,62 +1254,64 @@ class DataValidationPage(param.Parameterized):
             labs_display_df = labs_df.copy()
 
             # Format date
-            if 'date' in labs_display_df.columns:
-                labs_display_df['date'] = labs_display_df['date'].apply(
-                    lambda d: format_date_for_display(d) if pd.notnull(d) else "")
-                labs_display_df = labs_display_df.rename(
-                    columns={'date': 'Date'})
+            if "date" in labs_display_df.columns:
+                labs_display_df["date"] = labs_display_df["date"].apply(
+                    lambda d: format_date_for_display(d) if pd.notnull(d) else ""
+                )
+                labs_display_df = labs_display_df.rename(columns={"date": "Date"})
 
             # Standardize test names to uppercase
-            if 'test_name' in labs_display_df.columns:
-                labs_display_df['test_name'] = labs_display_df['test_name'].str.upper(
-                )
+            if "test_name" in labs_display_df.columns:
+                labs_display_df["test_name"] = labs_display_df["test_name"].str.upper()
 
             # Drop unnecessary columns
-            if 'lab_id' in labs_display_df.columns:
-                labs_display_df = labs_display_df.drop(columns=['lab_id'])
-            if 'patient_id' in labs_display_df.columns:
-                labs_display_df = labs_display_df.drop(columns=['patient_id'])
-            if 'reference_range' in labs_display_df.columns:
-                labs_display_df = labs_display_df.drop(
-                    columns=['reference_range'])
+            if "lab_id" in labs_display_df.columns:
+                labs_display_df = labs_display_df.drop(columns=["lab_id"])
+            if "patient_id" in labs_display_df.columns:
+                labs_display_df = labs_display_df.drop(columns=["patient_id"])
+            if "reference_range" in labs_display_df.columns:
+                labs_display_df = labs_display_df.drop(columns=["reference_range"])
 
             # Create a test name with units format
-            labs_display_df['test_with_units'] = labs_display_df.apply(
-                lambda row: f"{row['test_name']} ({row['unit']})" if pd.notnull(
-                    row['unit']) else row['test_name'],
-                axis=1
+            labs_display_df["test_with_units"] = labs_display_df.apply(
+                lambda row: (
+                    f"{row['test_name']} ({row['unit']})"
+                    if pd.notnull(row["unit"])
+                    else row["test_name"]
+                ),
+                axis=1,
             )
 
             # Map common test name variations to standardized names
             test_name_mapping = {
-                'APOLIPOPROTEIN_B': 'APO-B',
-                'APOLIPOPROTEIN B': 'APO-B',
-                'APOB': 'APO-B',
-                'APO B': 'APO-B',
-                'TOTAL_CHOLESTEROL': 'TOTAL CHOLESTEROL',
-                'TOTAL-CHOLESTEROL': 'TOTAL CHOLESTEROL',
-                'CHOLESTEROL': 'TOTAL CHOLESTEROL',
-                'FASTING_GLUCOSE': 'GLUCOSE',
-                'FBG': 'GLUCOSE',
-                'HBA1C': 'HBAIC',
+                "APOLIPOPROTEIN_B": "APO-B",
+                "APOLIPOPROTEIN B": "APO-B",
+                "APOB": "APO-B",
+                "APO B": "APO-B",
+                "TOTAL_CHOLESTEROL": "TOTAL CHOLESTEROL",
+                "TOTAL-CHOLESTEROL": "TOTAL CHOLESTEROL",
+                "CHOLESTEROL": "TOTAL CHOLESTEROL",
+                "FASTING_GLUCOSE": "GLUCOSE",
+                "FBG": "GLUCOSE",
+                "HBA1C": "HBAIC",
             }
 
             # Apply the mapping to standardize test names
             for old_name, new_name in test_name_mapping.items():
-                labs_display_df['test_with_units'] = labs_display_df['test_with_units'].str.replace(
-                    old_name, new_name, regex=False)
+                labs_display_df["test_with_units"] = labs_display_df[
+                    "test_with_units"
+                ].str.replace(old_name, new_name, regex=False)
 
             # Pivot the dataframe to have tests as columns and dates as rows
             pivot_df = labs_display_df.pivot_table(
-                index='Date',
-                columns='test_with_units',
-                values='value',
-                aggfunc='first'  # Take the first value if multiple exist for same date/test
+                index="Date",
+                columns="test_with_units",
+                values="value",
+                aggfunc="first",  # Take the first value if multiple exist for same date/test
             ).reset_index()
 
             # Sort by date (most recent first)
-            pivot_df = pivot_df.sort_values('Date', ascending=False)
+            pivot_df = pivot_df.sort_values("Date", ascending=False)
 
             # Display in a tabulator widget
             lab_cards = pn.Column(
@@ -1319,31 +1321,32 @@ class DataValidationPage(param.Parameterized):
                     header_filters=False,
                     show_index=False,
                     sizing_mode="stretch_width",
-                    height=250
+                    height=250,
                 ),
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             )
         else:
             lab_cards = pn.Column(
                 pn.pane.Markdown("### Labs"),
                 pn.pane.Markdown("No recent labs."),
-                sizing_mode="stretch_width"
+                sizing_mode="stretch_width",
             )
 
         # ------------------------------------------------------------------
         # 6. Sidebar with external links & waiver note
         # ------------------------------------------------------------------
-        ehr_btn = pn.widgets.Button(
-            name="Open EHR", button_type="primary", width=120)
-        lab_btn = pn.widgets.Button(
-            name="Lab Portal", button_type="primary", width=120)
+        ehr_btn = pn.widgets.Button(name="Open EHR", button_type="primary", width=120)
+        lab_btn = pn.widgets.Button(name="Lab Portal", button_type="primary", width=120)
         sched_btn = pn.widgets.Button(
-            name="Scheduling", button_type="primary", width=120)
+            name="Scheduling", button_type="primary", width=120
+        )
         waiver_text = pn.widgets.TextAreaInput(
-            placeholder="Waiver rationale…", rows=6, width=200)
+            placeholder="Waiver rationale…", rows=6, width=200
+        )
 
         # Add verification explanation
-        verify_explanation = pn.pane.Markdown("""
+        verify_explanation = pn.pane.Markdown(
+            """
         ### About Verification
         
         When you **Mark as Verified**, the patient will be removed from the list of patients with issues.
@@ -1353,7 +1356,10 @@ class DataValidationPage(param.Parameterized):
         - The data has been reviewed and is correct
         
         The patient will reappear if new issues are found during the next data import.
-        """, width=200, styles={"font-size": "12px"})
+        """,
+            width=200,
+            styles={"font-size": "12px"},
+        )
 
         sidebar = pn.Column(
             pn.pane.Markdown("### Shortcuts"),
@@ -1458,8 +1464,7 @@ class DataValidationPage(param.Parameterized):
             quality_date_plot = None
             try:
                 if not self.quality_field_df.empty:
-                    y_cols = [
-                        c for c in self.quality_field_df.columns if c != "field"]
+                    y_cols = [c for c in self.quality_field_df.columns if c != "field"]
                     quality_field_plot = self.quality_field_df.hvplot.bar(
                         x="field",
                         y=y_cols,
@@ -1470,8 +1475,7 @@ class DataValidationPage(param.Parameterized):
                         legend="top_right",
                     )
                 if not self.quality_date_df.empty:
-                    y_cols2 = [
-                        c for c in self.quality_date_df.columns if c != "dt"]
+                    y_cols2 = [c for c in self.quality_date_df.columns if c != "dt"]
                     quality_date_plot = self.quality_date_df.hvplot.area(
                         x="dt",
                         y=y_cols2,
@@ -1486,10 +1490,16 @@ class DataValidationPage(param.Parameterized):
 
             quality_metrics_section = pn.Column(
                 "### Aggregate Quality Metrics",
-                quality_field_plot if quality_field_plot is not None else pn.pane.Markdown(
-                    "_No issues yet_"),
-                quality_date_plot if quality_date_plot is not None else pn.Spacer(
-                    height=0),
+                (
+                    quality_field_plot
+                    if quality_field_plot is not None
+                    else pn.pane.Markdown("_No issues yet_")
+                ),
+                (
+                    quality_date_plot
+                    if quality_date_plot is not None
+                    else pn.Spacer(height=0)
+                ),
                 sizing_mode="stretch_width",
                 width=400,
             )
@@ -1497,8 +1507,7 @@ class DataValidationPage(param.Parameterized):
             # Filter controls
             status_select = pn.widgets.Select(
                 name="Status",
-                options=["all", "open", "reviewed",
-                         "corrected", "ignored", "verified"],
+                options=["all", "open", "reviewed", "corrected", "ignored", "verified"],
                 value=self.filter_status_value,
             )
             severity_select = pn.widgets.Select(
@@ -1508,8 +1517,13 @@ class DataValidationPage(param.Parameterized):
             )
             type_select = pn.widgets.Select(
                 name="Rule Type",
-                options=["all", "missing_data",
-                         "range_check", "consistency_check", "categorical_check"],
+                options=[
+                    "all",
+                    "missing_data",
+                    "range_check",
+                    "consistency_check",
+                    "categorical_check",
+                ],
                 value=self.filter_type_value,
             )
 
@@ -1597,16 +1611,13 @@ class DataValidationPage(param.Parameterized):
             # Correction form
             correction_form = pn.Column(
                 "### Correction Form",
-                pn.widgets.TextInput(
-                    name="New Value", value=self.correction_value),
+                pn.widgets.TextInput(name="New Value", value=self.correction_value),
                 pn.widgets.TextAreaInput(
                     name="Reason for Correction", value=self.correction_reason
                 ),
                 pn.Row(
-                    pn.widgets.Button(
-                        name="Submit", button_type="primary", width=100),
-                    pn.widgets.Button(
-                        name="Cancel", button_type="default", width=100),
+                    pn.widgets.Button(name="Submit", button_type="primary", width=100),
+                    pn.widgets.Button(name="Cancel", button_type="default", width=100),
                 ),
                 visible=self.show_correction_form,
             )
@@ -1652,8 +1663,7 @@ class DataValidationPage(param.Parameterized):
             )
 
             # Complete layout
-            layout = pn.Column(header, dashboard_layout,
-                               sizing_mode="stretch_width")
+            layout = pn.Column(header, dashboard_layout, sizing_mode="stretch_width")
 
             return layout
         except Exception as e:
@@ -1674,10 +1684,14 @@ class DataValidationPage(param.Parameterized):
     def _highlight_selected_patient(self):
         """Update button styles so currently selected patient is obvious."""
         try:
+            selected_key = (
+                str(self.selected_patient_id)
+                if self.selected_patient_id is not None
+                else None
+            )
             for pid, btn in self.patient_buttons.items():
-                # Fallback to stored default style when not selected
                 default_type = getattr(btn, "_default_type", "default")
-                btn.button_type = "primary" if pid == self.selected_patient_id else default_type
+                btn.button_type = "primary" if pid == selected_key else default_type
         except Exception as exc:
             logger.debug("Highlight update failed: %s", exc)
 
@@ -1689,7 +1703,8 @@ class DataValidationPage(param.Parameterized):
         try:
             logger.info("Reloading validation rules from CSV → YAML → DB")
             seed_validation_rules_main(
-                self._csv_rules_path, self._yaml_rules_path, self.db_path)
+                self._csv_rules_path, self._yaml_rules_path, self.db_path
+            )
             # Clear cached rules in engine and reload
             if self.validation_engine:
                 self.validation_engine.rules = []
@@ -1719,7 +1734,8 @@ class DataValidationPage(param.Parameterized):
             return demo_df.iloc[0]
         except Exception as exc:
             logger.error(
-                "Error loading demographics for patient %s: %s", patient_id, exc)
+                "Error loading demographics for patient %s: %s", patient_id, exc
+            )
             return pd.Series(dtype="object")
 
     def _compute_record_quality(self, patient_id: int) -> tuple[float, str]:
@@ -1758,7 +1774,7 @@ class DataValidationPage(param.Parameterized):
             elif ratio >= 0.80:
                 colour = "warning"  # amber
             else:
-                colour = "danger"   # red
+                colour = "danger"  # red
             return ratio, colour
         except Exception as exc:
             logger.error("Error computing record quality: %s", exc)
@@ -1773,7 +1789,8 @@ class DataValidationPage(param.Parameterized):
             return vm_df.iloc[0]
         except Exception as exc:
             logger.error(
-                "Error fetching visit metrics for patient %s: %s", patient_id, exc)
+                "Error fetching visit metrics for patient %s: %s", patient_id, exc
+            )
             return pd.Series(dtype="object")
 
     def _latest_vitality_score(self, patient_id: int) -> str | None:
@@ -1790,7 +1807,8 @@ class DataValidationPage(param.Parameterized):
             return str(latest_row["score_value"])
         except Exception as exc:
             logger.error(
-                "Error fetching vitality score for patient %s: %s", patient_id, exc)
+                "Error fetching vitality score for patient %s: %s", patient_id, exc
+            )
             return None
 
     def _days_since(self, date_str: str | None) -> int | None:
@@ -1800,14 +1818,15 @@ class DataValidationPage(param.Parameterized):
         try:
             from datetime import datetime, timezone
 
-            d = datetime.fromisoformat(
-                date_str.replace("Z", ""))  # tolerate Z suffix
+            d = datetime.fromisoformat(date_str.replace("Z", ""))  # tolerate Z suffix
             today = datetime.now(tz=timezone.utc).replace(tzinfo=None)
             return (today - d).days
         except Exception:
             return None
 
-    def mark_patient_as_verified(self, patient_id, reason="Patient data verified – all issues addressed"):
+    def mark_patient_as_verified(
+        self, patient_id, reason="Patient data verified – all issues addressed"
+    ):
         """Mark *all* validation_results for *patient_id* as **verified**.
 
         This hides the patient from the Issues list immediately.  On the next JSON
@@ -1833,13 +1852,12 @@ class DataValidationPage(param.Parameterized):
             if not result_ids:
                 conn.close()
                 pn.state.notifications.warning(
-                    "No validation results found for this patient")
+                    "No validation results found for this patient"
+                )
                 return
 
             # Audit table entries (one per result)
-            audit_rows = [
-                (rid, "verify", reason, "current_user") for rid in result_ids
-            ]
+            audit_rows = [(rid, "verify", reason, "current_user") for rid in result_ids]
             cursor.executemany(
                 """
                 INSERT INTO correction_audit (result_id, action_type, action_reason, action_by)
@@ -1866,7 +1884,8 @@ class DataValidationPage(param.Parameterized):
                 self.selected_patient_id = None
                 self.patient_view_panel.objects = [
                     pn.pane.Markdown(
-                        "## Patient verified and removed from list.\n\nSelect another patient on the left."),
+                        "## Patient verified and removed from list.\n\nSelect another patient on the left."
+                    ),
                 ]
 
             pn.state.notifications.success(
@@ -1874,8 +1893,7 @@ class DataValidationPage(param.Parameterized):
             )
         except Exception as exc:
             logger.error("Error marking patient as verified: %s", exc)
-            pn.state.notifications.error(
-                "Failed to verify patient – check logs")
+            pn.state.notifications.error("Failed to verify patient – check logs")
 
 
 # Create instance with exception handling

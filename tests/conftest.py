@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 import os
-import importlib
 
 # Ensure project root is on sys.path so pytest can find project modules
 # Go up two levels from tests/conftest.py
@@ -18,6 +17,7 @@ os.environ.setdefault("OPENAI_API_KEY", "dummy-test-key")
 
 try:
     from app import ai_helper as _ai_helper
+
     _ai_helper._OFFLINE_MODE = False  # type: ignore[attr-defined]
 except Exception:
     # If ai_helper not yet imported, set flag via importlib when it's loaded

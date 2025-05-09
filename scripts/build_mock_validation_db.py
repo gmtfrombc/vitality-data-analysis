@@ -19,7 +19,6 @@ Then point the application at it:
 from __future__ import annotations
 
 import argparse
-import os
 import sqlite3
 from pathlib import Path
 from typing import Dict, List
@@ -247,6 +246,7 @@ def build_db(db_path: Path) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main(out_path: str) -> None:
     path = Path(out_path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -255,10 +255,10 @@ def main(out_path: str) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Build mock validation SQLite DB")
-    parser.add_argument("--out", default="data/mock_validation.db",
-                        help="Output path for SQLite file")
+    parser = argparse.ArgumentParser(description="Build mock validation SQLite DB")
+    parser.add_argument(
+        "--out", default="data/mock_validation.db", help="Output path for SQLite file"
+    )
     args = parser.parse_args()
 
     main(args.out)
