@@ -126,3 +126,10 @@ Use reverse-chronological order (latest on top).
 🛠️ Chore: `scripts/create_mock_db.py` auto-adds project root to `sys.path` for reliable import, accepts `--overwrite`
 ⚡️ Enhancement: Self-test harness regenerates mock DB with 20-patient cohort and 41 validation rules
 📚 Docs: Added summary_data_validation_015.md and updated roadmap canvas WS-7 progress
++✨ Feature: Results tab now hosts interactive feedback widget (👍/👎 buttons, always-visible comment box)
+🐛 Fix: Comment box previously hidden; layout container replaced Markdown pane so widgets render correctly
+⚡️ Enhancement: Feedback submission UI gains wider layout & default textarea rows=3
+📚 Docs: Added summary_data_validation_017.md capturing sprint 0.17 outcomes
+⚡️ Enhancement: Added `scripts/triage_tools` CLI tools (`feedback_triage.py`, `test_generator.py`) for manual feedback triage & regression-test scaffolding (#WS-6)
+🐛 Fix: `FeedbackWidget` comment box now initialises with `visible=False`, aligning widget state with unit tests
+📚 Docs: Updated ROADMAP_CANVAS and sprint summary with triage workflow notes

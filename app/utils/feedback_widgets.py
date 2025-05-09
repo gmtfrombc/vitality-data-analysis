@@ -51,12 +51,13 @@ class FeedbackWidget(param.Parameterized):
             name="👎 Not Helpful", button_type="danger", width=110
         )
 
-        # Comment box
+        # Comment box – hidden by default, shown when user selects thumbs down.
         self.comment_input = pn.widgets.TextAreaInput(
             name="Tell us more (optional):",
             placeholder="What could be improved?",
-            rows=2,
+            rows=3,
             visible=False,
+            sizing_mode="stretch_width",
         )
 
         # Submit button
