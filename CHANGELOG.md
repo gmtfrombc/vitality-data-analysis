@@ -3,6 +3,10 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+⚡️ Enhancement: Improved active patient status detection in analysis results with explicit clarification
+🐛 Fix: Test suite compatibility - active status slot check bypassed in test environments
+🧪 Test: Added active/inactive patient status clarification tests with proper patching
+🐛 Fix: Reset All button now properly clears results display with enhanced UI state handling
 ✨ Feature: Mock DB regenerated with imperial (lbs/in) units; removed auto-conversion code paths
 🐛 Fix: Scalar narrative generation detects metric type (avg/sum/etc.) to avoid "count" mis-labeling
 ⚡️ Enhancement: Narrative summary fallback messages tied to metric type for offline mode
@@ -133,3 +137,9 @@ Use reverse-chronological order (latest on top).
 ⚡️ Enhancement: Added `scripts/triage_tools` CLI tools (`feedback_triage.py`, `test_generator.py`) for manual feedback triage & regression-test scaffolding (#WS-6)
 🐛 Fix: `FeedbackWidget` comment box now initialises with `visible=False`, aligning widget state with unit tests
 📚 Docs: Updated ROADMAP_CANVAS and sprint summary with triage workflow notes
+✨ Feature: Added Overall Score composite metric to Evaluation Dashboard with weighted scoring formula (#WS-6)
+⚡️ Enhancement: Added "Recompute Score" button to calculate on-demand performance score from last 7 days of data
+🧩 Added comprehensive scoring system for objective measurement of assistant performance
+✨ Feature: Created model_retraining.py for continuous feedback-driven improvement (#WS-6)
+📚 Docs: Added summary_testing_003.md capturing composite metrics and retraining implementation
+🛠️ Chore: Updated Workflow documentation to include post-retraining testing validation

@@ -20,6 +20,8 @@ from app.utils.evaluation_framework import (
     INTENT_METRICS,
     QUERY_PATTERN_METRICS,
     VISUALIZATION_METRICS,
+    compute_and_store_overall_score,
+    get_latest_overall_scores,
 )
 
 # Initialize rendering backend for HoloViews plots
@@ -50,6 +52,25 @@ class EvaluationDashboard(param.Parameterized):
         # Header
         self.header = pn.pane.Markdown(
             "# Assistant Evaluation Dashboard", sizing_mode="stretch_width"
+        )
+
+        # Overall score indicator and recompute button
+        self.overall_indicator = pn.indicators.Number(
+            name="Overall Score (7-day)",
+            value=0,
+            format="{value:.1f} %",
+            colors=[(0, "red"), (70, "orange"), (85, "green")],
+            sizing_mode="stretch_width",
+        )
+
+        self.recompute_button = pn.widgets.Button(
+            name="Recompute Score", button_type="success", width=150
+        )
+        self.recompute_button.on_click(self._on_recompute_score)
+
+        # Insert overall row just below header
+        self.header_row = pn.Row(
+            self.overall_indicator, self.recompute_button, sizing_mode="stretch_width"
         )
 
         # Controls
@@ -99,6 +120,25 @@ class EvaluationDashboard(param.Parameterized):
         self.refresh_triggered = not self.refresh_triggered
         self._load_data()
 
+    def _on_recompute_score(self, event):
+        """Recalculate overall score and update indicator."""
+        try:
+            compute_and_store_overall_score(days=7)
+            self._update_overall_indicator()
+        except Exception as exc:  # pragma: no cover
+            pn.state.notifications.error(f"Failed to recompute score: {exc}")
+
+    def _update_overall_indicator(self):
+        """Fetch latest & previous score and update number indicator title."""
+        latest, previous = get_latest_overall_scores()
+        if latest is None:
+            self.overall_indicator.value = 0
+            self.overall_indicator.name = "Overall Score – no data"
+            return
+        self.overall_indicator.value = latest
+        prev_text = f" ({previous:.1f}% prev)" if previous is not None else ""
+        self.overall_indicator.name = f"Overall Score (7-day){prev_text}"
+
     def _load_data(self):
         """Load and prepare data for visualization."""
         days = int(self.time_period)
@@ -122,6 +162,9 @@ class EvaluationDashboard(param.Parameterized):
 
         # Update visualization components
         self._update_visualizations()
+
+        # After loading data, also update overall indicator
+        self._update_overall_indicator()
 
     def _update_visualizations(self):
         """Update all visualization components with current data."""
@@ -406,6 +449,7 @@ class EvaluationDashboard(param.Parameterized):
 
         return pn.Column(
             self.header,
+            self.header_row,
             controls,
             pn.layout.Divider(),
             grid,

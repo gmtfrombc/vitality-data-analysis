@@ -36,6 +36,7 @@ RESPONSE_METRICS = "response"
 INTENT_METRICS = "intent"
 QUERY_PATTERN_METRICS = "query_patterns"
 VISUALIZATION_METRICS = "visualization"
+OVERALL_METRICS = "overall"  # Composite headline score
 
 # Table for storing evaluation metrics history
 METRICS_TABLE_SQL = """
@@ -395,6 +396,99 @@ def compute_visualization_metrics(
     }
 
     return metrics
+
+
+# ---------------------------------------------------------------------------
+# Composite score helpers
+# ---------------------------------------------------------------------------
+
+
+def _compute_response_speed_score(
+    avg_ms: float, max_ms: float = 2000
+) -> float:  # noqa: D401
+    """Map *avg_ms* → [0-1] where 0 ms ⇒ 1.0 and ≥*max_ms* ⇒ 0.0."""
+    if avg_ms is None or avg_ms <= 0:
+        return 1.0
+    score = 1 - avg_ms / max_ms
+    return max(0.0, min(1.0, score))
+
+
+def compute_overall_score(
+    metrics: Dict[str, Dict[str, Any]],  # noqa: D401
+) -> float:
+    """Return composite score in **0-100** range given *metrics* dict.
+
+    Formula (weights sum to 1.0):
+      • 0.4  × satisfaction_rate
+      • 0.2  × (1 − clarification_rate)
+      • 0.2  × visualized_satisfaction
+      • 0.2  × response_speed_score
+    """
+    try:
+        satisfaction = metrics.get(SATISFACTION_METRICS, {}).get("satisfaction_rate", 0)
+        clarification = metrics.get(INTENT_METRICS, {}).get("clarification_rate", 1)
+        visual_satisf = metrics.get(VISUALIZATION_METRICS, {}).get(
+            "visualized_satisfaction", 0
+        )
+        avg_resp_ms = metrics.get(RESPONSE_METRICS, {}).get("avg_response_time_ms", 0)
+
+        response_speed = _compute_response_speed_score(avg_resp_ms)
+
+        score = (
+            0.4 * satisfaction
+            + 0.2 * (1 - clarification)
+            + 0.2 * visual_satisf
+            + 0.2 * response_speed
+        )
+        return round(score * 100, 1)
+    except Exception:  # pragma: no cover – safety
+        logger.exception("Error computing overall score")
+        return 0.0
+
+
+def compute_and_store_overall_score(
+    days: int = 7, db_file: str | None = None
+) -> float:  # noqa: D401
+    """Compute composite score for *days* window and store it in DB."""
+    metrics = compute_all_metrics(days=days, db_file=db_file)
+    score = compute_overall_score(metrics)
+
+    # Store in assistant_metrics table
+    conn = _get_metrics_conn(db_file)
+    start = (datetime.now() - timedelta(days=days)).isoformat()
+    end = datetime.now().isoformat()
+    with conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO assistant_metrics
+            (metric_type, metric_name, metric_value, period_start, period_end)
+            VALUES (?,?,?,?,?)
+            """,
+            (OVERALL_METRICS, "overall_score", score, start, end),
+        )
+    return score
+
+
+def get_latest_overall_scores(
+    db_file: str | None = None,
+) -> tuple[float | None, float | None]:  # noqa: D401
+    """Return (latest_score, previous_score)."""
+    conn = _get_metrics_conn(db_file)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        """
+        SELECT metric_value, period_end FROM assistant_metrics
+        WHERE metric_type = ? AND metric_name = 'overall_score'
+        ORDER BY period_end DESC
+        LIMIT 2
+        """,
+        (OVERALL_METRICS,),
+    ).fetchall()
+    if not rows:
+        return None, None
+    latest = rows[0]["metric_value"] if len(rows) > 0 else None
+    previous = rows[1]["metric_value"] if len(rows) > 1 else None
+    return latest, previous
 
 
 # ---------------------------------------------------------------------------
