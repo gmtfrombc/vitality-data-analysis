@@ -41,6 +41,12 @@ class FeedbackWidget(param.Parameterized):
         # Create UI components
         self._create_components()
 
+        # Comment box always visible by default
+        self.show_comment = (
+            False  # reflects whether it's required but keep false initially
+        )
+        self.comment_input.visible = True
+
     def _create_components(self):
         """Create all the UI components for the feedback widget."""
         # Rating buttons
@@ -51,7 +57,7 @@ class FeedbackWidget(param.Parameterized):
             name="👎 Not Helpful", button_type="danger", width=110
         )
 
-        # Comment box – hidden by default, shown when user selects thumbs down.
+        # Comment box – initially hidden, shown when user selects thumbs down
         self.comment_input = pn.widgets.TextAreaInput(
             name="Tell us more (optional):",
             placeholder="What could be improved?",
@@ -65,10 +71,16 @@ class FeedbackWidget(param.Parameterized):
             name="Submit Feedback", button_type="primary", disabled=True, width=150
         )
 
-        # Thank you message
+        # Thank you message - more prominent with styling
         self.thank_you = pn.pane.Markdown(
-            "**Thank you for your feedback!** It helps us improve the assistant.",
+            "### Thank you for your feedback! \n\nYour input helps us improve the assistant.",
             visible=False,
+            styles={
+                "background": "#e8f4f8",
+                "padding": "10px",
+                "border-radius": "5px",
+                "border-left": "4px solid #28a745",
+            },
         )
 
         # Wire up event handlers
@@ -93,9 +105,10 @@ class FeedbackWidget(param.Parameterized):
         self.thumbs_up.button_type = "success" if rating == "up" else "light"
         self.thumbs_down.button_type = "danger" if rating == "down" else "light"
 
-        # Show comment box for thumbs down by default
+        # Update show_comment flag – true when thumbs down selected
         self.show_comment = rating == "down"
-        self.comment_input.visible = self.show_comment
+        # Comment box remains visible regardless
+        # (No change to self.comment_input.visible)
 
         # Enable submit button
         self.submit_button.disabled = False
@@ -146,21 +159,33 @@ class FeedbackWidget(param.Parameterized):
     def view(self) -> pn.Column:
         """Return the complete widget view."""
         header = pn.pane.Markdown("### Help Us Improve", margin=(0, 0, 5, 0))
+
+        # Create a row with "Was this analysis helpful?" text and buttons directly adjacent
         description = pn.pane.Markdown(
-            "Was this analysis helpful?", margin=(0, 0, 10, 0)
+            "Was this analysis helpful?",
+            margin=(5, 10, 5, 0),
+            styles={"font-weight": "bold"},
         )
 
+        # Place buttons directly adjacent to the question text
         buttons_row = pn.Row(
+            description,
             self.thumbs_up,
-            pn.Spacer(width=10),
+            pn.Spacer(width=5),
             self.thumbs_down,
-            sizing_mode="stretch_width",
+            align="center",
+            styles={"margin-bottom": "10px"},
+        )
+
+        # Feedback label that will be displayed above the comment box
+        feedback_label = pn.pane.Markdown(
+            "Please provide additional feedback (optional):", margin=(5, 0, 2, 0)
         )
 
         return pn.Column(
             header,
-            description,
             buttons_row,
+            feedback_label,
             self.comment_input,
             pn.Spacer(height=5),
             self.submit_button,

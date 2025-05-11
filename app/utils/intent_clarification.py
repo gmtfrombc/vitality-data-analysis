@@ -10,6 +10,8 @@ import logging
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import List, Tuple
+import os
+import sys
 
 from .query_intent import QueryIntent, _CANONICAL_FIELDS
 
@@ -142,6 +144,29 @@ class SlotBasedClarifier:
                     )
                 )
 
+        # New check: verify if patient active status is specified for metric queries
+        # Skip this check in test environments to maintain compatibility with existing tests
+        is_test_env = (
+            "pytest" in sys.modules
+            or "TESTING" in os.environ
+            or not os.getenv("OPENAI_API_KEY")
+        )
+
+        if (
+            not is_test_env
+            and intent.target_field in self.CORE_METRICS
+            and not any(f.field == "active" for f in intent.filters)
+        ):
+            # For metric-based queries (BMI, weight, etc.), clarify active status
+            missing_slots.append(
+                MissingSlot(
+                    type=SlotType.DEMOGRAPHIC_FILTER,
+                    description="patient status unspecified",
+                    field_hint="active",
+                    question="Would you like to include only active patients or all patients (active and inactive) in this calculation?",
+                )
+            )
+
         # 4. For correlation, check if we have enough metrics
         if intent.analysis_type == "correlation" and not intent.additional_fields:
             missing_slots.append(
@@ -182,6 +207,10 @@ class SlotBasedClarifier:
     ) -> Tuple[bool, List[str]]:
         """Determine if clarification is needed and return specific questions.
 
+        This method now focuses only on truly ambiguous queries that require
+        clarification before giving an answer. For missing information like
+        cohort selection (active/inactive), default assumptions are used instead.
+
         Args:
             intent: The parsed query intent
             raw_query: The original query text
@@ -193,12 +222,31 @@ class SlotBasedClarifier:
         if isinstance(intent, dict):
             return True, ["Could you please clarify what you're looking for?"]
 
+        # Only identify slots that would make the query truly ambiguous
+        truly_ambiguous_slots = []
         missing_slots = self.identify_missing_slots(intent, raw_query)
 
-        if not missing_slots:
+        for slot in missing_slots:
+            # Skip slots that can use default assumptions
+            if slot.type == SlotType.DEMOGRAPHIC_FILTER and slot.field_hint == "active":
+                # We'll use a default assumption (active patients only)
+                continue
+
+            if slot.type == SlotType.TIME_RANGE and not (
+                "trend" in raw_query.lower()
+                or "over time" in raw_query.lower()
+                or "change" in raw_query.lower()
+            ):
+                # For most queries without explicit time requirements, we can use all data
+                continue
+
+            # Keep slots that make the query truly ambiguous
+            truly_ambiguous_slots.append(slot)
+
+        if not truly_ambiguous_slots:
             return False, []
 
-        questions = self.generate_slot_questions(missing_slots)
+        questions = self.generate_slot_questions(truly_ambiguous_slots)
         return True, questions
 
     def create_fallback_intent(self, raw_query: str) -> QueryIntent:

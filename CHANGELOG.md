@@ -3,6 +3,16 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+📚 Docs: Added summary_testing_005.md documenting human-in-the-loop workflow refinements and feedback system improvements
+🧩 Refactor: Enhanced feedback widget reset functionality to ensure proper state after each interaction
+⚡️ Enhancement: Added proper reset functionality for feedback components including comment box visibility 
+🧩 Refactor: Fixed workflow order to ensure logical user flow: results → refinement → feedback
+🐛 Fix: Feedback comment box made consistently visible to encourage more detailed user feedback
+🐛 Fix: Sandbox execution error fixed - corrected double braces causing "unhashable type: 'dict'" in error handler
+⚡️ Enhancement: Feedback widget now shows confirmation "Thank you" message after thumbs up/down
+🧩 Refactor: Repositioned refine controls above feedback widget for more logical user flow
+🐛 Fix: Feedback buttons moved adjacent to "Was this answer helpful?" label for better UX
+✅ Add: Proper event handlers for feedback buttons now correctly record user feedback in database
 ⚡️ Enhancement: Improved active patient status detection in analysis results with explicit clarification
 🐛 Fix: Test suite compatibility - active status slot check bypassed in test environments
 🧪 Test: Added active/inactive patient status clarification tests with proper patching

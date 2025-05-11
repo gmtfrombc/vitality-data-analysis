@@ -128,6 +128,8 @@ def _execute_code_in_process(code: str, queue: multiprocessing.Queue):
             "linecache",
             "inspect",
             "warnings",
+            # Param is lightweight config/parameter library used by Panel snippets
+            "param",
             "_io",
             "re",
             "asyncio",  # param/Panel internals may import while watcher fires
@@ -308,6 +310,8 @@ def _run_with_signal_timeout(code: str) -> SandboxResult:
         "linecache",
         "inspect",
         "warnings",
+        # Param is lightweight config/parameter library used by Panel snippets
+        "param",
         "_io",
         "re",
         "asyncio",  # param/Panel internals may import while watcher fires
@@ -488,8 +492,33 @@ def run_snippet(code: str) -> Dict[str, Any]:
     Executes *code* via :func:`run_user_code` and returns only the raw
     ``value`` portion when the result type is not ``error``.
     """
-    res = run_user_code(code)
-    if res.type == "error":
-        return {"error": res.value}
-    # Keep legacy contract of dict or scalar; wrap non-dicts in themselves.
-    return res.value  # type: ignore[return-value]
+    try:
+        logger.info("Starting sandbox execution")
+
+        # First, do basic code validation
+        if not code or not code.strip():
+            logger.warning("Empty code snippet provided")
+            return {"error": "Empty code snippet"}
+
+        # Check for common issues
+        if "results" not in code and "results =" not in code:
+            # Add a warning in the logs but let it run anyway - it might assign to results indirectly
+            logger.warning("Code snippet may not assign to 'results' variable")
+
+        # Run the code with proper timeout and error handling
+        res = run_user_code(code)
+
+        if res.type == "error":
+            logger.warning(f"Sandbox execution failed: {res.value}")
+            return {"error": res.value, "fallback": True}
+
+        # Add a success log
+        logger.info(f"Sandbox execution successful, result type: {res.type}")
+
+        # Keep legacy contract of dict or scalar; wrap non-dicts in themselves.
+        return res.value  # type: ignore[return-value]
+
+    except Exception as e:
+        # Catch any unexpected errors in the sandbox wrapper itself
+        logger.error(f"Unexpected error in sandbox execution: {str(e)}", exc_info=True)
+        return {"error": str(e), "fallback": True}
