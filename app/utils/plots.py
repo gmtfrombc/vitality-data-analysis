@@ -6,8 +6,16 @@ HoloViews objects without touching databases, LLMs, or global UI state.
 
 from __future__ import annotations
 
-# local import to avoid cycles
-from holoviews.core.dimension import Dimensioned as _HVDimensioned
+# local import to avoid cycles – safely stub when holoviews absent
+try:
+    from holoviews.core.dimension import Dimensioned as _HVDimensioned  # type: ignore
+except Exception:  # pragma: no cover – sandbox path
+
+    class _HVDimensioned:  # noqa: D401 – lightweight placeholder
+        """Fallback stand-in when holoviews is blocked in the sandbox."""
+
+        pass
+
 
 try:
     import hvplot.pandas  # noqa: F401 – register hvplot accessor if available
@@ -19,7 +27,6 @@ except Exception:  # pragma: no cover – allow sandbox to proceed without full 
     pass
 
 import pandas as pd
-import holoviews as hv
 import numpy as np
 import inspect
 
@@ -34,6 +41,12 @@ __all__ = [
     "count_indicator",
 ]
 
+# Try to import holoviews – fails gracefully inside the sandbox where
+# plotting libraries are blocked.
+try:
+    import holoviews as hv  # type: ignore
+except Exception:  # pragma: no cover – sandbox path
+    hv = None  # type: ignore  # ensures downstream references exist
 
 # -----------------------------------------------------------------------------
 # Lightweight mock objects for testing visual helpers
@@ -151,28 +164,25 @@ class Overlay(_HVBaseMock):
 # HoloViews base class.  The original behaviour is preserved for all other
 # objects.
 
-_hv_meta = hv.Element.__class__  # shared metaclass for all hv core classes
+if hv is not None and hasattr(hv, "Element"):
+    _hv_meta = hv.Element.__class__  # shared metaclass for all hv core classes
+    _orig_instancecheck = _hv_meta.__instancecheck__
 
-# Cache the original handler so we can delegate non-mock checks.
-_orig_instancecheck = _hv_meta.__instancecheck__
+    def _patched_instancecheck(cls, instance):  # noqa: D401 – metaclass protocol
+        """Extended isinstance logic to recognise mock HoloViews objects."""
+        # Accept our mocks for the relevant HoloViews base classes.
+        if cls in (hv.Element, hv.Overlay, _HVDimensioned):
+            if isinstance(instance, (_HVBaseMock, Element, Overlay)):
+                # For hv.Overlay ensure the mock is the correct subclass.
+                if cls is hv.Overlay and not isinstance(instance, Overlay):
+                    return False
+                return True
 
+        # Delegate back to the original handler for everything else.
+        return _orig_instancecheck(cls, instance)
 
-def _patched_instancecheck(cls, instance):  # noqa: D401 – metaclass protocol
-    # Accept our mocks for the relevant HoloViews base classes.
-    if cls in (hv.Element, hv.Overlay, _HVDimensioned):
-        if isinstance(instance, (_HVBaseMock, Element, Overlay)):
-            # For hv.Overlay we additionally ensure the mock is the Overlay one.
-            if cls is hv.Overlay and not isinstance(instance, Overlay):
-                # Element mocks should *not* pass as Overlay.
-                return False
-            return True
-
-    # Fallback to the original implementation for everything else.
-    return _orig_instancecheck(cls, instance)
-
-
-# Apply the patch once – this affects all subclasses using the same metaclass.
-_hv_meta.__instancecheck__ = _patched_instancecheck
+    # Apply the patch globally – this affects all subclasses using the same metaclass.
+    _hv_meta.__instancecheck__ = _patched_instancecheck
 
 
 def histogram(

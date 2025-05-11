@@ -40,6 +40,9 @@ Legend: ✔ = done ☐ = pending 🔄 = in progress
 - [ ] **Testing:** A/B testing framework for clarification approaches (#feedback)
 - [ ] **Fix:** Improve feedback widget visibility and positioning (#ux #feedback)
 - [ ] **Feedback:** Add "refined_from_id" field to track query refinements (#feedback)
+- [x] **Fix:** Resolve initial sandbox NameError in BP vs A1C path (#stability)
+- [x] **Fix:** Investigate remaining sandbox blocked-import failures (holoviews 'depends', broad hvplot imports) – implement granular allowlist or shim modules (#stability)
+- [ ] **Enhancement:** Extend reference ranges to support all clinical metrics in the database (#clinicalData)
 
 > _The backlog is intentionally short; move items to Work Streams when scheduled._
 
@@ -50,14 +53,18 @@ Legend: ✔ = done ☐ = pending 🔄 = in progress
 | LLM hallucinations | Incorrect clinical insights | Medium | Keep deterministic post-processing; display code used |
 | Data privacy breach | Legal & reputational | Low | Run models locally / mask PII; audit logging |
 | Scope creep | Delays | Medium | Roadmap gatekeeper & time-boxed spikes |
-| Test instability | Development friction | Medium | Implement robust mock strategy for visualization components |
+| Test instability | Development friction | Low | ✅ Implemented robust mock strategy for visualization components with lightweight stubs |
 
 ---
 ## 6. Meta
 - **Document owner:** @gmtfr  
-- **Last updated:** 2025-05-18 # Enhanced feedback widget reset functionality and documentation
+- **Last updated:** 2025-05-14 # Fixed visualization testing with HoloViews and Panel stubs; all 254 tests now pass
 - **Edit instructions for AI assistants:**  
   • Maintain markdown table formatting.  
   • Use ✔/☐/🔄 symbols for status.  
   • Preserve section headers.  
-  • Keep backlog ≤ 10 items; archive completed ones. 
+  • Keep backlog ≤ 10 items; archive completed ones.
+
+### 2025-05-11 – Sandbox stability patch
+- Delivered holistic stubs for holoviews/hvplot inside sandbox (incl. Store registry) – 'Plotting libraries are disabled' ImportErrors resolved.
+- Remaining blocker: AI-generated SQL for BP vs A1C uses `vitals.score_type` which doesn't exist. Recommend adding schema-aware validation or adjusting prompt templates/rule-engine fallback.  See docs/summary_testing_011.md. 

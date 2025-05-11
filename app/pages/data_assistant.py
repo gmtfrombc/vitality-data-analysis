@@ -7,7 +7,12 @@ This page provides interactive data analysis capabilities using natural language
 import panel as pn
 import param
 import pandas as pd
-import holoviews as hv
+
+# Safely import holoviews – may be blocked inside the sandbox
+try:
+    import holoviews as hv  # type: ignore
+except Exception:  # pragma: no cover – sandbox / test path
+    hv = None  # type: ignore  # placeholder when holoviews unavailable
 import numpy as np
 import logging
 import db_query
@@ -20,6 +25,7 @@ import time
 from app.ai_helper import ai, get_data_schema  # Fix import path
 from app.utils.sandbox import run_snippet
 from app.utils.plots import histogram
+from app.utils.metric_reference import get_reference
 from app.utils.query_intent import (
     QueryIntent,
     compute_intent_confidence,
@@ -51,7 +57,14 @@ logging.basicConfig(
 logger = logging.getLogger("data_assistant")
 
 # Initialize rendering backend for HoloViews plots
-hv.extension("bokeh")
+# Only enable hv.extension when holoviews imported successfully
+if hv is not None:
+    try:
+        hv.extension("bokeh")
+    except Exception:
+        pass
+
+# Panel extensions (safe)
 pn.extension("tabulator")
 pn.extension("plotly")
 
@@ -477,14 +490,14 @@ class DataAnalysisAssistant(param.Parameterized):
         description = pn.pane.Markdown(
             """
             Ask questions about your patient data in natural language and get visualized insights.
-            
+
             This assistant follows a multi-step workflow:
             1. Ask your question
             2. The assistant will clarify your intent if needed
             3. Python code will be generated for your analysis
             4. The code will be executed with explanations
             5. Results will be shown with visualizations
-            
+
             You can save questions for future use using the "Save Question" button below.
             """
         )
@@ -910,8 +923,11 @@ import pandas as pd
 import numpy as np
 import logging
 
+# Declare results variable before try block to avoid NameError in fallback path
+results: dict | None = None
+
 try:
-{indented_code}
+    {indented_code}
     # Ensure results variable is always set
     if 'results' not in locals() or results is None:
         results = {"error": "No results generated"}
@@ -959,9 +975,9 @@ Depending on the intent, the generated code follows one of two deterministic pat
 
 Regardless of the path you'll see:
 
-• **Data Loading** – either via an SQL call (`db_query.query_dataframe`) or DataFrame helper (`db_query.get_all_vitals()`, …)  
-• **Filtering & Joins** – demographic filters, active status, date ranges.  
-• **Analysis** – aggregation, metric function, or distribution.  
+• **Data Loading** – either via an SQL call (`db_query.query_dataframe`) or DataFrame helper (`db_query.get_all_vitals()`, …)
+• **Filtering & Joins** – demographic filters, active status, date ranges.
+• **Analysis** – aggregation, metric function, or distribution.
 • **results** – the snippet *always* assigns the final output to a variable called `results` so downstream UI can pick it up.
 
 Intermediate results and visualisations are still shown so you can audit the process.
@@ -1013,6 +1029,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
         # ---- Fallback legacy rule engine ----
         query = self.query_text.lower()
+        # Initialize results to empty dict to avoid NameError
         results = {}
 
         try:
@@ -1428,10 +1445,21 @@ Intermediate results and visualisations are still shown so you can audit the pro
             ) and "a1c" in query:
                 # Compare BP values for patients with high vs normal A1C
                 vitals_df = db_query.get_all_vitals()
+                # Initialize results dict to avoid NameError
+                results = {
+                    "stats": {},
+                    "execution_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+
                 # Fetch A1C lab results
                 a1c_df = db_query.query_dataframe(
-                    "SELECT patient_id, value FROM lab_results WHERE test_name = 'A1C'"
+                    "SELECT patient_id, value FROM lab_results WHERE lower(test_name) = 'a1c'"
                 )
+
+                if a1c_df.empty:
+                    a1c_df = db_query.query_dataframe(
+                        "SELECT patient_id, score_value AS value FROM scores WHERE lower(score_type) = 'a1c'"
+                    )
 
                 if a1c_df.empty or vitals_df.empty:
                     results["error"] = (
@@ -1440,10 +1468,27 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 else:
                     # Convert A1C to numeric
                     a1c_df["value"] = pd.to_numeric(a1c_df["value"], errors="coerce")
-                    # Define high A1C threshold (>= 6.5)
-                    high_mask = a1c_df["value"] >= 6.5
+                    # Normalise integer stored values (e.g., 65 -> 6.5)
+                    if a1c_df["value"].median(skipna=True) > 20:
+                        a1c_df["value"] = a1c_df["value"] / 10
+
+                    # Thresholds from clinical reference ranges (single source of truth)
+                    ref = get_reference()
+                    normal_max = ref["a1c"]["normal"]["max"]
+                    # Use the first threshold above normal (pre_diabetes if exists) so "high" means >5.5
+                    if (
+                        "pre_diabetes" in ref["a1c"]
+                        and ref["a1c"]["pre_diabetes"].get("min") is not None
+                    ):
+                        high_min = ref["a1c"]["pre_diabetes"]["min"]
+                    else:
+                        high_min = ref["a1c"]["high"]["min"]
+
+                    high_mask = a1c_df["value"] >= high_min
+                    normal_mask = a1c_df["value"] <= normal_max
+
                     high_patients = a1c_df.loc[high_mask, "patient_id"].unique()
-                    normal_patients = a1c_df.loc[~high_mask, "patient_id"].unique()
+                    normal_patients = a1c_df.loc[normal_mask, "patient_id"].unique()
 
                     bp_cols = [
                         c
@@ -1488,10 +1533,16 @@ Intermediate results and visualisations are still shown so you can audit the pro
                         stats = {
                             "high_a1c": _bp_stats(high_bp),
                             "normal_a1c": _bp_stats(normal_bp),
-                            "threshold": 6.5,
+                            "threshold": high_min,  # kept for backward compatibility
                         }
 
                         results["stats"] = stats
+                        results["reference"] = {
+                            "a1c_high": high_min,
+                            "a1c_normal_max": normal_max,
+                            "sbp_normal": ref["sbp"]["normal"],
+                            "dbp_normal": ref["dbp"]["normal"],
+                        }
 
                 self.intermediate_results = results
 
@@ -1634,17 +1685,13 @@ Intermediate results and visualisations are still shown so you can audit the pro
     def _display_execution_results(self):
         """Display the results of the code execution with intermediate steps"""
         # Safely detect "empty" results without triggering pandas truth-value errors
-        no_results = False
         if self.intermediate_results is None:
-            no_results = True
-        elif isinstance(self.intermediate_results, dict | list):
-            no_results = len(self.intermediate_results) == 0
-
-        if no_results:
             self.execution_pane.objects = [
                 pn.pane.Markdown("No execution results available.")
             ]
             return
+
+        no_results = False
 
         logger.info("Displaying execution results")
 
@@ -1802,6 +1849,27 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
                         result_panels.append(pn.pane.Markdown(gender_text))
 
+                        # Insert reference ranges if present
+                        if (
+                            isinstance(self.intermediate_results, dict)
+                            and "reference" in self.intermediate_results
+                        ):
+                            ref = self.intermediate_results["reference"]
+                            ref_lines = ["### Reference Ranges"]
+                            if "a1c_high" in ref and "a1c_normal_max" in ref:
+                                ref_lines.append(
+                                    f"- Normal A1C ≤ {ref['a1c_normal_max']} %, High A1C ≥ {ref['a1c_high']} %"
+                                )
+                            if "sbp_normal" in ref:
+                                ref_lines.append(
+                                    f"- Systolic BP normal range: {ref['sbp_normal']['min']}-{ref['sbp_normal']['max']} mmHg"
+                                )
+                            if "dbp_normal" in ref:
+                                ref_lines.append(
+                                    f"- Diastolic BP normal range: {ref['dbp_normal']['min']}-{ref['dbp_normal']['max']} mmHg"
+                                )
+                            result_panels.append(pn.pane.Markdown("\n".join(ref_lines)))
+
                     # Display BMI distribution if data is available
                     if (
                         "bmi_data" in self.intermediate_results
@@ -1921,10 +1989,21 @@ Intermediate results and visualisations are still shown so you can audit the pro
         ) and "a1c" in query:
             # Compare BP values for patients with high vs normal A1C
             vitals_df = db_query.get_all_vitals()
+            # Initialize results dict to avoid NameError
+            results = {
+                "stats": {},
+                "execution_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+
             # Fetch A1C lab results
             a1c_df = db_query.query_dataframe(
-                "SELECT patient_id, value FROM lab_results WHERE test_name = 'A1C'"
+                "SELECT patient_id, value FROM lab_results WHERE lower(test_name) = 'a1c'"
             )
+
+            if a1c_df.empty:
+                a1c_df = db_query.query_dataframe(
+                    "SELECT patient_id, score_value AS value FROM scores WHERE lower(score_type) = 'a1c'"
+                )
 
             if a1c_df.empty or vitals_df.empty:
                 results["error"] = (
@@ -1933,10 +2012,27 @@ Intermediate results and visualisations are still shown so you can audit the pro
             else:
                 # Convert A1C to numeric
                 a1c_df["value"] = pd.to_numeric(a1c_df["value"], errors="coerce")
-                # Define high A1C threshold (>= 6.5)
-                high_mask = a1c_df["value"] >= 6.5
+                # Normalise integer stored values (e.g., 65 -> 6.5)
+                if a1c_df["value"].median(skipna=True) > 20:
+                    a1c_df["value"] = a1c_df["value"] / 10
+
+                # Thresholds from clinical reference ranges (single source of truth)
+                ref = get_reference()
+                normal_max = ref["a1c"]["normal"]["max"]
+                # Use the first threshold above normal (pre_diabetes if exists) so "high" means >5.5
+                if (
+                    "pre_diabetes" in ref["a1c"]
+                    and ref["a1c"]["pre_diabetes"].get("min") is not None
+                ):
+                    high_min = ref["a1c"]["pre_diabetes"]["min"]
+                else:
+                    high_min = ref["a1c"]["high"]["min"]
+
+                high_mask = a1c_df["value"] >= high_min
+                normal_mask = a1c_df["value"] <= normal_max
+
                 high_patients = a1c_df.loc[high_mask, "patient_id"].unique()
-                normal_patients = a1c_df.loc[~high_mask, "patient_id"].unique()
+                normal_patients = a1c_df.loc[normal_mask, "patient_id"].unique()
 
                 bp_cols = [
                     c
@@ -1971,12 +2067,18 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     stats = {
                         "high_a1c": _bp_stats(high_bp),
                         "normal_a1c": _bp_stats(normal_bp),
-                        "threshold": 6.5,
+                        "threshold": high_min,  # kept for backward compatibility
                     }
 
                     results["stats"] = stats
+                    results["reference"] = {
+                        "a1c_high": high_min,
+                        "a1c_normal_max": normal_max,
+                        "sbp_normal": ref["sbp"]["normal"],
+                        "dbp_normal": ref["dbp"]["normal"],
+                    }
 
-            self.intermediate_results = results
+                self.intermediate_results = results
 
         elif "weight" in query:
             if (
@@ -2485,9 +2587,40 @@ Intermediate results and visualisations are still shown so you can audit the pro
             method = self.analysis_result["method"]
             assumptions.append(f"Statistical method: {method}")
 
+        # Add reference ranges if provided in intermediate_results
+        if (
+            isinstance(self.intermediate_results, dict)
+            and "reference" in self.intermediate_results
+        ):
+            ref_dict = self.intermediate_results["reference"]
+
+            if isinstance(ref_dict, dict) and ref_dict:
+                assumptions.append("Reference ranges used in this analysis:")
+
+                def _fmt_range(label: str, entry):
+                    label_fmt = label.replace("_", " ").upper()
+                    if isinstance(entry, dict):
+                        min_v = entry.get("min")
+                        max_v = entry.get("max")
+                        if min_v is not None and max_v is not None:
+                            return f"  • {label_fmt}: {min_v} – {max_v}"
+                        elif min_v is not None:
+                            return f"  • {label_fmt}: ≥ {min_v}"
+                        elif max_v is not None:
+                            return f"  • {label_fmt}: ≤ {max_v}"
+                    else:
+                        # Scalar value (e.g., a1c_high numeric)
+                        return f"  • {label_fmt}: {entry}"
+                    return None
+
+                for k, v in ref_dict.items():
+                    line = _fmt_range(k, v)
+                    if line:
+                        assumptions.append(line)
+
         # Create the assumptions section
         if assumptions:
-            assumption_section = "\n\n**Assumptions made:**\n"
+            assumption_section = "\n\n**Assumptions / Reference ranges:**\n"
             for assumption in assumptions:
                 assumption_section += f"- {assumption}\n"
 
