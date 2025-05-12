@@ -4,6 +4,14 @@ Data Analysis Assistant Page
 This page provides interactive data analysis capabilities using natural language queries.
 """
 
+from etl.json_ingest import ingest as _json_ingest
+from app.utils.saved_questions_db import (
+    DB_FILE,
+    load_saved_questions as _load_saved_questions_db,
+    migrate_from_json as _migrate_from_json,
+    upsert_question,
+)
+from app.utils.feedback_db import insert_feedback
 import panel as pn
 import param
 import pandas as pd
@@ -33,22 +41,21 @@ from app.utils.query_intent import (
 from app.utils.intent_clarification import clarifier
 from app.utils.feedback_widgets import create_feedback_widget
 import sys
+from app.utils.patient_attributes import Gender, Active, label_for
+
+# Constants for patient attribute values
+FEMALE = Gender.FEMALE.value
+MALE = Gender.MALE.value
+ACTIVE = Active.ACTIVE.value
+INACTIVE = Active.INACTIVE.value
 
 # Feedback DB helper
-from app.utils.feedback_db import insert_feedback
 
 # Auto-viz & feedback helpers (WS-4, WS-6)
 
 # WS-3-C write-path integration
-from app.utils.saved_questions_db import (
-    DB_FILE,
-    load_saved_questions as _load_saved_questions_db,
-    migrate_from_json as _migrate_from_json,
-    upsert_question,
-)
 
 # ETL ingest
-from etl.json_ingest import ingest as _json_ingest
 
 # Configure logging
 logging.basicConfig(
@@ -854,7 +861,7 @@ class DataAnalysisAssistant(param.Parameterized):
                         for filter in intent.filters:
                             if filter.field == "active":
                                 has_active_filter = True
-                                filter.value = 1
+                                filter.value = ACTIVE
                                 break
 
                         if not has_active_filter:
@@ -862,7 +869,9 @@ class DataAnalysisAssistant(param.Parameterized):
                                 # Add active=1 filter
                                 from app.utils.query_intent import Filter
 
-                                intent.filters.append(Filter(field="active", value=1))
+                                intent.filters.append(
+                                    Filter(field="active", value=ACTIVE)
+                                )
                                 logger.info(
                                     "Added active=1 filter based on clarification"
                                 )
@@ -1047,7 +1056,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 # BMI analysis
                 if "female" in query or "women" in query:
                     # Female BMI analysis
-                    female_patients = patients_df[patients_df["gender"] == "F"][
+                    female_patients = patients_df[patients_df["gender"] == FEMALE][
                         "id"
                     ].tolist()
                     filtered_vitals = vitals_df[
@@ -1059,8 +1068,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     if not include_inactive:
                         # Active only filter
                         active_female_patients = patients_df[
-                            (patients_df["gender"] == "F")
-                            & (patients_df["active"] == 1)
+                            (patients_df["gender"] == FEMALE)
+                            & (patients_df["active"] == ACTIVE)
                         ]["id"].tolist()
                         active_filtered = valid_bmi[
                             valid_bmi["patient_id"].isin(active_female_patients)
@@ -1096,7 +1105,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     # Process based on query specifics
                     if "female" in query or "women" in query:
                         # Female BMI analysis
-                        female_patients = patients_df[patients_df["gender"] == "F"][
+                        female_patients = patients_df[patients_df["gender"] == FEMALE][
                             "id"
                         ].tolist()
                         filtered_vitals = vitals_df[
@@ -1108,8 +1117,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                         if not include_inactive:
                             # Active only filter
                             active_female_patients = patients_df[
-                                (patients_df["gender"] == "F")
-                                & (patients_df["active"] == 1)
+                                (patients_df["gender"] == FEMALE)
+                                & (patients_df["active"] == ACTIVE)
                             ]["id"].tolist()
                             active_filtered = valid_bmi[
                                 valid_bmi["patient_id"].isin(active_female_patients)
@@ -1142,8 +1151,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                                 "total_female_patients": len(female_patients),
                                 "active_female_patients": len(
                                     patients_df[
-                                        (patients_df["gender"] == "F")
-                                        & (patients_df["active"] == 1)
+                                        (patients_df["gender"] == FEMALE)
+                                        & (patients_df["active"] == ACTIVE)
                                     ]
                                 ),
                                 "total_records": len(filtered_vitals),
@@ -1173,8 +1182,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                                 "total_female_patients": len(female_patients),
                                 "active_female_patients": len(
                                     patients_df[
-                                        (patients_df["gender"] == "F")
-                                        & (patients_df["active"] == 1)
+                                        (patients_df["gender"] == FEMALE)
+                                        & (patients_df["active"] == ACTIVE)
                                     ]
                                 ),
                                 "total_records": len(filtered_vitals),
@@ -1218,7 +1227,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
                 elif "male" in query or "men" in query:
                     # Male BMI analysis
-                    male_patients = patients_df[patients_df["gender"] == "M"][
+                    male_patients = patients_df[patients_df["gender"] == MALE][
                         "id"
                     ].tolist()
                     filtered_vitals = vitals_df[
@@ -1230,8 +1239,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     if not include_inactive:
                         # Active only filter
                         active_male_patients = patients_df[
-                            (patients_df["gender"] == "M")
-                            & (patients_df["active"] == 1)
+                            (patients_df["gender"] == MALE)
+                            & (patients_df["active"] == ACTIVE)
                         ]["id"].tolist()
                         active_filtered = valid_bmi[
                             valid_bmi["patient_id"].isin(active_male_patients)
@@ -1245,8 +1254,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                         "total_male_patients": len(male_patients),
                         "active_male_patients": len(
                             patients_df[
-                                (patients_df["gender"] == "M")
-                                & (patients_df["active"] == 1)
+                                (patients_df["gender"] == MALE)
+                                & (patients_df["active"] == ACTIVE)
                             ]
                         ),
                         "total_records": len(filtered_vitals),
@@ -1347,7 +1356,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
                     # Calculate by gender
                     gender_stats = {}
-                    for gender in ["F", "M"]:
+                    for gender in [FEMALE, MALE]:
                         if not include_inactive:
                             gender_patients = patients_df[
                                 (patients_df["gender"] == gender)
@@ -1383,8 +1392,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
             elif "active patients" in query:
                 # Active patients analysis
-                active_patients = patients_df[patients_df["active"] == 1]
-                inactive_patients = patients_df[patients_df["active"] == 0]
+                active_patients = patients_df[patients_df["active"] == ACTIVE]
+                inactive_patients = patients_df[patients_df["active"] == INACTIVE]
 
                 stats = {
                     "total_patients": len(patients_df),
@@ -1582,7 +1591,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
                 # By gender if needed
                 gender_stats = {}
-                for gender in ["F", "M"]:
+                for gender in [FEMALE, MALE]:
                     gender_patients = patients_df[patients_df["gender"] == gender][
                         "id"
                     ].tolist()
@@ -1645,10 +1654,10 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 # General analysis
                 stats = {
                     "total_patients": len(patients_df),
-                    "active_patients": sum(patients_df["active"] == 1),
-                    "inactive_patients": sum(patients_df["active"] == 0),
+                    "active_patients": sum(patients_df["active"] == ACTIVE),
+                    "inactive_patients": sum(patients_df["active"] == INACTIVE),
                     "percent_active": (
-                        sum(patients_df["active"] == 1) / len(patients_df) * 100
+                        sum(patients_df["active"] == ACTIVE) / len(patients_df) * 100
                         if len(patients_df) > 0
                         else 0
                     ),
@@ -1839,7 +1848,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                         gender_text = "**BMI by Gender:**\n\n"
 
                         for gender, g_stats in gender_stats.items():
-                            gender_label = "Female" if gender == "F" else "Male"
+                            gender_label = label_for("gender", gender)
                             gender_text += f"- {gender_label} ({g_stats.get('count', 'N/A')} patients): "
                             gender_text += (
                                 f"Average BMI {g_stats.get('avg_bmi', 'N/A'):.2f} "
@@ -1905,7 +1914,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     gender_text = "**2. Gender Breakdown of Active Patients:**\n\n"
 
                     for gender, count in stats["gender_counts"].items():
-                        gender_label = "Female" if gender == "F" else "Male"
+                        gender_label = label_for("gender", gender)
                         percent = stats["gender_percent"].get(gender, 0)
                         gender_text += f"- {gender_label}: {count} ({percent:.1f}%)\n"
 
@@ -1923,8 +1932,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                         pie_data = pd.DataFrame(
                             {
                                 "Gender": [
-                                    "Female" if g == "F" else "Male"
-                                    for g in gender_counts.index
+                                    label_for("gender", g) for g in gender_counts.index
                                 ],
                                 "Count": gender_counts.values,
                             }
@@ -2111,7 +2119,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     gender_text = "**Weight by Gender:**\n\n"
 
                     for gender, g_stats in gender_stats.items():
-                        gender_label = "Female" if gender == "F" else "Male"
+                        gender_label = label_for("gender", gender)
                         gender_text += f"- {gender_label}: "
                         gender_text += f"Average Weight {g_stats.get('avg_weight', 'N/A'):.1f} lbs "
                         gender_text += f"({g_stats.get('records', 'N/A')} records, "
@@ -2154,8 +2162,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     for gender, count in stats["gender_counts"].items():
                         gender_label = (
                             "Female"
-                            if gender == "F"
-                            else "Male" if gender == "M" else gender
+                            if gender == FEMALE
+                            else "Male" if gender == MALE else gender
                         )
                         percent = (
                             count / stats["total_patients"] * 100
@@ -2211,7 +2219,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                         try:
                             # Check for active filter in the intent
                             for f in _intent.filters:
-                                if f.field == "active" and f.value == 1:
+                                if f.field == "active" and f.value == ACTIVE:
                                     active_filter_applied = True
                                     patient_filter_text = " for active patients"
                                     break
@@ -2241,8 +2249,8 @@ Intermediate results and visualisations are still shown so you can audit the pro
                         # Look for keywords in the generated code that suggest active filtering
                         if hasattr(self, "generated_code"):
                             if "active" in self.generated_code and (
-                                "== 1" in self.generated_code
-                                or "= 1" in self.generated_code
+                                "== ACTIVE" in self.generated_code
+                                or "= ACTIVE" in self.generated_code
                             ):
                                 active_filter_applied = True
                                 patient_filter_text = " for active patients"
@@ -2342,7 +2350,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                         try:
                             # Check for active filter in the intent
                             for f in _intent.filters:
-                                if f.field == "active" and f.value == 1:
+                                if f.field == "active" and f.value == ACTIVE:
                                     active_filter_applied = True
                                     break
                         except Exception:
@@ -3405,7 +3413,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     "filtered_patients = female_patients\n"
                     if include_inactive
                     else "# Filter for active patients only\n"
-                    "filtered_patients = female_patients[female_patients['active'] == 1]\n"
+                    "filtered_patients = female_patients[female_patients['active'] == ACTIVE]\n"
                 )
                 + "\n"
                 "# Get patient IDs\n"
@@ -3465,11 +3473,120 @@ Intermediate results and visualisations are still shown so you can audit the pro
         # Initialize samples dict for data sample collection
         samples = {}
 
-        # Mock responses based on query types
+        # --------------------------------------------------
+        # NEW: Program completer / finisher analysis support
+        # --------------------------------------------------
+        completer_keywords = [
+            "program completer",
+            "program completers",
+            "program finisher",
+            "program finishers",
+            "completer",
+            "finishers",
+        ]
+        if any(kw in query for kw in completer_keywords):
+            logger.info("Detected program completer query path")
+
+            # Retrieve patient & visit data
+            patients_df = db_query.get_all_patients()
+
+            # Get provider_visits for all patients via direct SQL to avoid per-row calls
+            visit_df = db_query.query_dataframe(
+                "SELECT patient_id, provider_visits FROM patient_visit_metrics"
+            )
+
+            # Merge to have active + provider_visits per patient
+            merged = (
+                patients_df[["id", "active"]]
+                .merge(
+                    visit_df,
+                    left_on="id",
+                    right_on="patient_id",
+                    how="left",
+                )
+                .rename(columns={"id": "patient_id"})
+            )
+
+            # Identify program completers
+            from app.utils.patient_attributes import is_program_completer
+
+            merged["is_completer"] = merged.apply(
+                lambda row: is_program_completer(
+                    row["active"], row.get("provider_visits")
+                ),
+                axis=1,
+            )
+
+            completer_ids = merged.loc[merged["is_completer"], "patient_id"].tolist()
+            completer_count = len(completer_ids)
+
+            # --- Branch: count completers
+            if "how many" in query or "count" in query:
+                self.analysis_result = {
+                    "type": "count",
+                    "value": completer_count,
+                    "title": "Program Completers",
+                    "description": f"There are {completer_count} patients who have completed the program.",
+                    "code": (
+                        "# Identify program completers\n"
+                        "patients_df = db_query.get_all_patients()\n"
+                        'visit_df = db_query.query_dataframe("SELECT patient_id, provider_visits FROM patient_visit_metrics")\n'
+                        'merged = patients_df[["id", "active"]].merge(visit_df, left_on="id", right_on="patient_id", how="left")\n'
+                        "from app.utils.patient_attributes import is_program_completer\n"
+                        "merged['is_completer'] = merged.apply(lambda r: is_program_completer(r['active'], r['provider_visits']), axis=1)\n"
+                        "count_completers = merged['is_completer'].sum()\n"
+                    ),
+                    "visualization": self._create_count_visualization(
+                        completer_count, "Program Completers"
+                    ),
+                }
+                return  # Early exit
+
+            # --- Branch: average BMI for completers
+            if "bmi" in query and "average" in query:
+                vitals_df = db_query.get_all_vitals()
+                vitals_df = vitals_df.dropna(subset=["bmi"])
+
+                # Filter vitals to completer cohort
+                vitals_df = vitals_df[vitals_df["patient_id"].isin(completer_ids)]
+
+                if vitals_df.empty:
+                    self.analysis_result = {
+                        "type": "statistic",
+                        "value": None,
+                        "title": "Average BMI (Program Completers)",
+                        "description": "No BMI data available for program completers.",
+                    }
+                    return
+
+                avg_bmi = round(vitals_df["bmi"].mean(), 1)
+                count = vitals_df["patient_id"].nunique()
+
+                self.analysis_result = {
+                    "type": "statistic",
+                    "value": avg_bmi,
+                    "title": "Average BMI (Program Completers)",
+                    "description": f"The average BMI for {count} program completers is {avg_bmi}.",
+                    "code": (
+                        "# Calculate average BMI for program completers\n"
+                        "vitals_df = db_query.get_all_vitals()\n"
+                        "vitals_df = vitals_df.dropna(subset=['bmi'])\n"
+                        "vitals_df = vitals_df[vitals_df['patient_id'].isin(completer_ids)]\n"
+                        "avg_bmi = vitals_df['bmi'].mean()\n"
+                    ),
+                    "visualization": self._create_histogram(
+                        vitals_df, "bmi", "BMI Distribution – Program Completers"
+                    ),
+                }
+                return
+
+        # --------------------------------------------------
+        # Existing analysis branches
+        # --------------------------------------------------
         if "active patients" in query:
             # Mock getting active patients
             patients_df = db_query.get_all_patients()
-            active_count = len(patients_df[patients_df["active"] == 1])
+            active_count = len(patients_df[patients_df["active"] == ACTIVE])
 
             # Store the result
             self.analysis_result = {
@@ -3477,7 +3594,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 "value": active_count,
                 "title": "Active Patients",
                 "description": f"There are {active_count} active patients in the program.",
-                "code": "# Python code to count active patients\npatients_df = db_query.get_all_patients()\nactive_count = len(patients_df[patients_df['active'] == 1])",
+                "code": "# Python code to count active patients\npatients_df = db_query.get_all_patients()\nactive_count = len(patients_df[patients_df['active'] == ACTIVE])",
                 "visualization": self._create_count_visualization(
                     active_count, "Active Patients"
                 ),
@@ -3491,7 +3608,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
             if "female" in query or "women" in query:
                 logger.info("Filtering for female patients")
                 patients_df = db_query.get_all_patients()
-                female_patients = patients_df[patients_df["gender"] == "F"][
+                female_patients = patients_df[patients_df["gender"] == FEMALE][
                     "id"
                 ].tolist()
                 vitals_df = vitals_df[vitals_df["patient_id"].isin(female_patients)]
@@ -3499,7 +3616,9 @@ Intermediate results and visualisations are still shown so you can audit the pro
             elif "male" in query or "men" in query:
                 logger.info("Filtering for male patients")
                 patients_df = db_query.get_all_patients()
-                male_patients = patients_df[patients_df["gender"] == "M"]["id"].tolist()
+                male_patients = patients_df[patients_df["gender"] == MALE][
+                    "id"
+                ].tolist()
                 vitals_df = vitals_df[vitals_df["patient_id"].isin(male_patients)]
                 title = "Average Weight (Male Patients)"
             else:
@@ -3562,7 +3681,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
             if "female" in query or "women" in query:
                 logger.info("Filtering BMI for female patients")
                 patients_df = db_query.get_all_patients()
-                female_patients = patients_df[patients_df["gender"] == "F"][
+                female_patients = patients_df[patients_df["gender"] == FEMALE][
                     "id"
                 ].tolist()
                 logger.info(f"Found {len(female_patients)} female patients")
@@ -3572,7 +3691,9 @@ Intermediate results and visualisations are still shown so you can audit the pro
             elif "male" in query or "men" in query:
                 logger.info("Filtering BMI for male patients")
                 patients_df = db_query.get_all_patients()
-                male_patients = patients_df[patients_df["gender"] == "M"]["id"].tolist()
+                male_patients = patients_df[patients_df["gender"] == MALE][
+                    "id"
+                ].tolist()
                 logger.info(f"Found {len(male_patients)} male patients")
                 vitals_df = vitals_df[vitals_df["patient_id"].isin(male_patients)]
                 title = "BMI Distribution (Male Patients)"
@@ -3639,7 +3760,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
         # Store samples based on query intent
         if "active patients" in query and "active_patients" not in samples:
             # If we handle "active patients" earlier, we should still collect samples
-            active_patients = patients_df[patients_df["active"] == 1]
+            active_patients = patients_df[patients_df["active"] == ACTIVE]
             samples["active_patients"] = active_patients.head(5)
             samples["active_count"] = len(active_patients)
         elif "bmi" in query and "patients" not in samples:

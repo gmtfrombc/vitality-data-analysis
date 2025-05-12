@@ -289,6 +289,7 @@ _CANONICAL_FIELDS = {
     "sbp",
     "dbp",
     "active",
+    "program_completer",
 }
 
 # Common synonyms → canonical column name (lower-case keys)
@@ -321,6 +322,13 @@ SYNONYM_MAP: dict[str, str] = {
     "glucose": "score_value",
     # Generic score shortcut
     "score": "score_value",
+    # Program completion aliases
+    "program completer": "program_completer",
+    "program completers": "program_completer",
+    "program finisher": "program_completer",
+    "program finishers": "program_completer",
+    "completer": "program_completer",
+    "finishers": "program_completer",
 }
 
 

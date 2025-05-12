@@ -10,6 +10,7 @@ One-liner bullets so AI agents (and humans) can quickly diff what changed since 
 Use reverse-chronological order (latest on top).
 
 [Unreleased] – ongoing
+📚 Docs: Added summary_testing_013.md with step-by-step plan to resume patient-attribute enum refactor (Session 013)
 📚 Docs: Added summary_testing_010.md documenting visualization stub improvements for test compatibility
 🧩 Refactor: Enhanced feedback widget reset functionality to ensure proper state after each interaction
 ⚡️ Enhancement: Added proper reset functionality for feedback components including comment box visibility 
@@ -183,3 +184,9 @@ Use reverse-chronological order (latest on top).
 ⚡️ Enhancement: Patched Panel's HoloViews pane to accept lightweight visualization stubs during tests
 🧪 Test: All 254 tests now pass consistently with visualization libraries properly stubbed
 📚 Docs: Added summary_testing_005.md documenting human-in-the-loop workflow refinements and feedback system improvements
+📚 Docs: Added `docs/create_centralized_semantics.md` outlining problem, attempted refactor, rollback, and next-steps
+🛠️ Chore: Updated `ROADMAP_CANVAS.md` to track Centralised patient-attribute semantics milestone (WS-1)
+📚 Docs: Added `docs/summary_testing_012.md` recording testing session & linter error rollback
+✨ Feature: Support for "program completer / finisher" attribute recognised across query intent, code-gen, and offline rule-engine (#WS-1)
+🧪 Test: Added `test_query_intent_program_completer.py` ensuring synonym mapping to canonical `program_completer`
+🧩 Refactor: DataAnalysisAssistant offline path now counts and analyses program completers (BMI, cohort size)
