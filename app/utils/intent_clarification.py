@@ -13,7 +13,8 @@ from typing import List, Tuple
 import os
 import sys
 
-from .query_intent import QueryIntent, _CANONICAL_FIELDS
+from .query_intent import QueryIntent, _CANONICAL_FIELDS, CONDITION_FIELD
+from .condition_mapper import condition_mapper
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class SlotType(Enum):
     COMPARISON_GROUP = auto()
     ANALYSIS_SPECIFIC = auto()
     INTENT_UNCLEAR = auto()
+    CONDITION_UNCLEAR = auto()  # New slot type for condition clarification
 
 
 @dataclass
@@ -187,6 +189,38 @@ class SlotBasedClarifier:
                 )
             )
 
+        # 6. Check for condition-related filters that need clarification
+        if (
+            intent.target_field == CONDITION_FIELD
+            or raw_query.lower().find("condition") >= 0
+        ):
+            # Query is about conditions - check if we need to ask clarifying questions
+            condition_filters = [
+                f for f in intent.filters if f.field == CONDITION_FIELD
+            ]
+
+            if condition_filters:
+                for condition_filter in condition_filters:
+                    condition_term = condition_filter.value
+                    if condition_mapper.should_ask_clarifying_question(condition_term):
+                        missing_slots.append(
+                            MissingSlot(
+                                type=SlotType.CONDITION_UNCLEAR,
+                                description="condition needs clarification",
+                                field_hint=condition_term,
+                                question=f"Did you mean a specific diagnosis for '{condition_term}'? We don't have this exact condition in our dictionary.",
+                            )
+                        )
+            elif "condition" in raw_query.lower() and intent.analysis_type == "count":
+                # Query about conditions but no condition filter specified
+                missing_slots.append(
+                    MissingSlot(
+                        type=SlotType.CONDITION_UNCLEAR,
+                        description="condition not specified",
+                        question="Which specific medical condition are you interested in analyzing?",
+                    )
+                )
+
         return missing_slots
 
     def generate_slot_questions(self, missing_slots: List[MissingSlot]) -> List[str]:
@@ -238,6 +272,11 @@ class SlotBasedClarifier:
                 or "change" in raw_query.lower()
             ):
                 # For most queries without explicit time requirements, we can use all data
+                continue
+
+            # Always include condition clarification questions
+            if slot.type == SlotType.CONDITION_UNCLEAR:
+                truly_ambiguous_slots.append(slot)
                 continue
 
             # Keep slots that make the query truly ambiguous

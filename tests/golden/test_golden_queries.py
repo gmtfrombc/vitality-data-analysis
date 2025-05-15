@@ -21,7 +21,7 @@ import pandas as pd
 import numpy as np
 
 # Project imports -------------------------------------------------------------
-import db_query
+import app.db_query as db_query
 from app.ai_helper import AIHelper
 from app.utils.sandbox import run_snippet
 
@@ -40,7 +40,7 @@ ALIASES = {
     "sex": "gender",
     "patient": "patient_id",
     "assessment_type": "assessment_type",
-    "score_type": "assessment_type",
+    "score_type": "score_type",
     "activity_status": "active",
     "status": "active",
 }

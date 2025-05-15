@@ -1,27 +1,45 @@
 from __future__ import annotations
 
-"""Pydantic models representing the structured intent extracted from a user's natural-language analytics question.
+"""Intent parsing and validation for data analysis assistant.
 
-Phase-1 of the assistant roadmap introduces a rigid schema so that the LLM must
-return machine-readable JSON.  Down-stream steps—code generation, execution,
-visualisation—rely exclusively on this validated structure.
+Defines structures and validation for QueryIntent, the core interface between
+natural language input and data analysis.
 """
 
-from typing import Any, Dict, List, Literal, Optional, Union
+import logging
 from datetime import date, datetime
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union, Iterable
 
-# Public symbols exposed by *query_intent* when using `from … import *`
-__all__: list[str] = [
-    "DateRange",
+from pydantic import BaseModel, Field, model_validator
+
+try:
+    from pydantic import ValidationError  # noqa
+except ImportError:  # pragma: no cover - compatibility with pydantic v1
+    from pydantic import ValidationError  # type: ignore
+
+from .condition_mapper import condition_mapper
+
+__all__ = [
+    "QueryIntent",
     "Filter",
     "Condition",
-    "QueryIntent",
     "parse_intent_json",
+    "inject_condition_filters_from_query",
 ]
 
+
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
-# Primitive building-blocks
+# Helper exposed for import convenience
+# ---------------------------------------------------------------------------
+
+# Constants for condition handling in queries
+CONDITION_FIELD = "condition"
+PMH_TABLE = "pmh"
+
+# ---------------------------------------------------------------------------
+# Core data models for intent parsing
 # ---------------------------------------------------------------------------
 
 
@@ -257,6 +275,28 @@ def parse_intent_json(raw: str) -> QueryIntent:
     except json.JSONDecodeError as exc:
         raise ValueError(f"Intent JSON is not valid: {exc}") from exc
 
+    # ------------------------------------------------------------------
+    # Sanitize time_range: remove or nullify when dates are missing/empty
+    # ------------------------------------------------------------------
+    if isinstance(data, dict) and "time_range" in data:
+        tr = data.get("time_range")
+        if isinstance(tr, dict):
+            # Treat blank strings as None
+            start = (tr.get("start_date") or "").strip()
+            end = (tr.get("end_date") or "").strip()
+            if not start and not end:
+                # Nothing specified – drop time_range entirely to avoid validation error
+                data["time_range"] = None
+            else:
+                # Remove keys that are blank so partial ranges still validate via string/None conversion
+                if not start:
+                    tr.pop("start_date", None)
+                if not end:
+                    tr.pop("end_date", None)
+                # If after removal dict is empty, set to None
+                if not tr:
+                    data["time_range"] = None
+
     try:
         # Pydantic v2 migrated – *model_validate* replaces deprecated *parse_obj*.
         # Keep a tiny fallback for projects still on v1.
@@ -290,6 +330,7 @@ _CANONICAL_FIELDS = {
     "dbp",
     "active",
     "program_completer",
+    "condition",  # Added for condition mapping
 }
 
 # Common synonyms → canonical column name (lower-case keys)
@@ -329,6 +370,20 @@ SYNONYM_MAP: dict[str, str] = {
     "program finishers": "program_completer",
     "completer": "program_completer",
     "finishers": "program_completer",
+    # Condition-related aliases
+    "diagnosis": "condition",
+    "medical condition": "condition",
+    "health condition": "condition",
+    "problem": "condition",
+    "medical problem": "condition",
+    "pmh": "condition",  # Past medical history
+    "diagnoses": "condition",
+    "conditions": "condition",
+    # Obesity-related condition aliases
+    "obesity": "condition",
+    "morbid obesity": "condition",
+    "severe obesity": "condition",
+    "overweight": "condition",
 }
 
 
@@ -344,6 +399,21 @@ def _normalise_field_name(name: str) -> str:  # noqa: D401
     if canonical in {"patient", "patients"}:
         canonical = "patient_id"
     return canonical
+
+
+def _get_condition_icd_codes(condition_value: str) -> List[str]:
+    """Get ICD-10 codes for a condition value.
+
+    Args:
+        condition_value: The condition term or value to look up.
+
+    Returns:
+        A list of ICD-10 codes for the condition, or an empty list if not found.
+    """
+    if not condition_value:
+        return []
+
+    return condition_mapper.get_icd_codes(condition_value)
 
 
 def normalise_intent_fields(intent: "QueryIntent") -> None:  # noqa: D401
@@ -364,6 +434,91 @@ def normalise_intent_fields(intent: "QueryIntent") -> None:  # noqa: D401
         c.field = _normalise_field_name(c.field)
 
     # No return – mutation in-place keeps references intact.
+
+
+def get_condition_filter_sql(condition_value: str) -> Tuple[str, bool]:
+    """Generate SQL filter for a condition.
+
+    Args:
+        condition_value: The condition term to look up.
+
+    Returns:
+        A tuple of (SQL clause, success flag). If successful, the SQL clause will
+        filter PMH records by the appropriate ICD-10 codes. If unsuccessful, an empty
+        string and False will be returned.
+    """
+    codes = condition_mapper.get_all_codes_as_sql_list(condition_value)
+    if codes:
+        return f"{PMH_TABLE}.code IN ({codes})", True
+    return "", False
+
+
+def get_canonical_condition(term: str) -> Optional[str]:
+    """Get the canonical condition name for a given term.
+
+    Args:
+        term: The condition term or synonym to look up.
+
+    Returns:
+        The canonical condition name if found, None otherwise.
+    """
+    return condition_mapper.get_canonical_condition(term)
+
+
+# ---------------------------------------------------------------------------
+# NEW: helper to inject condition filters from raw query text
+# ---------------------------------------------------------------------------
+
+
+def _extract_condition_terms(text: str) -> Iterable[str]:
+    """Yield canonical condition names mentioned in *text*.
+
+    Uses the condition_mapper's term index for substring matching.
+    """
+    lower_q = text.lower()
+    for term, canonical in condition_mapper.term_to_canonical.items():
+        if term in lower_q:
+            yield canonical
+
+
+def inject_condition_filters_from_query(intent: "QueryIntent", raw_query: str) -> None:
+    """Add condition filters to *intent* when raw text mentions known conditions.
+
+    If one or more clinical conditions are detected in *raw_query* and the intent
+    does not already include a condition filter, we append them.  For simple
+    patient counts we also set ``target_field = 'condition'`` so downstream
+    templates route via ICD-10 mapping.
+    """
+    existing_conditions = {
+        f.value.lower() for f in intent.filters if f.field == CONDITION_FIELD
+    }
+    new_conditions = [
+        c for c in _extract_condition_terms(raw_query) if c not in existing_conditions
+    ]
+
+    if not new_conditions:
+        return
+
+    # Import here to avoid circular dependency at module import time
+    from app.utils.query_intent import Filter as _Filter  # type: ignore
+
+    for cond in new_conditions:
+        # Use canonical condition as value (underscores -> space for readability)
+        intent.filters.append(
+            _Filter(field=CONDITION_FIELD, value=cond.replace("_", " "))
+        )
+
+    # If this is a simple patient count and target_field is not already a metric
+    if intent.analysis_type == "count" and intent.target_field in {
+        "patient_id",
+        "patient",
+        "patients",
+        "",
+    }:
+        intent.target_field = CONDITION_FIELD
+
+    # Ensure field names are normalised for any newly added filters
+    normalise_intent_fields(intent)
 
 
 # ---------------------------------------------------------------------------
@@ -434,4 +589,9 @@ __all__ += [
     "normalise_intent_fields",
     "DateRange",
     "compute_intent_confidence",
+    "get_condition_filter_sql",
+    "get_canonical_condition",
+    "CONDITION_FIELD",
+    "PMH_TABLE",
+    "inject_condition_filters_from_query",
 ]

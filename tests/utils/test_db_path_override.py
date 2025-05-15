@@ -1,5 +1,4 @@
-"""Test that setting the MH_DB_PATH environment variable overrides the default DB path.
-"""
+"""Test that setting the MH_DB_PATH environment variable overrides the default DB path."""
 
 from __future__ import annotations
 
@@ -32,9 +31,9 @@ def test_db_path_env_override(tmp_path, monkeypatch, table_name):
     if "db_query" in importlib.sys.modules:
         importlib.reload(importlib.import_module("db_query"))
     else:
-        import db_query  # noqa: F401 – imported for side-effect
+        import app.db_query as db_query  # noqa: F401 – imported for side-effect
 
-    import db_query  # pylint: disable=reimported
+    import app.db_query as db_query  # pylint: disable=reimported
 
     # ------------------------------------------------------------------
     # 3. Run a trivial query via helper – should succeed against mock DB

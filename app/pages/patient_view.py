@@ -9,12 +9,14 @@ import holoviews as hv
 import panel as pn
 import param
 import pandas as pd
-import db_query
+import app.db_query as db_query
 import sys
 import logging
 from pathlib import Path
 
 from app.utils.plots import line_plot
+from app.utils.patient_attributes import Active, label_for
+from app.utils.date_helpers import normalize_datetime
 
 # Configure logging
 logging.basicConfig(
@@ -60,7 +62,7 @@ class PatientView(param.Parameterized):
 
         # Filter for active patients if show_active_only is True
         if self.show_active_only:
-            patients_df = patients_df[patients_df["active"] == 1]
+            patients_df = patients_df[patients_df["active"] == Active.ACTIVE.value]
 
         self.patient_options = [
             (str(row["id"]), f"{row['first_name']} {row['last_name']}")
@@ -127,7 +129,7 @@ class PatientView(param.Parameterized):
 
         patients_df = db_query.get_all_patients()
         if self.show_active_only:
-            patients_df = patients_df[patients_df["active"] == 1]
+            patients_df = patients_df[patients_df["active"] == Active.ACTIVE.value]
 
         try:
             # Update the patient dropdown options
@@ -175,7 +177,7 @@ class PatientView(param.Parameterized):
         # Create patient selector with filtered options
         patients_df = db_query.get_all_patients()
         if self.show_active_only:
-            patients_df = patients_df[patients_df["active"] == 1]
+            patients_df = patients_df[patients_df["active"] == Active.ACTIVE.value]
 
         patient_dict = {
             f"{row['first_name']} {row['last_name']}": str(row["id"])
@@ -939,14 +941,22 @@ class PatientView(param.Parameterized):
         program_start = self.format_date(demographics.get("program_start_date", ""))
         program_end = self.format_date(demographics.get("program_end_date", ""))
 
+        # Get gender label using label_for function
+        gender = demographics.get("gender", "")
+        gender_label = label_for("gender", gender) if gender else ""
+
         # Calculate months in program for active patients
         months_in_program = ""
-        if demographics.get("active", 0) == 1 and demographics.get(
-            "program_start_date"
-        ):
+        if demographics.get(
+            "active", Active.INACTIVE.value
+        ) == Active.ACTIVE.value and demographics.get("program_start_date"):
             try:
                 start_date = pd.to_datetime(demographics.get("program_start_date"))
                 current_date = pd.Timestamp.now()
+
+                # Fix timezone issue by normalizing both datetime objects
+                start_date = normalize_datetime(start_date)
+                current_date = normalize_datetime(current_date)
 
                 # Calculate difference in months
                 diff_months = (current_date.year - start_date.year) * 12 + (
@@ -975,15 +985,15 @@ class PatientView(param.Parameterized):
 
         **Program Start:** {program_start}{months_in_program}
         **Program End:** {program_end}
-        **Active:** {formatted_bools.get('Active Status', 'No')}
+        **Active:** {formatted_bools.get('Active', 'No')}
 
-        **Gender:** {demographics.get('gender', '')}
+        **Gender:** {gender_label}
         **Birth Date:** {birth_date}
         **Ethnicity:** {demographics.get('ethnicity', '')}
 
         **ETOH:** {formatted_bools.get('ETOH', 'No')}
         **Tobacco:** {formatted_bools.get('Tobacco', 'No')}
-        **On GLP-1:** {formatted_bools.get('On GLP-1', 'No')}
+        **On GLP-1:** {formatted_bools.get('GLP1Full', 'No')}
 
         """
 

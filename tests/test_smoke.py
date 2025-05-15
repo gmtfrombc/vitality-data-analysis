@@ -67,7 +67,7 @@ def test_histogram_helper_returns_plot():
 def test_count_active_patients(monkeypatch):
     """Check rule-engine can count active patients without crashing."""
 
-    import db_query
+    import app.db_query as db_query
 
     expected_count = len(db_query.get_all_patients().query("active == 1"))
 

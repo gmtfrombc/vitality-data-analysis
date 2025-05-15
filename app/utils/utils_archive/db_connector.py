@@ -4,7 +4,7 @@ Database Connector Utility
 This module provides a connection to the db_query functions.
 """
 
-import db_query
+import app.db_query as db_query
 import sys
 import logging
 from pathlib import Path

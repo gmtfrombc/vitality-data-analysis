@@ -1,0 +1,218 @@
+---
+# Core conditions mapping file for ICD-10 codes
+# Each condition has:
+#   - canonical: The standardized condition name (required)
+#   - codes: List of ICD-10 codes associated with the condition (required)
+#   - synonyms: Common alternative names for the condition (optional)
+#   - description: Brief description of the condition (optional)
+
+conditions:
+  # Top metabolic health conditions
+  - canonical: "type_2_diabetes"
+    description: "Type 2 diabetes mellitus"
+    codes: 
+      - "E11.9"   # Type 2 diabetes mellitus without complications
+      - "E11.8"   # Type 2 diabetes mellitus with unspecified complications
+      - "E11.69"  # Type 2 diabetes mellitus with other specified complication
+      - "E11.65"  # Type 2 diabetes mellitus with hyperglycemia
+      - "E11.6"   # Type 2 diabetes mellitus with other specified complications
+    synonyms:
+      - "type 2 diabetes"
+      - "t2dm"
+      - "type ii diabetes"
+      - "adult onset diabetes"
+      - "non-insulin dependent diabetes"
+      - "diabetes type 2"
+      
+  - canonical: "prediabetes"
+    description: "Prediabetes condition"
+    codes:
+      - "R73.03" # Prediabetes
+    synonyms:
+      - "pre-diabetes"
+      - "impaired glucose tolerance"
+      - "impaired fasting glucose"
+      - "borderline diabetes"
+      
+  - canonical: "obesity"
+    description: "Obesity, general"
+    codes:
+      - "E66.9"  # Obesity, unspecified
+      - "E66.8"  # Other obesity
+    synonyms:
+      - "obese"
+      - "bmi between 30 and 40"
+      - "class 1 obesity"
+      - "class 2 obesity"
+      - "bmi 30-40"
+      - "bmi greater than 30"
+      - "bmi less than 40"
+      
+  - canonical: "morbid_obesity"
+    description: "Morbid (severe) obesity"
+    codes:
+      - "E66.01" # Morbid (severe) obesity due to excess calories
+    synonyms:
+      - "severe obesity"
+      - "morbidly obese"
+      - "class 3 obesity"
+      - "extreme obesity"
+      - "bmi > 40"
+      - "bmi greater than 40"
+      - "bmi over 40"
+      - "morbid obesity"
+      
+  - canonical: "overweight"
+    description: "Overweight (pre-obesity)"
+    codes:
+      - "E66.3"  # Overweight
+    synonyms:
+      - "pre-obesity"
+      - "elevated bmi"
+      - "bmi between 25 and 30"
+      - "bmi 25-30"
+      - "bmi greater than 25"
+      - "bmi less than 30"
+      
+  - canonical: "hypertension"
+    description: "High blood pressure"
+    codes:
+      - "I10"    # Essential (primary) hypertension
+      - "I11.9"  # Hypertensive heart disease without heart failure
+      - "I12.9"  # Hypertensive chronic kidney disease with stage 1 through stage 4 chronic kidney disease, or unspecified chronic kidney disease
+    synonyms:
+      - "high blood pressure"
+      - "htn"
+      - "essential hypertension"
+      - "elevated blood pressure"
+      
+  - canonical: "hyperlipidemia"
+    description: "Abnormally elevated cholesterol and triglycerides in the blood"
+    codes:
+      - "E78.5"  # Hyperlipidemia, unspecified
+      - "E78.4"  # Other hyperlipidemia
+      - "E78.2"  # Mixed hyperlipidemia
+    synonyms:
+      - "dyslipidemia"
+      - "elevated lipids"
+      - "high lipids"
+      - "lipid disorder"
+
+  - canonical: "pure hypercholesterolemia"
+    description: "High blood cholesterol level without elevated triglycerides"
+    codes:
+      - "E78.0"  # Pure hypercholesterolemia # Mixed hyperlipidemia # Hyperlipidemia, unspecified
+    synonyms:
+      - "high cholesterol"
+      - "hypercholesterolemia"
+      - "elevated cholesterol"
+      - "cholesterol disorder"
+
+  - canonical: "pure hyperglyceridemia"
+    description: "High blood triglycerides level without elevated cholesterol"
+    codes:
+      - "E78.1"  # Pure hyperglyceridemia
+    synonyms:
+      - "high triglycerides"
+      - "elevated triglycerides"
+      - "elevated TGs"
+
+  - canonical: "hypothyroidism"
+    description: "Thyroid gland not producing enough thyroid hormone"
+    codes: 
+      - "E03.9"  # Hypothyroidism, unspecified
+    synonyms:
+      - "underactive thyroid"
+      - "low thyroid"
+      - "thyroid deficiency"
+      
+  - canonical: "fatty_liver"
+    description: "Fatty liver disease"
+    codes:
+      - "K76.0"  # Fatty (change of) liver, not elsewhere classified
+    synonyms:
+      - "nafld"
+      - "nonalcoholic fatty liver disease"
+      - "steatosis"
+      - "hepatic steatosis"
+      
+  - canonical: "depression"
+    description: "Depression disorders"
+    codes:
+      - "F32.9"  # Major depressive disorder, single episode, unspecified
+      - "F33.9"  # Major depressive disorder, recurrent, unspecified
+      - "F33.1"  # Major depressive disorder, recurrent, moderate
+      - "F33.4"  # Major depressive disorder, recurrent, in full remission
+      - "F33.2"  # Major depressive disorder, recurrent, severe without psychotic features
+    synonyms:
+      - "major depression"
+      - "clinical depression"
+      - "depressive disorder"
+      - "mdd"
+      
+  - canonical: "anxiety"
+    description: "Anxiety disorders"
+    codes:
+      - "F41.9"  # Anxiety disorder, unspecified
+      - "F41.1"  # Generalized anxiety disorder
+    synonyms:
+      - "anxiety disorder"
+      - "gad"
+      - "generalized anxiety"
+      - "panic disorder"
+      
+  - canonical: "vitamin_d_deficiency"
+    description: "Vitamin D deficiency"
+    codes:
+      - "E55.9"  # Vitamin D deficiency, unspecified
+    synonyms:
+      - "low vitamin d"
+      - "vitamin d insufficiency"
+
+  - canonical: "type_1_diabetes"
+    description: "Type 1 diabetes mellitus"
+    codes:
+      - "E10.9"  # Type 1 diabetes mellitus without complications
+      - "E10.65" # Type 1 diabetes mellitus with hyperglycemia
+    synonyms:
+      - "type 1 diabetes"
+      - "t1dm"
+      - "type i diabetes"
+      - "juvenile diabetes"
+      - "insulin-dependent diabetes"
+
+  - canonical: "chronic_kidney_disease"
+    description: "Chronic kidney disease"
+    codes:
+      - "N18.9"  # Chronic kidney disease, unspecified
+      - "N18.1"  # Chronic kidney disease, stage 1
+      - "N18.2"  # Chronic kidney disease, stage 2
+      - "N18.3"  # Chronic kidney disease, stage 3
+      - "N18.4"  # Chronic kidney disease, stage 4
+      - "N18.5"  # Chronic kidney disease, stage 5
+    synonyms:
+      - "ckd"
+      - "chronic renal failure"
+      - "chronic renal disease"
+      - "kidney failure"
+      - "renal insufficiency"
+      - "kidney disease"
+
+  - canonical: "obstructive_sleep_apnea"
+    description: "Obstructive sleep apnea"
+    codes:
+      - "G47.33"  # Obstructive sleep apnea
+    synonyms:
+      - "osa"
+      - "sleep apnea"
+      - "obstructive sleep apnea syndrome"
+      - "sleep disordered breathing"
+
+  - canonical: "pcos"
+    description: "Polycystic ovary syndrome"
+    codes:
+      - "E28.2"  # Polycystic ovarian syndrome
+    synonyms:
+      - "polycystic ovary syndrome"
+      - "polycystic ovarian disease"
+      - "stein-leventhal syndrome" 

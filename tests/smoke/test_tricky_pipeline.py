@@ -1,6 +1,6 @@
 import json
 import pytest
-import db_query
+import app.db_query as db_query
 from pathlib import Path
 import yaml
 from app.ai_helper import AIHelper

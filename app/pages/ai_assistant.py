@@ -8,7 +8,7 @@ The OpenAI API key should be set as an environment variable named OPENAI_API_KEY
 import panel as pn
 import param
 import pandas as pd
-import db_query
+import app.db_query as db_query
 import sys
 import os
 import json

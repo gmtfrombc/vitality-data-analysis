@@ -1170,7 +1170,7 @@ class SyntheticSelfTestLoop:
         data_generator.generate_synthetic_data()
 
         # Temporarily override DB_QUERY to use our test database
-        import db_query
+        import app.db_query as db_query
 
         self.original_db_path = db_query.DB_PATH
         db_query.DB_PATH = str(self.db_path)
@@ -1180,7 +1180,7 @@ class SyntheticSelfTestLoop:
     def teardown_test_environment(self):
         """Clean up the test environment."""
         # Restore original DB path
-        import db_query
+        import app.db_query as db_query
 
         db_query.DB_PATH = self.original_db_path
 

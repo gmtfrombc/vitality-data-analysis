@@ -1,22 +1,418 @@
-"""Advanced correlation analysis utilities.
-
-This module extends the basic correlation analysis with:
-1. Conditional correlations (correlations within specific subgroups)
-2. Time-series correlations (correlations over time periods)
-3. Enhanced visualization options
 """
+Advanced correlation analysis utilities.
 
-from __future__ import annotations
-
-from typing import Dict, List, Literal, Optional, Tuple
+This module provides specialized functions for analyzing correlations
+between different metrics in patient data.
+"""
 
 import numpy as np
 import pandas as pd
+from typing import Dict, List, Optional, Tuple, Literal
+import logging
+import holoviews as hv
 from scipy import stats
 
-import holoviews as hv
+logger = logging.getLogger(__name__)
 
-from app.utils.metrics import assert_columns
+# Constants for correlation types
+PEARSON = "pearson"
+SPEARMAN = "spearman"
+KENDALL = "kendall"
+VALID_CORR_METHODS = [PEARSON, SPEARMAN, KENDALL]
+
+
+def calculate_correlation_matrix(
+    df: pd.DataFrame,
+    columns: Optional[List[str]] = None,
+    method: str = PEARSON,
+) -> pd.DataFrame:
+    """
+    Calculate correlation matrix for selected columns.
+
+    Args:
+        df: DataFrame containing the data
+        columns: List of column names to include in correlation matrix
+                 If None, all numeric columns are used
+        method: Correlation method (pearson, spearman, or kendall)
+
+    Returns:
+        DataFrame containing the correlation matrix
+    """
+    if method not in VALID_CORR_METHODS:
+        logger.warning(
+            f"Invalid correlation method: {method}. Using {PEARSON} instead."
+        )
+        method = PEARSON
+
+    if columns is None:
+        # Use all numeric columns
+        numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+        columns = numeric_cols
+    else:
+        # Ensure all specified columns exist and are numeric
+        missing_cols = [col for col in columns if col not in df.columns]
+        if missing_cols:
+            logger.warning(f"Columns not found in DataFrame: {missing_cols}")
+            columns = [col for col in columns if col in df.columns]
+
+        non_numeric = [
+            col
+            for col in columns
+            if col in df.columns and not pd.api.types.is_numeric_dtype(df[col])
+        ]
+        if non_numeric:
+            logger.warning(
+                f"Non-numeric columns will be excluded from correlation: {non_numeric}"
+            )
+            columns = [
+                col
+                for col in columns
+                if col in df.columns and pd.api.types.is_numeric_dtype(df[col])
+            ]
+
+    if not columns:
+        logger.error("No valid columns for correlation calculation")
+        return pd.DataFrame()
+
+    return df[columns].corr(method=method)
+
+
+def calculate_conditional_correlation(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    condition_col: str,
+    condition_values: Optional[List] = None,
+    method: str = PEARSON,
+) -> Dict[str, float]:
+    """
+    Calculate correlation between two variables for different values of a condition.
+
+    Args:
+        df: DataFrame containing the data
+        x_col: First variable column name
+        y_col: Second variable column name
+        condition_col: Column name to condition on
+        condition_values: List of values to calculate correlations for
+                          If None, all unique values are used
+        method: Correlation method (pearson, spearman, or kendall)
+
+    Returns:
+        Dictionary mapping condition values to correlation coefficients
+    """
+    if method not in VALID_CORR_METHODS:
+        logger.warning(
+            f"Invalid correlation method: {method}. Using {PEARSON} instead."
+        )
+        method = PEARSON
+
+    # Validate columns exist
+    for col in [x_col, y_col, condition_col]:
+        if col not in df.columns:
+            logger.error(f"Column not found: {col}")
+            return {}
+
+    # Validate numeric columns
+    for col in [x_col, y_col]:
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            logger.error(f"Column must be numeric: {col}")
+            return {}
+
+    # Get unique values for the condition
+    if condition_values is None:
+        condition_values = df[condition_col].unique()
+
+    correlations = {}
+    for value in condition_values:
+        subset = df[df[condition_col] == value]
+        if len(subset) < 3:
+            # Need at least 3 points for meaningful correlation
+            logger.info(
+                f"Insufficient data points for {condition_col}={value}. Skipping."
+            )
+            correlations[str(value)] = None
+            continue
+
+        if subset[x_col].nunique() < 2 or subset[y_col].nunique() < 2:
+            # Need variation in both variables
+            logger.info(
+                f"Insufficient variation for {condition_col}={value}. Skipping."
+            )
+            correlations[str(value)] = None
+            continue
+
+        # Calculate correlation
+        corr = subset[[x_col, y_col]].corr(method=method).iloc[0, 1]
+        correlations[str(value)] = corr
+
+    return correlations
+
+
+def calculate_rolling_correlation(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    date_col: str,
+    window_size: int = 30,
+    min_periods: int = 5,
+    method: str = PEARSON,
+) -> pd.DataFrame:
+    """
+    Calculate rolling correlation between two variables over time.
+
+    Args:
+        df: DataFrame containing the data
+        x_col: First variable column name
+        y_col: Second variable column name
+        date_col: Column containing date values
+        window_size: Size of the rolling window in days
+        min_periods: Minimum number of observations in window required
+        method: Correlation method (pearson, spearman, or kendall)
+
+    Returns:
+        DataFrame with dates and corresponding correlation values
+    """
+    if method not in VALID_CORR_METHODS:
+        logger.warning(
+            f"Invalid correlation method: {method}. Using {PEARSON} instead."
+        )
+        method = PEARSON
+
+    # Validate columns exist
+    for col in [x_col, y_col, date_col]:
+        if col not in df.columns:
+            logger.error(f"Column not found: {col}")
+            return pd.DataFrame()
+
+    # Validate numeric columns
+    for col in [x_col, y_col]:
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            logger.error(f"Column must be numeric: {col}")
+            return pd.DataFrame()
+
+    # Ensure date column is datetime type
+    if not pd.api.types.is_datetime64_any_dtype(df[date_col]):
+        try:
+            df = df.copy()
+            df[date_col] = pd.to_datetime(df[date_col])
+        except Exception as e:
+            logger.error(f"Failed to convert {date_col} to datetime: {e}")
+            return pd.DataFrame()
+
+    # Sort by date
+    df = df.sort_values(by=date_col)
+
+    # Set up result DataFrame
+    result = pd.DataFrame()
+    result[date_col] = df[date_col]
+
+    # Define a function to calculate correlation for each window
+    def rolling_corr(window):
+        if len(window) < min_periods:
+            return np.nan
+        if window[x_col].nunique() < 2 or window[y_col].nunique() < 2:
+            return np.nan
+        return window[[x_col, y_col]].corr(method=method).iloc[0, 1]
+
+    # Apply the rolling correlation
+    rolling_result = (
+        df.set_index(date_col)
+        .rolling(f"{window_size}D", min_periods=min_periods)
+        .apply(rolling_corr)
+    )
+
+    # Add the correlation to the result
+    result["correlation"] = rolling_result.reset_index(drop=True)
+
+    return result
+
+
+def find_strongest_correlations(
+    df: pd.DataFrame,
+    target_col: str,
+    exclude_cols: Optional[List[str]] = None,
+    top_n: int = 5,
+    method: str = PEARSON,
+    min_abs_corr: float = 0.3,
+) -> pd.DataFrame:
+    """
+    Find the variables most strongly correlated with a target variable.
+
+    Args:
+        df: DataFrame containing the data
+        target_col: Target column to find correlations with
+        exclude_cols: Columns to exclude from analysis
+        top_n: Number of top correlations to return
+        method: Correlation method (pearson, spearman, or kendall)
+        min_abs_corr: Minimum absolute correlation to include
+
+    Returns:
+        DataFrame with columns and their correlation with the target
+    """
+    if method not in VALID_CORR_METHODS:
+        logger.warning(
+            f"Invalid correlation method: {method}. Using {PEARSON} instead."
+        )
+        method = PEARSON
+
+    # Validate target column exists
+    if target_col not in df.columns:
+        logger.error(f"Target column not found: {target_col}")
+        return pd.DataFrame()
+
+    # Validate target column is numeric
+    if not pd.api.types.is_numeric_dtype(df[target_col]):
+        logger.error(f"Target column must be numeric: {target_col}")
+        return pd.DataFrame()
+
+    # Get numeric columns
+    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+
+    # Apply exclusions
+    if exclude_cols is None:
+        exclude_cols = []
+
+    # Always exclude the target column itself
+    if target_col not in exclude_cols:
+        exclude_cols.append(target_col)
+
+    candidates = [col for col in numeric_cols if col not in exclude_cols]
+
+    if not candidates:
+        logger.warning("No candidate columns for correlation analysis")
+        return pd.DataFrame()
+
+    # Calculate correlations
+    corr_series = df[candidates + [target_col]].corr(method=method)[target_col]
+    corr_series = corr_series.drop(target_col)
+
+    # Filter by minimum correlation
+    corr_series = corr_series[corr_series.abs() >= min_abs_corr]
+
+    # Sort by absolute value and take top_n
+    sorted_corr = corr_series.abs().sort_values(ascending=False).head(top_n)
+
+    # Create result DataFrame
+    result = pd.DataFrame(
+        {
+            "column": sorted_corr.index,
+            "correlation": [corr_series[col] for col in sorted_corr.index],
+        }
+    )
+
+    return result
+
+
+def calculate_correlation_significance(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    method: str = PEARSON,
+    alpha: float = 0.05,
+) -> Tuple[float, float, bool]:
+    """
+    Calculate correlation and its statistical significance.
+
+    Args:
+        df: DataFrame containing the data
+        x_col: First variable column name
+        y_col: Second variable column name
+        method: Correlation method (pearson or spearman)
+        alpha: Significance level
+
+    Returns:
+        Tuple containing (correlation coefficient, p-value, is_significant)
+    """
+    from scipy import stats
+
+    if method not in [PEARSON, SPEARMAN]:
+        logger.warning(
+            f"Method {method} not supported for significance testing. Using {PEARSON}."
+        )
+        method = PEARSON
+
+    # Validate columns exist and are numeric
+    for col in [x_col, y_col]:
+        if col not in df.columns:
+            logger.error(f"Column not found: {col}")
+            return (np.nan, np.nan, False)
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            logger.error(f"Column must be numeric: {col}")
+            return (np.nan, np.nan, False)
+
+    # Drop missing values
+    valid_data = df[[x_col, y_col]].dropna()
+
+    if len(valid_data) < 3:
+        logger.warning("Insufficient data for correlation analysis")
+        return (np.nan, np.nan, False)
+
+    # Calculate correlation and p-value
+    if method == PEARSON:
+        corr, p_value = stats.pearsonr(valid_data[x_col], valid_data[y_col])
+    else:  # SPEARMAN
+        corr, p_value = stats.spearmanr(valid_data[x_col], valid_data[y_col])
+
+    # Determine significance
+    is_significant = p_value < alpha
+
+    return (corr, p_value, is_significant)
+
+
+def partial_correlation(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    control_cols: List[str],
+) -> float:
+    """
+    Calculate partial correlation between x and y while controlling for other variables.
+
+    Args:
+        df: DataFrame containing the data
+        x_col: First variable column name
+        y_col: Second variable column name
+        control_cols: List of column names to control for
+
+    Returns:
+        Partial correlation coefficient
+    """
+    from scipy import stats
+
+    # Validate columns exist and are numeric
+    all_cols = [x_col, y_col] + control_cols
+    for col in all_cols:
+        if col not in df.columns:
+            logger.error(f"Column not found: {col}")
+            return np.nan
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            logger.error(f"Column must be numeric: {col}")
+            return np.nan
+
+    # Drop missing values
+    valid_data = df[all_cols].dropna()
+
+    if len(valid_data) < len(all_cols) + 2:
+        logger.warning("Insufficient data for partial correlation analysis")
+        return np.nan
+
+    # Calculate residuals for x after controlling for control_cols
+    x = valid_data[x_col].values
+    x_controls = valid_data[control_cols].values
+    x_resid = stats.linregress(x_controls, x).resid
+
+    # Calculate residuals for y after controlling for control_cols
+    y = valid_data[y_col].values
+    y_controls = valid_data[control_cols].values
+    y_resid = stats.linregress(y_controls, y).resid
+
+    # Calculate correlation between residuals
+    partial_corr = stats.pearsonr(x_resid, y_resid)[0]
+
+    return partial_corr
+
+
+# The functions below are taken from the archive for test compatibility
 
 
 def conditional_correlation(
@@ -50,7 +446,9 @@ def conditional_correlation(
         Dictionary mapping each condition value to a tuple of (correlation coefficient, p-value).
     """
     # Check if columns exist
-    assert_columns(df, metric_x, metric_y, condition_field)
+    for col in [metric_x, metric_y, condition_field]:
+        if col not in df.columns:
+            raise KeyError(f"Column not found: {col}")
 
     # Get clean data (drop rows with NaN in relevant columns)
     clean_df = df.dropna(subset=[metric_x, metric_y, condition_field])
@@ -122,7 +520,9 @@ def time_series_correlation(
         DataFrame with columns: period, correlation, p_value, sample_size
     """
     # Check if columns exist
-    assert_columns(df, metric_x, metric_y, date_column)
+    for col in [metric_x, metric_y, date_column]:
+        if col not in df.columns:
+            raise KeyError(f"Column not found: {col}")
 
     # Ensure date column is datetime
     if not pd.api.types.is_datetime64_dtype(df[date_column]):
@@ -248,21 +648,21 @@ def _calculate_rolling_correlations(
 
 
 def conditional_correlation_heatmap(
-    results: Dict[str, Tuple[float, float]],
+    correlations: Dict[str, Tuple[float, float]],
     main_correlation: float = None,
     title: str = "Conditional Correlation Analysis",
     significance_threshold: float = 0.05,
     width: int = 650,
     height: int = 400,
 ):
-    """Create a visual representation of conditional correlations.
+    """Create a heatmap visualization of conditional correlations.
 
     Parameters
     ----------
-    results : Dict[str, Tuple[float, float]]
+    correlations : Dict[str, Tuple[float, float]]
         Dictionary mapping condition values to (correlation, p-value) tuples.
     main_correlation : float, optional
-        Overall correlation coefficient for comparison.
+        Overall correlation coefficient to show as reference.
     title : str, default "Conditional Correlation Analysis"
         Plot title.
     significance_threshold : float, default 0.05
@@ -273,54 +673,53 @@ def conditional_correlation_heatmap(
     Returns
     -------
     holoviews.Element
-        HoloViews visualization of conditional correlations.
+        HoloViews visualization object.
     """
-    # Prepare data for plotting
-    conditions = []
-    correlations = []
-    p_values = []
-    is_significant = []
+    # Create a DataFrame from the correlations
+    data = []
+    for condition, (corr, p_val) in correlations.items():
+        if pd.isna(corr) or pd.isna(p_val):
+            continue
+        data.append(
+            {
+                "condition": condition,
+                "correlation": corr,
+                "p_value": p_val,
+                "significant": p_val < significance_threshold,
+            }
+        )
 
-    for condition, (corr, p_val) in results.items():
-        if not np.isnan(corr):
-            conditions.append(str(condition))
-            correlations.append(corr)
-            p_values.append(p_val)
-            is_significant.append(p_val < significance_threshold)
+    if not data:
+        return hv.Div("No valid correlation data to visualize")
 
-    # Create DataFrame for plotting
-    plot_df = pd.DataFrame(
-        {
-            "condition": conditions,
-            "correlation": correlations,
-            "p_value": p_values,
-            "significant": is_significant,
-        }
-    )
+    df = pd.DataFrame(data)
 
-    # Sort by absolute correlation value
-    plot_df = plot_df.sort_values("correlation", key=abs, ascending=False)
-
-    # Create color map based on statistical significance
-    colors = ["#4c78a8" if sig else "#cccccc" for sig in plot_df["significant"]]
+    # Sort by correlation strength (absolute value)
+    df = df.sort_values("correlation", key=abs, ascending=False)
 
     # Create the bar chart
-    bars = hv.Bars(plot_df, kdims=["condition"], vdims=["correlation"]).opts(
-        color=colors,
+    bars = hv.Bars(
+        df, kdims=["condition"], vdims=["correlation", "p_value", "significant"]
+    ).opts(
         width=width,
         height=height,
         title=title,
+        color="correlation",
+        colorbar=True,
+        cmap="RdBu_r",
+        clim=(-1, 1),
+        xlabel="",
+        ylabel="Correlation Coefficient",
         tools=["hover"],
         xrotation=45,
-        ylabel="Correlation Coefficient",
     )
 
-    # Add horizontal line for main correlation if provided
+    # Add reference line for main correlation if provided
     if main_correlation is not None:
-        hline = hv.HLine(main_correlation).opts(
-            color="red", line_width=2, line_dash="dashed"
+        reference_line = hv.HLine(main_correlation).opts(
+            color="black", line_dash="dashed", line_width=1.5
         )
-        return bars * hline
+        return bars * reference_line
 
     return bars
 
@@ -332,7 +731,7 @@ def time_series_correlation_plot(
     width: int = 750,
     height: int = 400,
 ):
-    """Create a visual representation of correlations over time.
+    """Create a line plot of correlations over time periods.
 
     Parameters
     ----------
@@ -348,42 +747,70 @@ def time_series_correlation_plot(
     Returns
     -------
     holoviews.Element
-        HoloViews visualization of correlations over time.
+        HoloViews visualization object.
     """
-    # Add column for significance
+    # Check required columns
+    required_cols = ["period", "correlation", "p_value"]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        return hv.Div(f"Missing required columns: {', '.join(missing_cols)}")
+
+    if df.empty:
+        return hv.Div("No data to visualize")
+
+    # Add significance indicator
     df = df.copy()
     df["significant"] = df["p_value"] < significance_threshold
 
-    # Create separate DataFrames for significant and non-significant points
-    sig_df = df[df["significant"]]
-    nonsig_df = df[~df["significant"]]
-
-    # Create main line plot
+    # Create line plot for all points
     line = hv.Curve(df, kdims=["period"], vdims=["correlation"]).opts(
         width=width,
         height=height,
         title=title,
-        tools=["hover"],
-        line_width=2,
-        xrotation=45,
+        xlabel="Period",
         ylabel="Correlation Coefficient",
+        line_width=2,
     )
 
-    # Add markers for significant and non-significant points
-    sig_points = hv.Scatter(sig_df, kdims=["period"], vdims=["correlation"]).opts(
-        color="green",
+    # Create scatter plots - different styles for significant vs. non-significant
+    significant_points = df[df["significant"]].copy()
+    non_significant_points = df[~df["significant"]].copy()
+
+    # Create points for significant correlations
+    sig_scatter = hv.Scatter(
+        significant_points,
+        kdims=["period"],
+        vdims=["correlation", "p_value", "sample_size", "significant"],
+    ).opts(
+        color="darkblue",
         size=8,
         marker="circle",
+        tools=["hover"],
     )
 
-    nonsig_points = hv.Scatter(nonsig_df, kdims=["period"], vdims=["correlation"]).opts(
-        color="gray",
-        size=8,
+    # Create points for non-significant correlations
+    nonsig_scatter = hv.Scatter(
+        non_significant_points,
+        kdims=["period"],
+        vdims=["correlation", "p_value", "sample_size", "significant"],
+    ).opts(
+        color="lightgray",
+        size=6,
         marker="circle",
+        tools=["hover"],
     )
 
     # Add reference line at zero
-    zero_line = hv.HLine(0).opts(color="black", line_dash="dotted")
+    zero_line = hv.HLine(0).opts(
+        color="black",
+        line_dash="dotted",
+        line_width=1,
+    )
 
-    # Combine plots
-    return line * sig_points * nonsig_points * zero_line
+    # Combine all elements
+    plot = line * sig_scatter * nonsig_scatter * zero_line
+
+    return plot.opts(
+        legend_position="top_right",
+        show_grid=True,
+    )

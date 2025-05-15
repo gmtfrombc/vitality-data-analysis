@@ -33,7 +33,14 @@ def apply_pending_migrations(db_file: str) -> None:
             applied = _get_applied_versions(conn)
             migration_files = sorted(glob.glob(str(MIGRATIONS_DIR / "*.sql")))
             for path in migration_files:
-                version = int(Path(path).name.split("_", 1)[0])
+                # Only process files whose prefix can be parsed as an int
+                prefix = Path(path).name.split("_", 1)[0]
+                try:
+                    version = int(prefix)
+                except ValueError:
+                    logger.debug("Skipping non-versioned migration file: %s", path)
+                    continue
+
                 if version in applied:
                     continue
                 logger.info("Applying DB migration %s", path)

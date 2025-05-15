@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover – sandbox / test path
     hv = None  # type: ignore  # placeholder when holoviews unavailable
 import numpy as np
 import logging
-import db_query
+import app.db_query as db_query
 import json
 import os
 import re
@@ -42,6 +42,7 @@ from app.utils.intent_clarification import clarifier
 from app.utils.feedback_widgets import create_feedback_widget
 import sys
 from app.utils.patient_attributes import Gender, Active, label_for
+from app.utils.date_helpers import normalize_datetime
 
 # Constants for patient attribute values
 FEMALE = Gender.FEMALE.value
@@ -1430,8 +1431,13 @@ Intermediate results and visualisations are still shown so you can audit the pro
                             active_patients["program_start_date"]
                         )
 
-                    # Calculate months in program
-                    now = pd.Timestamp.now()
+                    # Calculate months in program - Fix timezone issue by normalizing both datetimes
+                    now = normalize_datetime(pd.Timestamp.now())
+                    active_patients["program_start_date"] = active_patients[
+                        "program_start_date"
+                    ].apply(normalize_datetime)
+
+                    # Now both timestamps are timezone-naive, subtraction will work
                     active_patients["months_in_program"] = (
                         (now - active_patients["program_start_date"])
                         / pd.Timedelta(days=30)
@@ -2579,14 +2585,14 @@ Intermediate results and visualisations are still shown so you can audit the pro
             and self.query_intent.time_range
         ):
             time_range = self.query_intent.time_range
-            if time_range.start and time_range.end:
+            if time_range.start_date and time_range.end_date:
                 assumptions.append(
-                    f"Time period: {time_range.start} to {time_range.end}"
+                    f"Time period: {time_range.start_date} to {time_range.end_date}"
                 )
-            elif time_range.start:
-                assumptions.append(f"Time period: From {time_range.start}")
-            elif time_range.end:
-                assumptions.append(f"Time period: Until {time_range.end}")
+            elif time_range.start_date:
+                assumptions.append(f"Time period: From {time_range.start_date}")
+            elif time_range.end_date:
+                assumptions.append(f"Time period: Until {time_range.end_date}")
         else:
             assumptions.append("Time period: All available data")
 
@@ -3961,6 +3967,26 @@ Intermediate results and visualisations are still shown so you can audit the pro
         self._feedback_up.visible = False
         self._feedback_down.visible = False
         self._feedback_thanks.visible = True
+
+    # Add this helper function in the DataAnalysisAssistant class
+    def _get_patients_with_diagnosis(self, diagnosis_term):
+        """Get patients with a specific diagnosis by searching the PMH table.
+
+        Args:
+            diagnosis_term: String to search for in the condition column
+
+        Returns:
+            DataFrame with patient_ids that have the matching diagnosis
+        """
+        query = """
+        SELECT DISTINCT p.id as patient_id
+        FROM patients p
+        JOIN pmh ON p.id = pmh.patient_id
+        WHERE p.active = 1 
+        AND pmh.condition LIKE ?
+        """
+        params = (f"%{diagnosis_term}%",)
+        return db_query.query_dataframe(query, params=params)
 
 
 def data_assistant_page():

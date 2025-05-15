@@ -7,7 +7,8 @@ import panel as pn
 import logging
 from app.pages.dashboard import dashboard_page
 from app.pages.ai_assistant import ai_assistant_page
-import db_query
+import app.db_query as db_query
+from app.utils.patient_attributes import Active
 
 # Configure logging
 logging.basicConfig(
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 def simple_patient_view():
     patients_df = db_query.get_all_patients()
-    active_patients = patients_df[patients_df["active"] == 1]
+    active_patients = patients_df[patients_df["active"] == Active.ACTIVE.value]
 
     # Create a simple table to display patients
     table = pn.widgets.Tabulator(

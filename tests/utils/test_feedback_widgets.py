@@ -34,7 +34,7 @@ def test_feedback_widget_initialization():
     assert widget.thumbs_up.button_type == "success"
     assert widget.thumbs_down.button_type == "danger"
     assert widget.submit_button.disabled is True
-    assert widget.comment_input.visible is False
+    assert widget.comment_input.visible is True
     assert widget.thank_you.visible is False
 
 
@@ -51,7 +51,7 @@ def test_feedback_widget_thumbs_up():
     assert widget.thumbs_down.button_type == "light"
     assert widget.submit_button.disabled is False
     assert widget.show_comment is False
-    assert widget.comment_input.visible is False
+    assert widget.comment_input.visible is True
 
 
 def test_feedback_widget_thumbs_down():

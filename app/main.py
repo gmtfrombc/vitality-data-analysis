@@ -10,7 +10,7 @@ from app.pages.patient_view import PatientView
 from app.pages.dashboard import Dashboard
 import holoviews as hv
 import panel as pn
-import db_query
+import app.db_query as db_query
 import sys
 from pathlib import Path
 from dotenv import load_dotenv

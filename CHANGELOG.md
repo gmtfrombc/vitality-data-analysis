@@ -1,9 +1,36 @@
+## 2025-05-20
+### Fixed
+- **DateRange attribute access fix**: Resolved an issue in `data_assistant.py` where the system was attempting to access `.start` and `.end` attributes on DateRange objects, but the actual attribute names are `.start_date` and `.end_date`. This fix ensures correct time range display in the assumptions section of query results.
+
+## 2025-05-19
+### Fixed
+- **Improved condition query handling**: Enhanced condition detection in user queries by adding a post-processing step in `get_query_intent` and filtering out redundant filters whose values match detected conditions in `_generate_condition_count_code`. This prevents "no such column: score_type" errors.
+
+## 2025-05-18
+### Fixed
+- **Resolved condition mapping issues**: Fixed the code generation logic for mental health conditions like anxiety by properly detecting condition mentions in filter values and applying ICD-10 code mapping from the condition mapper.
+- **Fixed YAML indentation issue**: Corrected indentation problems in condition_mappings.yaml for "pure hyperglyceridemia" section.
+
+## 2025-05-15
+### Fixed
+- **Identified condition mapping issue**: Discovered SQL generation issue for obesity-related conditions where the system attempts to use BMI filtering instead of proper ICD-10 code mapping. See docs/summary_testing_015.md for detailed analysis and recommendations.
+
+### Known Issues
+- AI-generated SQL for obesity-related queries fails with "no such column: score_type" error due to improper condition handling in code generation.
+- LLM intent classification correctly identifies obesity terms as conditions, but this doesn't flow properly to code generation.
+
 ## 2025-05-11
 ### Fixed
 - **Sandbox execution**: Added in-sandbox lightweight stubs for `holoviews`, `hvplot`, and `holoviews.Store` so imports inside generated snippets no longer raise `ImportError`. Sandbox now runs successfully for plotting-related queries instead of immediately falling back to the rule-engine.
 
 ### Known Issues
 - AI-generated SQL for BP vs A1C query references non-existent column `vitals.score_type`, causing SQLite errors. See docs/summary_testing_011.md for details and next steps.
+
+## 2025-05-14
+### Added
+- **Data-Quality Gaps dashboard**: Implemented a new tab that surfaces patients whose clinical measurements imply conditions (obesity, prediabetes, etc.) but lack matching diagnoses in PMH. Includes condition selector, active-only toggle, and CSV export.
+- **Condition gap detection service**: Created reusable `app/utils/gap_report.py` with SQL generation for BMI ≥ 30 (obesity), BMI ≥ 40 (morbid obesity), A1C 5.7-6.4 (prediabetes), and A1C ≥ 6.5 (diabetes).
+- **CLI tool**: Added `scripts/generate_gap_report.py` for command-line gap identification with CSV output.
 
 Changelog
 One-liner bullets so AI agents (and humans) can quickly diff what changed since their last session.

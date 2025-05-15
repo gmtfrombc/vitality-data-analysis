@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Tuple, Literal
 
 import pandas as pd
+from app.utils.patient_attributes import Active
 
 __all__ = [
     "phq9_change",
@@ -151,14 +152,14 @@ def active_patient_count(
 ) -> int:
     """Return the number of *active* patients.
 
-    A patient is considered active when ``df[active_col] == 1``.  The function
+    A patient is considered active when ``df[active_col] == Active.ACTIVE.value``.  The function
     counts *unique* patients to avoid double-counting in case the DataFrame
     already contains joined data.
     """
 
     assert_columns(df, patient_id_col, active_col)
 
-    active = df[df[active_col] == 1]
+    active = df[df[active_col] == Active.ACTIVE.value]
     return active[patient_id_col].nunique()
 
 

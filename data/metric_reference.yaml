@@ -1,0 +1,208 @@
+a1c:
+  units: "%"
+  normal:
+    min: 4.0
+    max: 5.6
+  pre_diabetes:
+    min: 5.7
+    max: 6.4
+  high:
+    min: 6.5
+    max: null
+
+sbp:
+  units: "mmHg"
+  normal:
+    min: 90
+    max: 120
+  high:
+    min: 130
+    max: null
+
+dbp:
+  units: "mmHg"
+  normal:
+    min: 60
+    max: 80
+  high:
+    min: 80
+    max: null
+
+phq9:
+  units: "score"
+  normal:
+    min: 0
+    max: 4
+  mild:
+    min: 5
+    max: 9
+  moderate:
+    min: 10
+    max: 14
+  moderately_severe:
+    min: 15
+    max: 19
+  severe:
+    min: 20
+    max: 27
+
+gad7:
+  units: "score"
+  normal:
+    min: 0
+    max: 4
+  mild:
+    min: 5
+    max: 9
+  moderate:
+    min: 10
+    max: 14
+  severe:
+    min: 15
+    max: 21
+
+# ------------------------------------------------------------
+# Added stubs – values reflect common adult reference ranges.
+# Please review with clinical team before relying in production.
+# ------------------------------------------------------------
+
+weight:
+  units: "lb"
+  normal:
+    min: 70  # lower realistic weight in catalogue
+    max: 500 # upper bound (same as validation range)
+
+height:
+  units: "in"
+  normal:
+    min: 48
+    max: 84
+
+bmi:
+  units: "kg/m2"
+  underweight:
+    min: 0
+    max: 18.4
+  normal:
+    min: 18.5
+    max: 24.9
+  overweight:
+    min: 25.0
+    max: 29.9
+  obese:
+    min: 30.0
+    max: null
+
+vitality_score:
+  units: "score"
+  normal:
+    min: 0
+    max: 100
+
+heart_fit_score:
+  units: "ml/kg/min"
+  normal:
+    min: 10
+    max: 80
+
+glucose:
+  units: "mg/dL"
+  normal:
+    min: 70
+    max: 99
+  pre_diabetes:
+    min: 100
+    max: 125
+  high:
+    min: 126
+    max: null
+
+total_cholesterol:
+  units: "mg/dL"
+  desirable:
+    min: 0
+    max: 199
+  borderline_high:
+    min: 200
+    max: 239
+  high:
+    min: 240
+    max: null
+
+hdl:
+  units: "mg/dL"
+  low:
+    min: 0
+    max: 39
+  normal:
+    min: 40
+    max: 59
+  optimal:
+    min: 60
+    max: null
+
+ldl:
+  units: "mg/dL"
+  optimal:
+    min: 0
+    max: 99
+  near_optimal:
+    min: 100
+    max: 129
+  borderline_high:
+    min: 130
+    max: 159
+  high:
+    min: 160
+    max: 189
+  very_high:
+    min: 190
+    max: null
+
+triglycerides:
+  units: "mg/dL"
+  normal:
+    min: 0
+    max: 149
+  borderline_high:
+    min: 150
+    max: 199
+  high:
+    min: 200
+    max: 499
+  very_high:
+    min: 500
+    max: null
+
+apolipoprotein_b:
+  units: "mg/dL"
+  desirable:
+    min: 0
+    max: 89
+  borderline_high:
+    min: 90
+    max: 99
+  high:
+    min: 100
+    max: 130
+  very_high:
+    min: 131
+    max: null
+
+alt:
+  units: "U/L"
+  normal:
+    min: 0
+    max: 55
+  high:
+    min: 56
+    max: null
+
+ast:
+  units: "U/L"
+  normal:
+    min: 0
+    max: 40
+  high:
+    min: 41
+    max: null 

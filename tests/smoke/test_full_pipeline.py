@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 import pytest
 
-import db_query
+import app.db_query as db_query
 from app.ai_helper import AIHelper
 from app.utils.sandbox import run_snippet
 

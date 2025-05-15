@@ -7,7 +7,7 @@ This page provides an overview of patient data and key metrics.
 import panel as pn
 import param
 import pandas as pd
-import db_query
+import app.db_query as db_query
 import sys
 from pathlib import Path
 

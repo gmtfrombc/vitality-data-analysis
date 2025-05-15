@@ -9,7 +9,7 @@ To maximize simplicity and effectiveness, follow these daily steps after complet
 * In your IDE (Cursor), open a terminal session and execute:
 
   ```bash
-  python model_retraining.py
+  python model_retraining.py --reset-metrics
   ```
 
 **2. Interactive Approval Session**

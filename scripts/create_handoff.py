@@ -4,7 +4,7 @@
 Usage:
     python scripts/create_handoff.py
 
-The script finds the highest-numbered `summary_data_validation_XXX.md`,
+The script finds the highest-numbered `summary_testing_XXX.md`,
 extracts its contents, grabs the `[Unreleased]` section of CHANGELOG
 ( until the first blank line after that header ) and writes/overwrites
 `docs/HANDOFF_LATEST.md`.
@@ -17,6 +17,8 @@ import datetime
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
+# Updated to include the summary_testing subdirectory
+SUMMARY_DIR = DOCS / "summary_testing"
 CHANGELOG = ROOT / "CHANGELOG.md"
 
 HANDOFF = DOCS / "HANDOFF_LATEST.md"
@@ -27,9 +29,10 @@ HANDOFF = DOCS / "HANDOFF_LATEST.md"
 
 
 def _latest_summary() -> Path | None:
-    pattern = re.compile(r"summary_data_validation_(\d+)\.md")
+    pattern = re.compile(r"summary_testing_(\d+)\.md")
     summaries = []
-    for p in DOCS.glob("summary_data_validation_*.md"):
+    # Look in the summary_testing directory
+    for p in SUMMARY_DIR.glob("summary_testing_*.md"):
         m = pattern.match(p.name)
         if m:
             summaries.append((int(m.group(1)), p))
@@ -61,7 +64,9 @@ def _extract_unreleased(changelog: Path) -> str:
 def main() -> None:
     summary_path = _latest_summary()
     if summary_path is None:
-        raise FileNotFoundError("No summary_data_validation_*.md found in docs/")
+        raise FileNotFoundError(
+            "No summary_testing_*.md found in docs/summary_testing/"
+        )
 
     summary_text = summary_path.read_text(encoding="utf-8")
     unreleased = _extract_unreleased(CHANGELOG)

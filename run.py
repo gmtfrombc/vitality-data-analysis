@@ -179,6 +179,17 @@ def create_app():
         "Evaluation Dashboard module could not be loaded. Check logs for details.",
     )
 
+    gap_report_page_mod = safe_import(
+        "app.pages.gap_report_page",
+        "Gap Report module could not be loaded. Check logs for details.",
+    )
+
+    get_gap_report_page = getattr(
+        gap_report_page_mod,
+        "gap_report_page",
+        lambda: pn.pane.Markdown("Gap Report module failed to load."),
+    )
+
     # Special handling for data validation page which we only import get_page from
     validation_message = (
         "Data Validation module could not be loaded. "
@@ -196,6 +207,7 @@ def create_app():
         ("Data Analysis Assistant", data_assistant.data_assistant_page()),
         ("Evaluation Dashboard", evaluation_page.evaluation_page()),
         ("Data Validation", get_data_validation_page()),
+        ("Data-Quality Gaps", get_gap_report_page()),
         dynamic=True,
         css_classes=["main-tabs"],
     )

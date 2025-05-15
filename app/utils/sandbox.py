@@ -22,7 +22,7 @@ import time
 import numpy as np
 import pandas as pd
 
-import db_query
+import app.db_query as db_query
 from app.utils.metrics import get_metric, METRIC_REGISTRY
 
 logger = logging.getLogger("sandbox")

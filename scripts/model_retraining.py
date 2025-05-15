@@ -57,7 +57,7 @@ except ModuleNotFoundError:  # pragma: no cover – informative fallback
 # Local project imports – safe absolute paths
 # ---------------------------------------------------------------------------
 try:
-    import db_query  # noqa: WPS433 – deliberately importing project module
+    import app.db_query as db_query  # noqa: WPS433 – deliberately importing project module
 except ImportError as exc:  # pragma: no cover
     print(
         "Error: Could not import project module 'db_query'. Ensure PYTHONPATH is set."
@@ -195,14 +195,15 @@ def _analyse_feedback(df: pd.DataFrame) -> List[Suggestion]:  # noqa: D401
             metric,
             Suggestion(
                 metric=metric,
-                rationale="Multiple users expressed confusion around default assumptions.",
+                rationale="Multiple users expressed frustration with clarifying questions and prefer direct answers with assumptions clearly stated.",
                 proposal="",
             ),
         )
-        # Simple heuristic: propose changing default active/inactive assumption
+        # Update proposal to match the new approach - no clarifying questions, give best guess with assumptions stated
         suggestions[metric]["proposal"] = (
-            f"Consider clarifying or changing the default assumption for '{metric.upper()}' – "
-            "default to *active patients only* unless user specifies otherwise."
+            f"Change the default approach for '{metric.upper()}' queries – "
+            "provide a best guess answer immediately with assumptions clearly stated, "
+            "followed by an option to refine. Default assumption should be *active patients only* unless specified otherwise."
         )
 
     logger.info("Generated %s unique suggestion(s)", len(suggestions))

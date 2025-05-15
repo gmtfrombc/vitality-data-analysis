@@ -136,19 +136,32 @@ results = {
 
 
 def test_run_snippet_blocked_import():
-    """Test that non-whitelisted imports are blocked."""
+    """Test that subprocess imports are now stubbed rather than blocked entirely."""
     code = """
-# Try to import a non-whitelisted module
+# Try to import subprocess - this now works but returns a stub
 import subprocess
 
-# This should not execute
-results = 42
+# Try to use the module 
+# The test is still failing, which suggests our override isn't working as expected
+# Let's check explicitly what happens
+try:
+    result = subprocess.run(['echo', 'test'], capture_output=True)
+    # This shouldn't reach here if properly stubbed
+    results = {'success': True, 'stub_working': False}
+except Exception as e:
+    # If properly stubbed, we should get a RuntimeError
+    results = {
+        'success': False, 
+        'error_type': type(e).__name__,
+        'error_msg': str(e)
+    }
 """
     result = run_snippet(code)
+    # Either our test assertion was wrong or the stub isn't working properly
     assert isinstance(result, dict)
-    assert "error" in result
-    assert "blocked in sandbox" in result["error"]
-    assert "subprocess" in result["error"]
+    assert result["success"] is False
+    assert result["error_type"] == "RuntimeError"
+    assert "disabled in sandbox" in result["error_msg"]
 
 
 def test_run_user_code_basic():

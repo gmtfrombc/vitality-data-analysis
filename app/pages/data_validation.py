@@ -15,7 +15,7 @@ from pathlib import Path
 import time
 
 # Internal data-access helpers
-import db_query  # noqa: F401 -- used throughout for DB reads
+import app.db_query as db_query  # noqa: F401 -- used throughout for DB reads
 
 # Optional spinner (Panel >= 1.2). Guard import so older Panel versions still work.
 try:
@@ -36,6 +36,9 @@ from app.utils.date_helpers import (
 # For re-seeding validation rules on demand
 from etl.seed_validation_rules import main as seed_validation_rules_main
 
+# Import patient attributes
+from app.utils.patient_attributes import Active
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -48,7 +51,7 @@ pn.extension()
 def get_db_path():
     """Get the database path from db_query module to ensure consistent source."""
     # Import here to avoid circular imports
-    import db_query
+    import app.db_query as db_query
 
     return db_query.get_db_path()
 
@@ -1102,7 +1105,7 @@ class DataValidationPage(param.Parameterized):
         vitality_val = self._latest_vitality_score(self.selected_patient_id) or "—"
 
         stage = "Active"
-        if demo.get("active", 1) == 0:
+        if demo.get("active", Active.ACTIVE.value) == Active.INACTIVE.value:
             stage = "Drop-out"
         if pd.notnull(demo.get("program_end_date")):
             stage = "Completed"

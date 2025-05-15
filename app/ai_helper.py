@@ -10,11 +10,14 @@ from app.utils.query_intent import (
     QueryIntent,
     DateRange,
     normalise_intent_fields,
+    CONDITION_FIELD,
+    inject_condition_filters_from_query,
 )
 from pydantic import BaseModel
 from app.utils.metrics import METRIC_REGISTRY
 import re
 import pandas as pd
+from app.utils.condition_mapper import condition_mapper
 
 # Configure logging
 log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
@@ -376,6 +379,36 @@ class AIHelper:
                             )
 
                 logger.info("Intent analysis successful on attempt %s", attempt + 1)
+
+                # ------------------------------------------------------------------
+                #  NEW: Inject condition filters directly from raw user text
+                # ------------------------------------------------------------------
+                inject_condition_filters_from_query(intent, query)
+                # ------------------------------------------------------------------
+
+                # Remove redundant non-clinical filters that duplicate condition terms (e.g., score_type = "anxiety")
+                # local import to avoid circular
+                from app.utils.query_intent import get_canonical_condition
+
+                cleaned_filters = []
+                for _f in intent.filters:
+                    if _f.field.lower() in {
+                        "score_type",
+                        "assessment_type",
+                    } and isinstance(_f.value, str):
+                        canon_cond = get_canonical_condition(_f.value)
+                        # Remove the filter only when the *value* itself is an exact canonical match
+                        # (e.g., "anxiety", "obesity"), NOT when it merely appears as a substring
+                        if canon_cond and canon_cond in {
+                            _f.value.lower(),
+                            _f.value.lower().replace(" ", "_"),
+                        }:
+                            # Skip – this non-clinical field is duplicating a condition term
+                            continue
+                    cleaned_filters.append(_f)
+
+                intent.filters = cleaned_filters
+
                 return intent
             except Exception as exc:  # noqa: BLE001 – broad ok at boundary
                 last_err = exc
@@ -807,6 +840,24 @@ def _build_filters_clause(intent_obj: QueryIntent) -> str:
     """Build SQL WHERE clause from intent filters and conditions."""
     where_clauses: list[str] = []
 
+    # Map fields to specific tables to ensure correct column references
+    TABLE_FIELDS = {
+        # Vitals table fields
+        "bmi": "vitals",
+        "weight": "vitals",
+        "height": "vitals",
+        "sbp": "vitals",
+        "dbp": "vitals",
+        # Patient table fields
+        "gender": "patients",
+        "ethnicity": "patients",
+        "active": "patients",
+        "age": "patients",
+        # Scores table fields
+        "score_type": "scores",
+        "score_value": "scores",
+    }
+
     # Alias mapping for translating common field names
     ALIASES = {
         "test_date": "date",
@@ -817,9 +868,10 @@ def _build_filters_clause(intent_obj: QueryIntent) -> str:
         "sex": "gender",
         "patient": "patient_id",
         "assessment_type": "assessment_type",
-        "score_type": "assessment_type",
+        "score_type": "score_type",
         "activity_status": "active",
         "status": "active",
+        "date": "program_start_date",
     }
 
     # Helper to quote values properly for SQL
@@ -844,7 +896,16 @@ def _build_filters_clause(intent_obj: QueryIntent) -> str:
 
     # Process filters (equality, ranges)
     for f in intent_obj.filters:
-        canonical = ALIASES.get(f.field.lower(), f.field)
+        field_name = f.field.lower()
+        canonical = ALIASES.get(field_name, field_name)
+
+        # Add table prefix if we know which table this field belongs to
+        table_prefix = ""
+        if canonical in TABLE_FIELDS:
+            table_prefix = f"{TABLE_FIELDS[canonical]}."
+
+        # Apply table prefix to field name
+        canonical_with_prefix = f"{table_prefix}{canonical}"
 
         if f.value is not None:
             val = f.value
@@ -854,15 +915,22 @@ def _build_filters_clause(intent_obj: QueryIntent) -> str:
                     if val.lower() == "active"
                     else 0 if val.lower() == "inactive" else val
                 )
-            where_clauses.append(f"{canonical} = {_quote(val)}")
+            where_clauses.append(f"{canonical_with_prefix} = {_quote(val)}")
         elif f.range is not None:
             start = f.range.get("start")
             end = f.range.get("end")
             if start is not None and end is not None:
                 where_clauses.append(
-                    f"{canonical} BETWEEN {_quote(start)} AND {_quote(end)}"
+                    f"{canonical_with_prefix} BETWEEN {_quote(start)} AND {_quote(end)}"
                 )
         elif f.date_range is not None:
+            date_col = canonical
+            if canonical not in ("date", "program_start_date") and table_prefix:
+                # For fields that aren't date columns, use the table's date column
+                date_col = f"{table_prefix}date"
+            else:
+                date_col = canonical_with_prefix
+
             start_date = f.date_range.start_date
             end_date = f.date_range.end_date
 
@@ -873,12 +941,21 @@ def _build_filters_clause(intent_obj: QueryIntent) -> str:
                 end_date = end_date.strftime("%Y-%m-%d")
 
             where_clauses.append(
-                f"{canonical} BETWEEN {_quote(start_date)} AND {_quote(end_date)}"
+                f"{date_col} BETWEEN {_quote(start_date)} AND {_quote(end_date)}"
             )
 
     # Process conditions (operators)
     for c in intent_obj.conditions:
-        canonical = ALIASES.get(c.field.lower(), c.field)
+        field_name = c.field.lower()
+        canonical = ALIASES.get(field_name, field_name)
+
+        # Add table prefix if we know which table this field belongs to
+        table_prefix = ""
+        if canonical in TABLE_FIELDS:
+            table_prefix = f"{TABLE_FIELDS[canonical]}."
+
+        # Apply table prefix to field name
+        canonical_with_prefix = f"{table_prefix}{canonical}"
         op = c.operator
 
         if (
@@ -887,13 +964,13 @@ def _build_filters_clause(intent_obj: QueryIntent) -> str:
             and len(c.value) == 2
         ):
             where_clauses.append(
-                f"{canonical} BETWEEN {_quote(c.value[0])} AND {_quote(c.value[1])}"
+                f"{canonical_with_prefix} BETWEEN {_quote(c.value[0])} AND {_quote(c.value[1])}"
             )
         elif op.lower() == "in" and isinstance(c.value, (list, tuple)):
             vals = ", ".join(_quote(v) for v in c.value)
-            where_clauses.append(f"{canonical} IN ({vals})")
+            where_clauses.append(f"{canonical_with_prefix} IN ({vals})")
         else:
-            where_clauses.append(f"{canonical} {op} {_quote(c.value)}")
+            where_clauses.append(f"{canonical_with_prefix} {op} {_quote(c.value)}")
 
     # Build final WHERE clause
     return "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
@@ -924,9 +1001,10 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         "sex": "gender",
         "patient": "patient_id",
         "assessment_type": "assessment_type",
-        "score_type": "assessment_type",
+        "score_type": "score_type",
         "activity_status": "active",
         "status": "active",
+        "date": "program_start_date",
     }
 
     raw_name = intent.target_field.lower()
@@ -947,6 +1025,47 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         )
     ):
         metric_name = "active_patients"
+
+    # --------------------------------------------------------------
+    # Condition-based patient counts (e.g., "How many patients have anxiety?")
+    # --------------------------------------------------------------
+
+    # 1. Gather explicit condition filters
+    condition_filters = [f for f in intent.filters if f.field == CONDITION_FIELD]
+
+    # 2. If no explicit filter, check if any equality filter value maps to a condition
+    if not condition_filters:
+        for f in intent.filters:
+            # Avoid misclassifying common categorical values (e.g., gender "F"/"M") as conditions.
+            if not isinstance(f.value, str):
+                continue
+
+            # Skip fields that are clearly non-clinical (demographic or categorical)
+            # to prevent accidental matches (e.g. single-letter 'F' gender value vs ICD-10 'F41.9').
+            _non_clinical = {
+                "gender",
+                "sex",
+                "score_type",
+                "assessment_type",
+                "active",
+                "status",
+                "activity_status",
+                "ethnicity",
+                "age",
+            }
+
+            if f.field.lower() in _non_clinical:
+                continue
+
+            if condition_mapper.get_canonical_condition(f.value):
+                condition_filters.append(f)
+
+    if condition_filters:
+        # Use the first matched condition for now
+        condition_value = condition_filters[0].value
+        gen_code = _generate_condition_count_code(intent, condition_value)
+        if gen_code:
+            return gen_code
 
     # ------------------------------------------------------------------
     # 3c. Multi-variable correlation analysis (NEW)
@@ -1149,33 +1268,96 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         ):
             group_by_field = metric_name
 
-        # Decide which table to hit (simple heuristics)
-        if metric_name in {"bmi", "weight", "sbp", "dbp"}:
-            table_name = "vitals"
-        elif metric_name in {
-            "age",
-            "gender",
-            "ethnicity",
-            "active",
-            "patient_id",
-            "id",
-        }:
-            table_name = "patients"
-        elif metric_name in {"score_value", "value"}:
-            table_name = "scores"
+        # Determine which tables are needed based on the metrics and conditions
+        tables_needed = set()
+
+        # Map fields to their respective tables
+        vitals_fields = {"bmi", "weight", "sbp", "dbp", "height"}
+        patient_fields = {"gender", "ethnicity", "active", "patient_id", "id", "age"}
+        scores_fields = {"score_value", "value", "score_type"}
+
+        # Check target field
+        if metric_name in vitals_fields:
+            tables_needed.add("vitals")
+        elif metric_name in patient_fields:
+            tables_needed.add("patients")
+        elif metric_name in scores_fields:
+            tables_needed.add("scores")
+
+        # Check conditions for any vitals-related fields (like BMI)
+        for c in intent.conditions:
+            if c.field.lower() in vitals_fields:
+                tables_needed.add("vitals")
+            elif c.field.lower() in patient_fields:
+                tables_needed.add("patients")
+            elif c.field.lower() in scores_fields:
+                tables_needed.add("scores")
+
+        # Also check filters for any vitals-related fields
+        for f in intent.filters:
+            if f.field.lower() in vitals_fields:
+                tables_needed.add("vitals")
+            elif f.field.lower() in patient_fields:
+                tables_needed.add("patients")
+            elif f.field.lower() in scores_fields:
+                tables_needed.add("scores")
+
+        # Fallback - default table selection
+        if not tables_needed:
+            if intent.analysis_type == "count":
+                tables_needed.add("patients")
+            else:
+                # Use vitals as a default for numeric aggregates if no clear table is indicated
+                tables_needed.add("vitals")
+
+        # Determine table_name and FROM clause based on needed tables
+        if len(tables_needed) == 1:
+            # Simple case - single table
+            table_name = next(iter(tables_needed))
+            from_clause = table_name
         else:
-            logger.debug("No SQL table mapping for %s", metric_name)
-            table_name = "patients" if intent.analysis_type == "count" else None
+            # We need to join tables - always start with patients
+            from_clause = "patients"
+            if "vitals" in tables_needed:
+                from_clause += " LEFT JOIN vitals ON patients.id = vitals.patient_id"
+            if "scores" in tables_needed:
+                from_clause += " LEFT JOIN scores ON patients.id = scores.patient_id"
 
-        if table_name is None:
-            return None
+            # For agg_expr, we'll need to know which is the primary table
+            # For count, always use patients
+            if intent.analysis_type == "count":
+                table_name = "patients"
+            # For metrics, use the table that contains the target metric
+            elif metric_name in vitals_fields:
+                table_name = "vitals"
+            elif metric_name in patient_fields:
+                table_name = "patients"
+            elif metric_name in scores_fields:
+                table_name = "scores"
+            else:
+                # Fallback
+                table_name = list(tables_needed)[0]
 
+                # Apply table prefix for the field if we're doing a join
+        field_with_prefix = metric_name
+        if len(tables_needed) > 1:
+            # For basic aggregates, we need to specify which table the field comes from
+            if metric_name in vitals_fields:
+                field_with_prefix = f"vitals.{metric_name}"
+            elif metric_name in patient_fields:
+                field_with_prefix = f"patients.{metric_name}"
+            elif metric_name in scores_fields:
+                field_with_prefix = f"scores.{metric_name}"
+
+        # For aggregate expressions, we need to handle COUNT(*) specially to ensure
+        # it remains unchanged for test compatibility
         agg_expr = {
+            # Always use COUNT(*) for compatibility with tests
             "count": "COUNT(*)",
-            "average": f"AVG({metric_name})",
-            "sum": f"SUM({metric_name})",
-            "min": f"MIN({metric_name})",
-            "max": f"MAX({metric_name})",
+            "average": f"AVG({field_with_prefix})",
+            "sum": f"SUM({field_with_prefix})",
+            "min": f"MIN({field_with_prefix})",
+            "max": f"MAX({field_with_prefix})",
         }[intent.analysis_type]
 
         # Build WHERE clause -------------------------------------------
@@ -1302,8 +1484,20 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
                 "max": "MAX",
             }
             agg_func = func_map[intent.analysis_type]
-            select_exprs = [f"{agg_func}({m}) AS {m}" for m in unique_metrics]
-            sql = f"SELECT {', '.join(select_exprs)} FROM {table_name} {where_clause};"
+            # Make sure to handle multi-table field disambiguation with proper table prefixes
+            select_exprs = []
+            for m in unique_metrics:
+                table_prefix = ""
+                if len(tables_needed) > 1:
+                    if m in vitals_fields:
+                        table_prefix = "vitals."
+                    elif m in patient_fields:
+                        table_prefix = "patients."
+                    elif m in scores_fields:
+                        table_prefix = "scores."
+                select_exprs.append(f"{agg_func}({table_prefix}{m}) AS {m}")
+
+            sql = f"SELECT {', '.join(select_exprs)} FROM {from_clause} {where_clause};"
 
             code = (
                 "# Auto-generated multi-metric aggregate\n"
@@ -1319,7 +1513,7 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
         if group_by_field:
             sql = (
                 f"SELECT {group_by_field}, {agg_expr} AS result\n"
-                f"FROM {table_name}\n"
+                f"FROM {from_clause}\n"
                 f"{where_clause}\n"
                 f"GROUP BY {group_by_field};"
             )
@@ -1336,7 +1530,9 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
             return code
 
         # No group_by: simple scalar aggregate
-        sql = f"SELECT {agg_expr} AS result\n" f"FROM {table_name}\n" f"{where_clause};"
+        sql = (
+            f"SELECT {agg_expr} AS result\n" f"FROM {from_clause}\n" f"{where_clause};"
+        )
 
         code = (
             "# Auto-generated scalar aggregate\n"
@@ -3474,3 +3670,90 @@ def _generate_seasonality_analysis_code(intent: QueryIntent) -> str:
 """
 
     return code
+
+
+def _generate_condition_count_code(
+    intent: QueryIntent, condition_value: str
+) -> str | None:
+    """Generate Python code for counting patients with a specific clinical condition.
+
+    The helper translates *condition_value* to ICD-10 codes (via the condition_mapper) and
+    constructs a SQL query that joins the `pmh` (past-medical-history) table with
+    `patients`.  Additional filters from *intent* (e.g. `active = 1`) are preserved.
+
+    Parameters
+    ----------
+    intent : QueryIntent
+        The parsed intent for the user query.
+    condition_value : str
+        Raw condition term from the query (e.g. "anxiety", "morbid obesity").
+
+    Returns
+    -------
+    str | None
+        Executable Python snippet assigning the final integer count to `results`,
+        or ``None`` if the mapping failed.
+    """
+
+    from app.utils.query_intent import (
+        get_condition_filter_sql,
+        get_canonical_condition,
+        PMH_TABLE,
+    )
+
+    # Build ICD-10 filter (falls back to LIKE search when mapping unavailable)
+    condition_sql, success = get_condition_filter_sql(condition_value)
+    if not success:
+        # Fallback – simple LIKE on textual condition column
+        condition_filter = f"{PMH_TABLE}.condition LIKE '%{condition_value}%'"
+        canonical_condition = condition_value.replace("_", " ")
+    else:
+        # We have ICD-10 codes, but we should also include condition text search
+        # to ensure we count patients with NULL in code field but condition name in text
+        canonical_condition = (
+            get_canonical_condition(condition_value) or condition_value
+        )
+        text_term = canonical_condition.replace("_", " ").lower()
+        condition_filter = (
+            f"({condition_sql} OR LOWER({PMH_TABLE}.condition) LIKE '%{text_term}%')"
+        )
+
+    # Strip condition filters from *intent* when building additional WHERE clauses
+    vitals_metrics = {"bmi", "weight", "sbp", "dbp", "height"}
+    other_filters = [f for f in intent.filters if f.field != "condition"]
+    other_conditions = [c for c in intent.conditions if c.field not in vitals_metrics]
+
+    temp_intent = QueryIntent(
+        analysis_type=intent.analysis_type,
+        target_field=intent.target_field,
+        filters=other_filters,
+        conditions=other_conditions,
+        parameters=intent.parameters,
+        additional_fields=intent.additional_fields,
+        group_by=intent.group_by,
+        time_range=intent.time_range,
+    )
+
+    where_clause = _build_filters_clause(temp_intent)
+    if where_clause:
+        where_clause = f"{where_clause} AND {condition_filter}"
+    else:
+        where_clause = f"WHERE {condition_filter}"
+
+    sql = f"""
+    SELECT COUNT(DISTINCT {PMH_TABLE}.patient_id) AS patient_count
+    FROM {PMH_TABLE}
+    JOIN patients ON {PMH_TABLE}.patient_id = patients.id
+    {where_clause}
+    """.strip()
+
+    code = f"""
+# Auto-generated patient-count for {{canonical_condition}}
+from db_query import query_dataframe
+
+sql = '''{sql}'''
+df = query_dataframe(sql)
+results = int(df['patient_count'].iloc[0]) if not df.empty else 0
+"""
+
+    return code.strip()
