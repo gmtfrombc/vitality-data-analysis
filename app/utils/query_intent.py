@@ -175,8 +175,11 @@ class QueryIntent(BaseModel):
         "percent_change",
         "top_n",
         "correlation",
+        "unknown",
     ]
-    target_field: str = Field(..., description="Primary metric or column of interest")
+    target_field: Optional[str] = Field(
+        ..., description="Primary metric or column of interest"
+    )
     filters: List[Filter] = Field(default_factory=list)
     conditions: List[Condition] = Field(default_factory=list)
     parameters: Dict[str, Any] = Field(default_factory=dict)
@@ -194,6 +197,12 @@ class QueryIntent(BaseModel):
         default=None,
         description="Global date range filter that applies to the entire query",
     )
+    # Store the original user question for traceability / heuristics
+    raw_query: str | None = Field(
+        default=None,
+        description="Original natural-language query that produced this intent.",
+        exclude=True,  # do not appear in .model_dump_json() so unit tests remain unchanged
+    )
 
     @model_validator(mode="after")
     def _basic_sanity_checks(self):  # noqa: D401
@@ -203,6 +212,17 @@ class QueryIntent(BaseModel):
                 raise ValueError(
                     "comparison analysis requires at least one filter or group_by field"
                 )
+
+        # For unknown analysis type, target_field can be None
+        if self.analysis_type == "unknown" and self.target_field is None:
+            # This is valid for fallback/error cases
+            pass
+        elif self.target_field is None:
+            # For all other analysis types, target_field is required
+            raise ValueError(
+                "target_field is required except for analysis_type='unknown'"
+            )
+
         return self
 
     # Convenience helpers -------------------------------------------------
@@ -296,6 +316,58 @@ def parse_intent_json(raw: str) -> QueryIntent:
                 # If after removal dict is empty, set to None
                 if not tr:
                     data["time_range"] = None
+
+    # ------------------------------------------------------------------
+    # NEW: Pre-validate filters – strip out date_range specs that include
+    #      relative expressions or column references (e.g. "program_start_date + 6 months")
+    #      because these cannot be parsed into concrete dates at this stage.
+    #      Instead, capture them into parameters.relative_date_filters so the
+    #      downstream code generator can handle them.
+    # ------------------------------------------------------------------
+    if isinstance(data, dict):
+        filters: list[dict] = data.get("filters", []) or []
+        clean_filters: list[dict] = []
+        relative_specs: list[dict] = []
+
+        for f in filters:
+            if not isinstance(f, dict):
+                # Keep non-dict entries untouched (will fail validation later)
+                clean_filters.append(f)
+                continue
+
+            dr = f.get("date_range")
+            if dr and isinstance(dr, dict):
+                start_raw = str(dr.get("start_date", ""))
+                end_raw = str(dr.get("end_date", ""))
+
+                # Heuristic: a valid literal date should start with 4-digit year.
+                def _is_literal_date(s: str) -> bool:
+                    # Accept YYYY-MM or YYYY-MM-DD (optionally with timezone)
+                    import re
+
+                    return bool(re.match(r"^\d{4}-\d{2}(-\d{2})?", s.strip()))
+
+                if not (_is_literal_date(start_raw) and _is_literal_date(end_raw)):
+                    # Treat as relative expression – move to parameters
+                    relative_specs.append(
+                        {
+                            "field": f.get("field"),
+                            "start_expr": start_raw,
+                            "end_expr": end_raw,
+                        }
+                    )
+                    # Skip this filter so it won't cause validation error
+                    continue
+
+            # If we reach here, keep the filter as-is
+            clean_filters.append(f)
+
+        if relative_specs:
+            # Ensure parameters exists
+            params: dict = data.get("parameters", {}) or {}
+            params.setdefault("relative_date_filters", []).extend(relative_specs)
+            data["parameters"] = params
+            data["filters"] = clean_filters
 
     try:
         # Pydantic v2 migrated – *model_validate* replaces deprecated *parse_obj*.

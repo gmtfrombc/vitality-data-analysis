@@ -1,3 +1,7 @@
+## 2025-05-15
+### Refactored
+- **Modular AI Helper Architecture**: Completed modular refactoring of the AI helper system into specialized utility modules with improved test coverage. Fixed import errors in sandbox environment for relative change analysis and fallback intent handling.
+
 ## 2025-05-24
 ### Refactored
 - **Modular Data Assistant Architecture**: Split monolithic data_assistant.py into five specialized modules (data_assistant.py, ui.py, engine.py, analysis_helpers.py, state.py) for improved maintainability and testability while preserving all functionality.

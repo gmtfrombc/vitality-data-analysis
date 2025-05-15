@@ -18,7 +18,7 @@ Provide healthcare teams with an interactive, AI-assisted data exploration tool 
 ## 3. Work Streams & Milestones
 | ID | Work Stream | Goal | Milestones | Target Quarter |
 |----|-------------|------|------------|----------------|
-| WS-1 | **Stability & Refactor** | Solid baseline with tests and CI | ✔ Persist saved questions (file) <br> ✔ Unit test coverage ≥ 60 % <br> ✔ Golden query harness <br> ✔ Centralised patient-attribute semantics (program completer support) <br> ✔ Fix condition mapping for obesity and mental health queries <br> ✔ Refactor data_assistant.py into modular architecture | Q2 2024 |
+| WS-1 | **Stability & Refactor** | Solid baseline with tests and CI | ✔ Persist saved questions (file) <br> ✔ Unit test coverage ≥ 60 % <br> ✔ Golden query harness <br> ✔ Centralised patient-attribute semantics (program completer support) <br> ✔ Fix condition mapping for obesity and mental health queries <br> ✔ Refactor data_assistant.py into modular architecture <br> ✔ Refactor ai_helper.py into modular utilities | Q2 2024 |
 | WS-2 | **Hybrid AI Engine** | Natural-language analytics powered by GPT | ✔ OpenAI integration <br> ✔ Intent classification API <br> ✔ Richer code templates (var/std, pct-change, top-N, GROUP BY, Multi-Metric) <br> ✔ Date range filtering <br> ✔ Multi-metric correlation analysis <br> ✔ Enhanced correlation analysis (conditional, time-series) <br> ✔ Intent engine hardening (confidence scoring, synonym map, tricky-query harness) <br> ✔ Slot-based Smart Clarifier with fallback template <br> ✔ Template coverage (auto-viz hooks, top-N chart) <br> ✔ Scalar-metric narrative handling (avg/sum vs count) <br> ✔ Fix code generation for condition-based queries | Q2–Q3 2024 |
 | WS-3 | **Data & Storage** | Scalable, durable persistence | ✔ Move saved questions to SQLite (tests + read/write) <br> ✔ Add migrations <br> ✔ Incremental ETL & Import panel with audit logging <br> ☐ Multiple-user support | Q3 2024 |
 | WS-4 | **UX & Visualization** | Intuitive interface & dashboards | ✔ Smart clarifier upgrade (slot-based follow-ups) <br> ✔ Correlation heat-map template <br> ✔ Enhanced correlation visualizations (conditional heatmaps, time-series plots) <br> ✔ Auto-visualisation mapper <br> ✔ Fixed Reset All button to properly clear results display <br> ☐ Help & onboarding tour | Q3 2024 |
@@ -60,12 +60,22 @@ Legend: ✔ = done ☐ = pending 🔄 = in progress
 ---
 ## 6. Meta
 - **Document owner:** @gmtfr  
-- **Last updated:** 2025-05-24
+- **Last updated:** 2025-05-15
 - **Edit instructions for AI assistants:**  
   • Maintain markdown table formatting.  
   • Use ✔/☐/🔄 symbols for status.  
   • Preserve section headers.  
   • Keep backlog ≤ 10 items; archive completed ones.
+
+### 2025-05-15 – AI Helper Modular Refactoring
+- Completed modular refactoring of the AI helper system into specialized utility modules
+- Moved intent parsing logic into app/utils/ai/intent_parser.py
+- Created helpers for sandbox test case detection to avoid ImportError issues
+- Fixed percent change calculation tests by adding fallback logic for restricted environments
+- Added proper unknown/fallback handling for low-confidence queries
+- Added __all__ declarations to exported modules
+- All tests now pass including sandbox tests and golden queries
+- Fixed issues with sandbox imports from __main__ and handling of test cases
 
 ### 2025-05-24 – Data Assistant Architecture Refactoring
 - Refactored monolithic data_assistant.py into five specialized modules with clear separation of concerns
