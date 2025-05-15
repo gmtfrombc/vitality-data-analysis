@@ -1,3 +1,29 @@
+## 2025-05-24
+### Refactored
+- **Modular Data Assistant Architecture**: Split monolithic data_assistant.py into five specialized modules (data_assistant.py, ui.py, engine.py, analysis_helpers.py, state.py) for improved maintainability and testability while preserving all functionality.
+
+## 2025-05-23
+### Enhanced
+- **Added weight change unit conversion**: Modified `_generate_relative_change_analysis_code` to convert weight change values from kilograms to pounds (lbs) and explicitly specify the unit in results. This makes the weight change analysis consistent with the rest of the application which uses imperial units.
+
+## 2025-05-22
+### Fixed
+- **Removed `copy` dependency from weight-change analysis**: Refactored `_generate_relative_change_analysis_code` to use Pydantic's `model_copy(deep=True)` instead of `copy.deepcopy`, resolving the sandbox import block issue that previously caused runtime failures when executing weight-change queries.
+
+### Added
+- **Sandbox regression test for weight-change analysis**: Added `tests/sandbox/test_weight_change_sandbox.py` with integration tests that verify generated weight-change code can run successfully in the sandbox environment without blocked imports.
+
+## 2025-05-22 (Earlier)
+### Fixed
+- **Sandbox import block for `copy` module**: Discovered that recently-added weight-change analysis code (`_generate_relative_change_analysis_code`) imports the standard‐library `copy` module, which is disallowed inside the sandbox execution environment. Although the unit-test suite passes, live queries fall back to the rule-engine with a warning (`Import of 'copy' is blocked in sandbox`).
+
+### Added
+- **Weight-change intent & analysis improvements**: Heuristic in `query_intent.py` now forces `analysis_type="change"` when weight-loss terminology is detected, and `_generate_relative_change_analysis_code` supplies default baseline (±30 days) and follow-up (5–7 months) windows when the user omits explicit ranges.
+
+### Next Steps
+- Refactor weight-change code to avoid `copy` import (use `model_copy(deep=True)` or manual dict duplication), **or** whitelist `copy` in sandbox guard.
+- Extend integration tests to execute generated code inside the sandbox stub to catch blocked imports early.
+
 ## 2025-05-20
 ### Fixed
 - **DateRange attribute access fix**: Resolved an issue in `data_assistant.py` where the system was attempting to access `.start` and `.end` attributes on DateRange objects, but the actual attribute names are `.start_date` and `.end_date`. This fix ensures correct time range display in the assumptions section of query results.
@@ -14,6 +40,8 @@
 ## 2025-05-15
 ### Fixed
 - **Identified condition mapping issue**: Discovered SQL generation issue for obesity-related conditions where the system attempts to use BMI filtering instead of proper ICD-10 code mapping. See docs/summary_testing_015.md for detailed analysis and recommendations.
+- **AI Helper SQL for BMI/Joins**: Corrected SQL generation in `app/ai_helper.py` for queries involving BMI to use the `vitals` table and appropriate joins, resolving "no such column: bmi" errors.
+- **AI Helper Patient Counting**: Ensured `COUNT(DISTINCT patients.id)` is used in `app/ai_helper.py` for patient count queries, especially when joins are involved or `target_field` is `patient_id`, preventing inflated counts and resolving incorrect answers (e.g., for "How many active female patients have a BMI under 30?").
 
 ### Known Issues
 - AI-generated SQL for obesity-related queries fails with "no such column: score_type" error due to improper condition handling in code generation.
@@ -217,3 +245,4 @@ Use reverse-chronological order (latest on top).
 ✨ Feature: Support for "program completer / finisher" attribute recognised across query intent, code-gen, and offline rule-engine (#WS-1)
 🧪 Test: Added `test_query_intent_program_completer.py` ensuring synonym mapping to canonical `program_completer`
 🧩 Refactor: DataAnalysisAssistant offline path now counts and analyses program completers (BMI, cohort size)
+🧪 Test: Added unit tests for Data-Quality Gaps feature (`app/utils/gap_report.py`) covering various conditions, aliases, and SQL generation logic.

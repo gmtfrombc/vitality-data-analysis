@@ -76,6 +76,18 @@ The Data Analysis Assistant uses a multi-step process:
 
 All code is available for review in the "Code" tab to ensure transparency and auditability
 
+### Architecture
+
+The Data Analysis Assistant has been refactored into a modular architecture with clear separation of concerns:
+
+1. **data_assistant.py**: Main coordinator module that orchestrates the end-to-end workflow
+2. **ui.py**: Handles all UI components, widgets, and display functions
+3. **engine.py**: Contains the core query processing logic, code generation, and execution
+4. **analysis_helpers.py**: Provides data transformation, formatting, and visualization functions
+5. **state.py**: Manages workflow state transitions and application state
+
+This modular design improves maintainability, testability, and makes it easier to extend the assistant with new features.
+
 ## Key Features
 
 - **Natural Language Interface**: Ask questions about patient data in normal English
