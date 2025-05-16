@@ -45,6 +45,10 @@ class DataAnalysisAssistant(param.Parameterized):
     show_narrative = param.Boolean(
         default=True, doc="Whether to show narrative summary"
     )
+    generated_code = param.String(default="", doc="Generated analysis code")
+    intermediate_results = param.Dict(
+        default=None, doc="Intermediate results from analysis"
+    )
 
     def __init__(self, **params):
         """Initialize the data analysis assistant"""
@@ -591,6 +595,11 @@ class DataAnalysisAssistant(param.Parameterized):
         self.ui.visualization_pane.objects = []
         self.ui.code_display.objects = []
 
+        # Reset analysis data
+        self.generated_code = ""
+        self.intermediate_results = None
+        self.analysis_result = {}
+
         # Hide all stage panes
         self.ui.clarifying_pane.visible = False
         self.ui.clarifying_input.visible = False
@@ -602,6 +611,10 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Reset stage indicators
         self.ui.update_stage_indicators(self.workflow.current_stage)
+
+        # Hide feedback widget if it exists
+        if hasattr(self, "feedback_widget") and self.feedback_widget is not None:
+            self.feedback_widget.visible = False
 
         # Update status
         self.ui.update_status("Ready for a new query")

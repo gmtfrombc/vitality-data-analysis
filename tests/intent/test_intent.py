@@ -57,7 +57,7 @@ def test_intent_all_fail(monkeypatch):
 
 
 def test_low_confidence_triggers_clarification(monkeypatch):
-    """_process_current_stage should stop at STAGE_CLARIFYING when intent unknown."""
+    """_process_current_stage should stop at CLARIFYING when intent unknown."""
 
     # Skip test if we're in offline mode to avoid conflicts with offline shortcuts
     if not os.getenv("OPENAI_API_KEY"):
@@ -65,32 +65,40 @@ def test_low_confidence_triggers_clarification(monkeypatch):
 
         pytest.skip("Skipping clarification test in offline mode")
 
-    from app.pages.data_assistant import DataAnalysisAssistant
+    from app.data_assistant import DataAnalysisAssistant
+    from app.state import WorkflowStages
 
     assistant = DataAnalysisAssistant()
 
     # Force unknown intent
     monkeypatch.setattr(
-        "app.ai_helper.ai.get_query_intent",
+        assistant.engine,
+        "process_query",
         lambda q: {"analysis_type": "unknown"},
     )
 
     monkeypatch.setattr(
-        "app.ai_helper.ai.generate_clarifying_questions",
-        lambda q: ["Which date range?"],
+        assistant.engine,
+        "generate_clarifying_questions",
+        lambda: ["Which date range?"],
     )
 
     assistant.query_text = "Some vague question"
-    assistant._process_current_stage()
 
-    assert assistant.current_stage == assistant.STAGE_CLARIFYING
-    # Ensure clarifying text displayed (property added for tests to access)
-    assert "clarify" in assistant.clarifying_text.lower()
+    # Set workflow to initial and then process query
+    assistant.workflow.reset()
+    assistant._process_query()
+
+    # Check that we're in clarifying stage
+    assert assistant.workflow.current_stage == WorkflowStages.CLARIFYING
+    # Ensure clarifying questions are displayed
+    assert assistant.ui.clarifying_pane.visible
 
 
 def test_low_confidence_generic_target(monkeypatch):
-    from app.pages.data_assistant import DataAnalysisAssistant
+    from app.data_assistant import DataAnalysisAssistant
     from app.utils.query_intent import QueryIntent
+    from app.state import WorkflowStages
 
     assistant = DataAnalysisAssistant()
 
@@ -103,14 +111,20 @@ def test_low_confidence_generic_target(monkeypatch):
         parameters={},
     )
 
-    monkeypatch.setattr("app.ai_helper.ai.get_query_intent", lambda q: intent_obj)
+    monkeypatch.setattr(assistant.engine, "process_query", lambda q: intent_obj)
+
     monkeypatch.setattr(
-        "app.ai_helper.ai.generate_clarifying_questions", lambda q: ["Which metric?"]
+        assistant.engine, "generate_clarifying_questions", lambda: ["Which metric?"]
     )
 
-    assistant.query_text = "Patient better?"
-    assistant._process_current_stage()
+    # Mock is_truly_ambiguous_query to always return True
+    monkeypatch.setattr(assistant, "_is_truly_ambiguous_query", lambda intent: True)
 
-    # Skip the current_stage check as it appears to have changed in implementation
-    # Just verify the assistant is working otherwise
-    assert hasattr(assistant, "current_stage")
+    assistant.query_text = "Patient better?"
+
+    # Set workflow to initial and then process query
+    assistant.workflow.reset()
+    assistant._process_query()
+
+    # Check we're in clarifying stage
+    assert assistant.workflow.current_stage == WorkflowStages.CLARIFYING

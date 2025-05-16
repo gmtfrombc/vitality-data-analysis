@@ -177,7 +177,7 @@ def create_app():
     )
 
     data_assistant = safe_import(
-        "app.pages.data_assistant",
+        "app.data_assistant",
         "Data Assistant module could not be loaded. Check logs for details.",
     )
 

@@ -13,7 +13,7 @@ HEADER = (
 
 
 DEF_TEMPLATE = """
-from app.pages.data_assistant import DataAnalysisAssistant
+from app.data_assistant import DataAnalysisAssistant
 
 def {test_name}():
     assistant = DataAnalysisAssistant()

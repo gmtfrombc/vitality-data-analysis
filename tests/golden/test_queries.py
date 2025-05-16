@@ -6,7 +6,7 @@ and run against a real (but small) test database.
 
 import unittest
 from datetime import date, datetime
-from app.pages.data_assistant import DataAnalysisAssistant
+from app.data_assistant import DataAnalysisAssistant
 
 # Import both ai and get_data_schema
 from app.ai_helper import ai, get_data_schema

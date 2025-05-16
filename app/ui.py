@@ -497,6 +497,15 @@ class UIComponents(param.Parameterized):
             lambda event: process_refinement_callback(refine_input.value)
         )
 
+        # Handle different input types
+        if isinstance(formatted_results, dict):
+            # Convert dict to a list with a Markdown pane
+            summary = formatted_results.get("summary", str(formatted_results))
+            formatted_results = [pn.pane.Markdown(summary)]
+        elif not isinstance(formatted_results, list):
+            # Handle any other non-list type
+            formatted_results = [pn.pane.Markdown(str(formatted_results))]
+
         # Add refine section to results
         formatted_results.append(pn.layout.Divider())
         formatted_results.append(refine_section)
