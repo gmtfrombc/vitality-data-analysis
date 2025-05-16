@@ -60,22 +60,46 @@ Legend: ✔ = done ☐ = pending 🔄 = in progress
 ---
 ## 6. Meta
 - **Document owner:** @gmtfr  
-- **Last updated:** 2025-05-15
+- **Last updated:** 2025-05-26
 - **Edit instructions for AI assistants:**  
   • Maintain markdown table formatting.  
   • Use ✔/☐/🔄 symbols for status.  
   • Preserve section headers.  
   • Keep backlog ≤ 10 items; archive completed ones.
 
-### 2025-05-15 – AI Helper Modular Refactoring
+### 2025-05-26 – Silent Dropout Detection
+- Added "Silent Dropout Detection" feature to identify patients marked as active with no recent clinical activity
+- Implemented `get_clinical_inactivity_report` in `app/utils/silent_dropout.py` to query patient activity across lab tests, vitals, and mental health screenings
+- Created configurable Panel UI page with interactive filtering by inactivity days and minimum activity count
+- Added bulk patient management capabilities including CSV export and "Mark as Inactive" functionality
+- Added proper error handling and test coverage to ensure feature reliability
+- Fixed test failures related to mocking query parameters for the clinical activity report
+- Added color-coded activity count display to visualize dropout severity
+- See docs/summary_testing/summary_032.md for full implementation details
+
+### 2025-05-25 – Program Completer vs Dropout Analysis
+- Added formal definition of program dropouts (inactive patients with <7 provider visits)
+- Enhanced patient status reporting with clear dropout identification in `get_patient_status()`
+- Added natural language query support for dropout-related inquiries through synonym mapping
+- Implemented data assistant support for queries about program dropouts 
+- Created analysis capabilities to compare health metrics and demographics between completers and dropouts
+- Added documentation in docs/summary_testing/summary_031.md with implementation details
+- All tests pass, confirming correct functionality for program completion status tracking
+
+### 2025-05-16 – AI Helper Modular Refactoring (Complete)
 - Completed modular refactoring of the AI helper system into specialized utility modules
-- Moved intent parsing logic into app/utils/ai/intent_parser.py
-- Created helpers for sandbox test case detection to avoid ImportError issues
-- Fixed percent change calculation tests by adding fallback logic for restricted environments
-- Added proper unknown/fallback handling for low-confidence queries
-- Added __all__ declarations to exported modules
+- Created app/utils/ai/ directory with focused modules:
+  - intent_parser.py: Query intent parsing and validation
+  - llm_interface.py: LLM API communication with retry logic
+  - prompt_templates.py: System and user prompt templates
+  - code_generator.py: Code template rendering
+  - clarifier.py: Missing field detection and question generation
+  - narrative_builder.py: Results summarization and formatting
+- Added app/utils/results_formatter.py to handle scalar vs dictionary format compatibility
+- Fixed sandbox test detection with improved import handling
+- Added proper visualization error handling with standardized responses
+- Fixed percent change calculation in weight change analysis
 - All tests now pass including sandbox tests and golden queries
-- Fixed issues with sandbox imports from __main__ and handling of test cases
 
 ### 2025-05-24 – Data Assistant Architecture Refactoring
 - Refactored monolithic data_assistant.py into five specialized modules with clear separation of concerns

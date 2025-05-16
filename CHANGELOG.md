@@ -1,6 +1,25 @@
+## 2025-05-26
+### Added
+- **Silent Dropout Detection**: Implemented feature to identify patients who are marked as active but show no clinical activity (lab tests, vitals, mental health screenings) within a configurable time period.
+- **Clinical Inactivity Reporting**: Created utility functions in `app/utils/silent_dropout.py` to identify potentially inactive patients based on real clinical data points.
+- **Interactive Management UI**: Built Panel-based page with configurable parameters (inactivity threshold, minimum activity count) and patient management tools including CSV export and bulk status updates.
+- **Enhanced Activity Metrics**: Added activity count tracking and color-coded indicators to visualize dropout severity.
+
 ## 2025-05-15
 ### Refactored
+- **Completed AI Helper Modularization**: Refactored the monolithic ai_helper.py into six specialized modules: llm_interface.py, prompt_templates.py, intent_parser.py, code_generator.py, clarifier.py, and narrative_builder.py. Improved code organization, testability, and maintainability while preserving all functionality.
 - **Modular AI Helper Architecture**: Completed modular refactoring of the AI helper system into specialized utility modules with improved test coverage. Fixed import errors in sandbox environment for relative change analysis and fallback intent handling.
+- **Results Formatter**: Added new utility for properly formatting test results and handling visualization errors gracefully. Ensures compatibility between scalar and dictionary return types.
+- **Sandbox Test Enhancements**: Improved sandbox testing infrastructure with better detection of test cases and proper handling of visualization libraries.
+
+## 2025-05-25
+### Added
+- **Program Dropout Definition**: Implemented formal definition of program dropouts (inactive patients with <7 provider visits) to complement existing program completers definition in `app/utils/patient_attributes.py`.
+- **Enhanced Patient Status**: Updated `get_patient_status()` to explicitly identify program dropouts for improved reporting and data analysis.
+- **Natural Language Support**: Added "program_dropout" to canonical fields and various synonym aliases (e.g., "dropped out", "didn't finish") to `query_intent.py`.
+- **Data Assistant Integration**: Enhanced `data_assistant.py` with dropout detection to support natural language queries about patients who discontinued the program.
+- **Analysis Tools**: Created standalone analysis script (`analyze_program_completion.py`) for comprehensive comparison between completers and dropouts.
+- **Test Coverage**: Added tests to verify dropout functionality and ensure consistent patient status classification.
 
 ## 2025-05-24
 ### Refactored
@@ -250,3 +269,11 @@ Use reverse-chronological order (latest on top).
 🧪 Test: Added `test_query_intent_program_completer.py` ensuring synonym mapping to canonical `program_completer`
 🧩 Refactor: DataAnalysisAssistant offline path now counts and analyses program completers (BMI, cohort size)
 🧪 Test: Added unit tests for Data-Quality Gaps feature (`app/utils/gap_report.py`) covering various conditions, aliases, and SQL generation logic.
+✨ Feature: Added program dropout definition and analysis capabilities for better program outcome tracking
+✅ Add: Implemented `is_program_dropout()` function to complement existing `is_program_completer()`
+⚡️ Enhancement: Updated `get_patient_status()` to explicitly identify program dropouts in patient data
+✅ Add: Added canonical field and synonym mapping for "program_dropout" in query intent system
+⚡️ Enhancement: Implemented natural language query support for dropout-related questions
+🧪 Test: Added tests to verify dropout functionality and patient status classification
+📚 Docs: Added summary_testing_031.md documenting program completer vs dropout analysis implementation
+📚 Docs: Added summary_testing_013.md with step-by-step plan to resume patient-attribute enum refactor (Session 013)
