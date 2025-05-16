@@ -75,5 +75,32 @@ If any step breaks the suite or app:
 * Add CI job that fails if legacy file re-appears.
 * Document refactor procedure in `docs/refactoring/` so future large moves avoid dual-code scenarios.
 
+## 9  Progress Update (2025-05-16)
+
+### Completed Steps
+1. ✅ **Created a dedicated cleanup branch**: Set up `fix/data-assistant-consolidation` branch as the workspace for our consolidation efforts.
+2. ✅ **Fixed import paths in test code**: Updated `tests/test_smoke.py` to import directly from `app.data_assistant` instead of the legacy path.
+3. ✅ **Fixed test compatibility issues**: 
+   - Added missing `__all__` exports in `app/data_assistant.py` to properly expose the `DataAnalysisAssistant` class.
+   - Updated test methods to work with the refactored module structure by directly setting workflow stages and mocking key methods.
+   - Ensured all smoke tests pass without using the legacy file.
+
+### Current Status
+- All tests in `tests/test_smoke.py` pass when importing directly from `app.data_assistant`.
+- The tests properly mock OpenAI API calls to prevent 401 errors in the test environment.
+- The workflow stage transitions have been properly mocked for testing purposes.
+
+### Next Steps
+1. Continue updating other test files to use the refactored module:
+   - Look for all imports of `app.pages.data_assistant` and convert them to `app.data_assistant`.
+   - Update monkeypatches to reference the correct methods in the new module structure.
+   - Run tests after each file update to ensure continued green status.
+2. Once all tests pass without relying on the legacy file, prepare to delete `app/pages/data_assistant.py`:
+   - Update any Panel references in the app to use the refactored module.
+   - Run a final smoke test of the Panel app to confirm UI functionality.
+3. Complete the consolidation:
+   - Remove the legacy file
+   - Create a PR for review and merging.
+
 ---
-_Thank you!_  The repository is stable; the next assistant can proceed with the consolidation steps above. 
+_Thank you!_ The consolidation is progressing well with smoke tests now passing. The next assistant can continue with updating the remaining test files. 

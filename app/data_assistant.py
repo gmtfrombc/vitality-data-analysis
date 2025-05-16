@@ -24,6 +24,9 @@ from app.utils.saved_questions_db import (
 )
 from app.utils.query_intent import QueryIntent
 
+# Define exports
+__all__ = ["DataAnalysisAssistant", "data_assistant_page"]
+
 # Configure logging
 logger = logging.getLogger("data_assistant")
 
