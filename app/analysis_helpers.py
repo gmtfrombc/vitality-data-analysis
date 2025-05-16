@@ -18,7 +18,6 @@ import holoviews as hv
 import re
 import panel as pn
 
-from app.utils.plots import bar_chart
 from app.utils.patient_attributes import Gender, Active
 
 # Configure logging
@@ -232,18 +231,42 @@ def create_visualization_for_result(result, analysis_type=None, target_field=Non
             df = df.sort_values("period")
 
             # Create line chart
-            from holoviews import opts
+            try:
+                from holoviews import opts
 
-            line = hv.Curve(df, "period", "value").opts(
-                opts.Curve(
-                    width=600,
-                    height=400,
-                    line_width=2,
-                    color="blue",
-                    title=f"Trend Analysis for {target_field or 'Values'} Over Time",
+                line = hv.Curve(df, "period", "value").opts(
+                    opts.Curve(
+                        width=600,
+                        height=400,
+                        line_width=2,
+                        color="blue",
+                        title=f"Trend Analysis for {target_field or 'Values'} Over Time",
+                    )
                 )
-            )
-            return line
+                return line
+            except Exception:
+                # Fallback to HTML line chart for time series data
+                try:
+                    from app.utils.plots import html_line_chart
+
+                    title = f"Trend Analysis for {target_field or 'Values'} Over Time"
+                    return html_line_chart(
+                        df["period"].tolist(), df["value"].tolist(), title=title
+                    )
+                except Exception:
+                    # If that fails, try bar chart as a last resort
+                    try:
+                        from app.utils.plots import html_bar_chart
+
+                        return html_bar_chart(
+                            df["period"].tolist(),
+                            df["value"].tolist(),
+                            title=f"Trend Analysis for {target_field or 'Values'} Over Time",
+                        )
+                    except Exception:
+                        return hv.Div(
+                            f"<div><strong>Trend Analysis for {target_field or 'Values'}</strong><br>Unable to display visualization</div>"
+                        )
 
         # Distribution visualization
         elif analysis_type == "distribution" or "counts" in result:
@@ -254,6 +277,36 @@ def create_visualization_for_result(result, analysis_type=None, target_field=Non
                     result["counts"],
                     title=f"Distribution of {target_field or 'Values'}",
                 )
+
+            # Handle categorical distribution without bin edges
+            elif "categories" in result and "values" in result:
+                try:
+                    from app.utils.plots import bar_chart
+
+                    # Create a dataframe for the bar chart
+                    df = pd.DataFrame(
+                        {"category": result["categories"], "value": result["values"]}
+                    )
+
+                    return bar_chart(
+                        df,
+                        x="category",
+                        y="value",
+                        title=f"Distribution of {target_field or 'Values'}",
+                    )
+                except Exception:
+                    try:
+                        from app.utils.plots import html_bar_chart
+
+                        return html_bar_chart(
+                            result["categories"],
+                            result["values"],
+                            title=f"Distribution of {target_field or 'Values'}",
+                        )
+                    except Exception:
+                        return hv.Div(
+                            f"<div><strong>Distribution of {target_field or 'Values'}</strong><br>Unable to display visualization</div>"
+                        )
 
         # Correlation visualization
         elif analysis_type == "correlation" or "correlation_coefficient" in result:
@@ -343,20 +396,32 @@ def histogram_from_bins(bin_edges, counts, title="Distribution"):
         (bin_edges[i] + bin_edges[i + 1]) / 2 for i in range(len(bin_edges) - 1)
     ]
 
-    # Create histogram with holoviews
-    from holoviews import opts
+    # Try creating histogram with holoviews
+    try:
+        from holoviews import opts
 
-    hist = hv.Histogram((bin_centers, counts), label=title)
-    hist = hist.opts(
-        opts.Histogram(
-            width=600,
-            height=400,
-            fill_color="skyblue",
-            line_color="darkblue",
-            title=title,
+        hist = hv.Histogram((bin_centers, counts), label=title)
+        hist = hist.opts(
+            opts.Histogram(
+                width=600,
+                height=400,
+                fill_color="skyblue",
+                line_color="darkblue",
+                title=title,
+            )
         )
-    )
-    return hist
+        return hist
+    except Exception:
+        # Try the HTML fallback if HoloViews fails (likely in sandbox environment)
+        try:
+            from app.utils.plots import html_histogram
+
+            return html_histogram(bin_edges, counts, title=title)
+        except Exception:
+            # Final fallback is a basic placeholder element
+            return hv.Div(
+                f"<div><strong>{title}</strong><br>Unable to display histogram</div>"
+            )
 
 
 def line_chart(df, x, y, title="Line Chart", x_label=None, y_label=None):

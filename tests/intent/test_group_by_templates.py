@@ -18,4 +18,4 @@ def test_group_by_count_gender():  # noqa: D103 – unit test
     code = helper.generate_analysis_code(intent, data_schema={})
 
     assert "GROUP BY gender" in code
-    assert "COUNT(*)" in code
+    assert "COUNT(DISTINCT" in code

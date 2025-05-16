@@ -13,17 +13,24 @@ import sys
 import os
 from pathlib import Path
 import traceback
+from dotenv import load_dotenv
 
 # Configure logging first
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(), logging.FileHandler("app.log")],
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("app.log"),
+        logging.StreamHandler(sys.stdout),
+    ],
 )
 logger = logging.getLogger(__name__)
 
 # Store server reference for cleanup
 _server = None
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 def cleanup_resources():
@@ -184,32 +191,19 @@ def create_app():
         "Gap Report module could not be loaded. Check logs for details.",
     )
 
-    get_gap_report_page = getattr(
-        gap_report_page_mod,
-        "gap_report_page",
-        lambda: pn.pane.Markdown("Gap Report module failed to load."),
+    data_validation = safe_import(
+        "app.pages.data_validation",
+        "Data Validation module could not be loaded. Check logs for details.",
     )
 
-    # Special handling for data validation page which we only import get_page from
-    validation_message = (
-        "Data Validation module could not be loaded. "
-        f"Validation system initialization: {'Success' if validation_success else 'Failed'}"
-    )
-    data_validation = safe_import("app.pages.data_validation", validation_message)
-    get_data_validation_page = getattr(
-        data_validation, "get_page", lambda: pn.pane.Markdown(validation_message)
-    )
-
-    # Create tabs for navigation
+    # Create the main application layout with combined Data Quality & Engagement tab
     tabs = pn.Tabs(
         ("Dashboard", dashboard.dashboard_page()),
+        ("Data Assistant", data_assistant.data_assistant_page()),
         ("Patient View", patient_view.patient_view_page()),
-        ("Data Analysis Assistant", data_assistant.data_assistant_page()),
-        ("Evaluation Dashboard", evaluation_page.evaluation_page()),
-        ("Data Validation", get_data_validation_page()),
-        ("Data-Quality Gaps", get_gap_report_page()),
-        dynamic=True,
-        css_classes=["main-tabs"],
+        ("Data Validation", data_validation.get_page()),
+        ("Data Quality & Engagement", gap_report_page_mod.gap_report_page()),
+        ("Evaluation", evaluation_page.evaluation_page()),
     )
 
     # Create the template

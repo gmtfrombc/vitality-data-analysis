@@ -171,6 +171,28 @@ def is_program_completer(active: int, provider_visits: Optional[int]) -> bool:
     return active == Active.INACTIVE.value and provider_visits >= 7
 
 
+def is_program_dropout(active: int, provider_visits: Optional[int]) -> bool:
+    """Check if a patient has dropped out of the Metabolic Health Program.
+
+    A program dropout is defined as someone who:
+    1. Is currently inactive (active=0)
+    2. Has less than 7 provider visits
+
+    Args:
+        active: Active status (0=inactive, 1=active)
+        provider_visits: Number of provider visits (or None if unknown)
+
+    Returns:
+        True if the patient meets the program dropout criteria
+    """
+    # If active, not a dropout
+    if active == Active.ACTIVE.value:
+        return False
+
+    # If inactive and not a completer, then it's a dropout
+    return not is_program_completer(active, provider_visits)
+
+
 def get_patient_status(
     active: int,
     provider_visits: Optional[int],
@@ -192,4 +214,4 @@ def get_patient_status(
     elif is_program_completer(active, provider_visits):
         return "Program Completer"
     else:
-        return "Inactive (Discontinued)"
+        return "Program Dropout"
