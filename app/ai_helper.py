@@ -560,6 +560,19 @@ class AIHelper:
         logger.info(f"Generating analysis code for intent: {intent}")
 
         # --------------------------------------------------------------
+        # Derive canonical metric name (handles synonyms/aliases)
+        # Do this only after we confirm *intent* is a QueryIntent;
+        # some legacy tests pass a plain dict.
+        # --------------------------------------------------------------
+        if isinstance(intent, QueryIntent):
+            from app.query_refinement import canonicalize_metric_name
+
+            metric_name = canonicalize_metric_name(intent)
+        else:
+            # Fallback for dict‑shaped intents (legacy paths)
+            metric_name = str(intent.get("target_field", "")).lower()
+
+        # --------------------------------------------------------------
         # Offline mode → skip LLM and always return deterministic or
         # fallback template code so tests never block.
         # --------------------------------------------------------------
@@ -608,7 +621,8 @@ class AIHelper:
 
         # Check if this query is about weight change/loss but wasn't properly identified as a change analysis
         if (
-            intent.target_field.lower() in {"weight", "bmi"}
+            # ← use canonicalised name
+            metric_name in {"weight", "bmi"}
             and hasattr(intent, "raw_query")
             and intent.raw_query
             and any(
@@ -1146,42 +1160,9 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
     if dynamic_code:
         return dynamic_code
 
-    # ------------------------------------------------------------------
-    # 1. Normalise target field & map common synonyms
-    # ------------------------------------------------------------------
-    ALIASES = {
-        "test_date": "date",
-        "score": "score_value",
-        "scorevalue": "score_value",
-        "phq9_score": "score_value",
-        "phq_score": "score_value",
-        "sex": "gender",
-        "patient": "patient_id",
-        "assessment_type": "assessment_type",
-        "score_type": "score_type",
-        "activity_status": "active",
-        "status": "active",
-        "date": "program_start_date",
-    }
+    from app.query_refinement import canonicalize_metric_name
 
-    raw_name = intent.target_field.lower()
-    metric_name = re.sub(r"[^a-z0-9]+", "_", raw_name).strip("_")
-
-    if metric_name.startswith("phq") and "change" in (
-        metric_name + intent.analysis_type + str(intent.parameters).lower()
-    ):
-        metric_name = "phq9_change"
-
-    # Counting active patients → map to active_patients metric helper
-    if (
-        intent.analysis_type == "count"
-        and metric_name in {"patient", "patients", "patient_id"}
-        and any(
-            f.field.lower() in {"active", "status", "activity_status"}
-            for f in intent.filters
-        )
-    ):
-        metric_name = "active_patients"
+    metric_name = canonicalize_metric_name(intent)
 
     # --------------------------------------------------------------
     # Condition-based patient counts (e.g., "How many patients have anxiety?")
@@ -1339,7 +1320,7 @@ results = 4.0
     # Check if this query is about weight change/loss but wasn't properly identified as a change analysis
     if (
         how == "average"
-        and intent.target_field.lower() in {"weight", "bmi"}
+        and metric_name in {"weight", "bmi"}
         and str(getattr(intent, "raw_query", "")).lower()
         in {"w", "wt", None, ""}
         | {
@@ -3643,12 +3624,16 @@ def _generate_relative_change_analysis_code(intent: QueryIntent) -> str | None:
     # windows so simpler queries work without explicit metadata.
 
     # Check if we need to handle weight unit conversion
-    needs_weight_unit_conversion = intent.target_field.lower() == "weight"
+    from app.query_refinement import canonicalize_metric_name  # put with other imports
 
+    # normalises “wt”, “body_weight”, etc.
+    metric_name = canonicalize_metric_name(intent)
+    needs_weight_unit_conversion = metric_name == "weight"
+
+    metric = metric_name
     # ------------------------------------------------------------------
     # Determine metric table/column
     # ------------------------------------------------------------------
-    metric = intent.target_field.lower()
     score_metrics = {"score_value", "value"}
     vitals_metrics = {"bmi", "weight", "height", "sbp", "dbp"}
 
