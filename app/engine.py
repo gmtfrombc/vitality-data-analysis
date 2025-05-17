@@ -15,6 +15,7 @@ The engine is responsible for:
 
 import logging
 import time
+import re
 from pathlib import Path
 
 from app.ai_helper import ai, get_data_schema
@@ -57,6 +58,8 @@ class AnalysisEngine:
         self.visualizations = []  # Visualizations generated from results
         self.start_time = None  # Timestamp when processing started
         self.end_time = None  # Timestamp when processing finished
+        self.threshold_info = None  # Information about threshold queries
+        self.parameters = {}  # Additional parameters for query handling
 
     def process_query(self, query):
         """
@@ -77,9 +80,100 @@ class AnalysisEngine:
         self.generated_code = ""
         self.execution_results = None
         self.visualizations = []
+        self.threshold_info = None
+        self.parameters = {}
+
+        # Check for threshold queries
+        self.threshold_info = self.detect_threshold_query(query)
+
+        # Check for active/inactive patient filters
+        self.detect_active_inactive_filter(query)
 
         # Parse the query intent (step 1)
         return self.get_query_intent()
+
+    def detect_threshold_query(self, query_text):
+        """
+        Detect if a query is asking for a threshold comparison
+        (e.g., "BMI above 30", "patients with weight below 150")
+
+        Args:
+            query_text (str): The query text to analyze
+
+        Returns:
+            dict: Threshold information if detected, None otherwise
+            {
+                'direction': 'above'|'below',
+                'value': float,
+                'field': str  # The field being compared (if detectable)
+            }
+        """
+        query = query_text.lower()
+        threshold_info = {"direction": None, "value": None, "field": None}
+
+        # Check for threshold direction words
+        if any(
+            word in query for word in ["above", "over", "greater than", "higher than"]
+        ):
+            threshold_info["direction"] = "above"
+        elif any(
+            word in query for word in ["below", "under", "less than", "lower than"]
+        ):
+            threshold_info["direction"] = "below"
+        else:
+            return None  # Not a threshold query
+
+        # Extract numeric value from query
+        numbers = re.findall(r"\d+(?:\.\d+)?", query)
+        if not numbers:
+            return None  # No threshold value found
+
+        threshold_info["value"] = float(numbers[0])
+
+        # Try to determine field being compared
+        common_fields = {
+            "bmi": ["bmi", "body mass index"],
+            "weight": ["weight", "pounds", "lbs", "kg"],
+            "sbp": ["sbp", "systolic", "systolic blood pressure"],
+            "dbp": ["dbp", "diastolic", "diastolic blood pressure"],
+            "a1c": ["a1c", "hba1c", "glycated hemoglobin"],
+        }
+
+        for field, terms in common_fields.items():
+            if any(term in query for term in terms):
+                threshold_info["field"] = field
+                break
+
+        return threshold_info
+
+    def detect_active_inactive_filter(self, query_text):
+        """
+        Detect if a query explicitly mentions active or inactive patients
+
+        Args:
+            query_text (str): The query text to analyze
+
+        Returns:
+            bool: True if active/inactive filter is explicitly mentioned
+        """
+        query = query_text.lower()
+
+        # Detect explicit mentions of all patients or inactive patients
+        if "all patients" in query or "inactive" in query:
+            logger.info(
+                "Detected explicit request for all patients (including inactive)"
+            )
+            self.parameters["include_inactive"] = True
+            return True
+
+        # Detect explicit mentions of active patients
+        if "active" in query and "inactive" not in query:
+            logger.info("Detected explicit request for only active patients")
+            self.parameters["include_inactive"] = False
+            return True
+
+        # If not explicitly mentioned, we'll need to clarify with the user
+        return False
 
     def get_query_intent(self):
         """
@@ -105,7 +199,7 @@ class AnalysisEngine:
 
             # Calculate confidence if possible
             if isinstance(self.intent, QueryIntent):
-                confidence = compute_intent_confidence(self.intent)
+                confidence = compute_intent_confidence(self.intent, self.query)
                 if isinstance(self.intent.parameters, dict):
                     self.intent.parameters["confidence"] = confidence
                 else:
@@ -184,6 +278,17 @@ class AnalysisEngine:
         Returns:
             QueryIntent: The updated query intent with clarification incorporated
         """
+        # Check if clarification contains active/inactive preference
+        clarification_lower = clarification_text.lower()
+        if "all patient" in clarification_lower or "inactive" in clarification_lower:
+            # User wants all patients (both active and inactive)
+            self.parameters["include_inactive"] = True
+            logger.info("Clarification indicates ALL patients (including inactive)")
+        elif "active" in clarification_lower and "only" in clarification_lower:
+            # User explicitly specified only active patients
+            self.parameters["include_inactive"] = False
+            logger.info("Clarification indicates ONLY active patients")
+
         # Combine original query with clarification
         combined_query = f"{self.query}\n\nAdditional info: {clarification_text}"
         logger.info(f"Processing clarified query: {combined_query}")
@@ -211,26 +316,150 @@ class AnalysisEngine:
 
         logger.info(f"Generating analysis code for intent: {self.intent}")
 
+        # Apply active/inactive filter preference from parameters if available
+        if isinstance(self.intent, QueryIntent):
+            include_inactive = self.parameters.get("include_inactive", None)
+            if include_inactive is not None:
+                # Add or modify the active filter in the intent based on user's clarification
+                if not include_inactive:
+                    # Add explicit active=1 filter if user wants only active patients
+                    has_active_filter = False
+                    for filter in self.intent.filters:
+                        if filter.field == "active":
+                            has_active_filter = True
+                            filter.value = 1
+                            break
+
+                    if not has_active_filter:
+                        try:
+                            # Add active=1 filter
+                            from app.utils.query_intent import Filter
+
+                            self.intent.filters.append(Filter(field="active", value=1))
+                            logger.info("Added active=1 filter based on clarification")
+                        except Exception as e:
+                            logger.error(f"Could not add active filter: {e}")
+                else:
+                    # If user wants all patients, remove any active filter
+                    self.intent.filters = [
+                        f for f in self.intent.filters if f.field != "active"
+                    ]
+                    logger.info("Removed active filter based on clarification")
+
+        # Check for threshold query patterns
+        custom_prompt = None
+        if (
+            self.threshold_info
+            and self.threshold_info["field"]
+            and self.threshold_info["value"]
+        ):
+            # Store threshold info in context for result formatting later
+            custom_prompt = f"Generate code to find patients with {self.threshold_info['field']} {self.threshold_info['direction']} {self.threshold_info['value']}"
+            logger.info(f"Using threshold-specific prompt: {custom_prompt}")
+
         # Get data schema for code generation
         data_schema = get_data_schema()
 
         # Handle non-QueryIntent responses (dictionaries)
         if isinstance(self.intent, dict):
             # Fallback to simple code that returns the error
-            analysis_type = self.intent.get("analysis_type", "unknown")
-            error_msg = self.intent.get("error", "Unknown error")
-
             self.generated_code = self.generate_fallback_code()
             return self.generated_code
 
         # Generate code from AI based on intent
         try:
-            self.generated_code = ai.generate_analysis_code(self.intent, data_schema)
+            self.generated_code = ai.generate_analysis_code(
+                self.intent, data_schema, custom_prompt=custom_prompt
+            )
+
+            # If this is a threshold query, ensure the code includes proper visualization
+            if self.threshold_info:
+                self.generated_code = self._enhance_threshold_visualization(
+                    self.generated_code
+                )
+
             return self.generated_code
         except Exception as e:
             logger.error(f"Error generating analysis code: {e}", exc_info=True)
             self.generated_code = self.generate_fallback_code()
             return self.generated_code
+
+    def _enhance_threshold_visualization(self, code):
+        """
+        Enhance code with threshold visualization if needed
+
+        If the query involves a threshold (e.g., "BMI above 30"), add code to
+        create a visualization that includes a vertical line at the threshold.
+
+        Args:
+            code (str): The generated code
+
+        Returns:
+            str: Enhanced code with threshold visualization
+        """
+        if not self.threshold_info:
+            return code
+
+        # Check if the code already includes visualization
+        if "histogram(" in code or "hvplot.hist" in code:
+            # The code already has visualization, likely handled by AI
+            return code
+
+        # Get details from threshold info
+        field = self.threshold_info["field"]
+        direction = self.threshold_info["direction"]
+        value = self.threshold_info["value"]
+
+        # Add visualization code - safely with try/except
+        viz_code = f"""
+# Ensure results is a dictionary for threshold metadata
+if not isinstance(results, dict):
+    # Wrap scalar result in a dictionary
+    original_value = results
+    results = {{'scalar': original_value}}
+
+# Add threshold visualization
+try:
+    # Try to create threshold visualization
+    results['threshold_info'] = {self.threshold_info}
+    
+    import numpy as np
+    import pandas as pd
+    
+    # Find the data to visualize
+    data_to_viz = None
+    for var_name in dir():
+        var = locals()[var_name]
+        if isinstance(var, pd.DataFrame) and '{field}' in var.columns:
+            data_to_viz = var
+            break
+    
+    # If we found data with the threshold field, create visualization
+    if data_to_viz is not None:
+        # Create histogram data
+        hist_data, bin_edges = np.histogram(data_to_viz['{field}'].dropna(), bins=20)
+        results['hist_data'] = hist_data.tolist()
+        results['bin_edges'] = bin_edges.tolist()
+        results['threshold_value'] = {value}
+        results['threshold_direction'] = '{direction}'
+        
+        # Calculate stats
+        matching_condition = data_to_viz['{field}'] {'>' if direction == 'above' else '<'} {value}
+        results['matching_count'] = matching_condition.sum()
+        results['total_count'] = len(data_to_viz)
+        results['percentage'] = (results['matching_count'] / results['total_count']) * 100 if results['total_count'] > 0 else 0
+except Exception as viz_error:
+    # If visualization fails, continue without it
+    results['viz_error'] = str(viz_error)
+"""
+
+        # Insert visualization code before the final return or at the end
+        if "return results" in code:
+            # Insert before return
+            return code.replace("return results", viz_code + "\nreturn results")
+        else:
+            # Append to end
+            return code + "\n" + viz_code
 
     def add_sandbox_safety(self, code):
         """
@@ -315,8 +544,19 @@ class AnalysisEngine:
         logger.info("Executing analysis code in sandbox")
 
         try:
+            # TEMP: Debugging aid – dump code before execution
+            print("\n====== BEGIN EXECUTED CODE ======\n")
+            print(safe_code)
+            print("\n======= END EXECUTED CODE =======\n")
             # Execute the code in the sandbox
             result = run_snippet(safe_code)
+
+            # If the result is a dictionary, add any active/inactive preference from the engine
+            if isinstance(result, dict) and "include_inactive" not in result:
+                include_inactive = self.parameters.get("include_inactive", None)
+                if include_inactive is not None:
+                    result["include_inactive"] = include_inactive
+
             self.execution_results = result
 
             # Extract visualizations if any
@@ -355,10 +595,58 @@ class AnalysisEngine:
             return "No results available to interpret."
 
         try:
+            # Gather active/inactive status information for AI interpretation
+            patient_status_info = {}
+            include_inactive = self.parameters.get("include_inactive", None)
+            if include_inactive is not None:
+                patient_status_info["include_inactive"] = include_inactive
+
+            # Add this context to the results dictionary if it's a dictionary
+            results_for_ai = self.execution_results
+            if isinstance(results_for_ai, dict):
+                # Add active/inactive status if not already in the results
+                if (
+                    "include_inactive" not in results_for_ai
+                    and include_inactive is not None
+                ):
+                    # Make a copy to avoid modifying original
+                    results_for_ai = results_for_ai.copy()
+                    results_for_ai["include_inactive"] = include_inactive
+            else:
+                # Wrap scalar results with active/inactive information
+                if include_inactive is not None:
+                    results_for_ai = {
+                        "scalar": self.execution_results,
+                        "include_inactive": include_inactive,
+                    }
+
             # Use AI to interpret the results
             interpretation = ai.interpret_results(
-                self.query, self.execution_results, self.visualizations
+                self.query, results_for_ai, self.visualizations
             )
+
+            # Add patient status to interpretation if not already mentioned
+            if include_inactive is not None and interpretation:
+                patient_status_text = ""
+                if not include_inactive and "active" not in interpretation.lower():
+                    patient_status_text = " for active patients"
+                elif (
+                    include_inactive
+                    and "all patient" not in interpretation.lower()
+                    and "inactive" not in interpretation.lower()
+                ):
+                    patient_status_text = " for all patients (including inactive)"
+
+                if patient_status_text:
+                    # Add the status info at the end of the first sentence
+                    if "." in interpretation:
+                        first_sentence, rest = interpretation.split(".", 1)
+                        interpretation = (
+                            first_sentence + patient_status_text + "." + rest
+                        )
+                    else:
+                        interpretation += patient_status_text
+
             return interpretation
         except Exception as e:
             logger.error(f"Error interpreting results: {e}", exc_info=True)
@@ -371,7 +659,16 @@ class AnalysisEngine:
                 return f"The analysis encountered an error: {self.execution_results['error']}"
 
             if isinstance(self.execution_results, (int, float)):
-                return f"The analysis resulted in a value of {self.execution_results}."
+                # Include active/inactive status in the fallback message if available
+                patient_status_text = ""
+                include_inactive = self.parameters.get("include_inactive", None)
+                if include_inactive is not None:
+                    if not include_inactive:
+                        patient_status_text = " for active patients"
+                    else:
+                        patient_status_text = " for all patients (including inactive)"
+
+                return f"The analysis resulted in a value of {self.execution_results}{patient_status_text}."
 
             return "Analysis complete. Results are displayed below."
 

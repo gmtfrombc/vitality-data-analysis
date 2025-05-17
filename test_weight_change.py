@@ -1,5 +1,6 @@
 from app.utils.query_intent import QueryIntent, Filter
 from app.ai_helper import _generate_relative_change_analysis_code
+from app.utils.sandbox import run_snippet
 import sqlite3
 import pandas as pd
 
@@ -29,11 +30,9 @@ code = _generate_relative_change_analysis_code(intent)
 print("Generated code:")
 print(code)
 
-# Execute the code
+# Execute the code using the sandbox
 print("\nExecuting code...")
-exec_globals = {}
-exec(code, exec_globals)
-results = exec_globals.get("results")
+results = run_snippet(code)
 
 print("\nResults:")
 print(results)

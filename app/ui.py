@@ -357,12 +357,13 @@ class UIComponents(param.Parameterized):
             pn.pane.Markdown(
                 "The following code will be executed to analyze your query:"
             ),
-            pn.pane.Code(
-                code,
+            pn.widgets.CodeEditor(
+                value=code,
                 language="python",
                 sizing_mode="stretch_width",
-                theme="light",
-                line_numbers=True,
+                theme="chrome",
+                readonly=True,
+                height=300,
             ),
         ]
 
@@ -389,12 +390,13 @@ class UIComponents(param.Parameterized):
             # Show traceback if available
             if "traceback" in results:
                 elements.append(
-                    pn.pane.Code(
-                        results["traceback"],
+                    pn.widgets.CodeEditor(
+                        value=results["traceback"],
                         language="python",
                         sizing_mode="stretch_width",
-                        theme="light",
-                        line_numbers=True,
+                        theme="chrome",
+                        readonly=True,
+                        height=300,
                     )
                 )
         else:
@@ -424,7 +426,7 @@ class UIComponents(param.Parameterized):
                         pagination="local",
                         page_size=5,
                         sizing_mode="stretch_width",
-                        theme="light",
+                        theme="default",
                     )
                 )
             elif hasattr(results, "to_dict"):
@@ -435,7 +437,7 @@ class UIComponents(param.Parameterized):
                         pagination="local",
                         page_size=10,
                         sizing_mode="stretch_width",
-                        theme="light",
+                        theme="default",
                     )
                 )
             else:

@@ -16,4 +16,4 @@ def test_trend_template_sql():
     code = _build_code_from_intent(intent)
     assert code is not None
     assert "strftime('%Y-%m'" in code
-    assert "GROUP BY period" in code
+    assert "GROUP BY month" in code

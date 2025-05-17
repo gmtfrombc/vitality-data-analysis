@@ -12,6 +12,7 @@ from pathlib import Path
 from openai import OpenAI
 from dotenv import load_dotenv
 import logging.handlers
+import json
 
 # Configure logging
 log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
@@ -99,3 +100,93 @@ def ask_llm(
 def is_offline_mode() -> bool:
     """Return whether we're running in offline mode (no API key)."""
     return _OFFLINE_MODE
+
+
+def generate_analysis_code(intent, data_schema, custom_prompt=None):
+    """
+    Generate Python code for analyzing data based on query intent.
+
+    Args:
+        intent: The structured intent representation
+        data_schema: Schema of available data
+        custom_prompt: Optional custom prompt to override default
+
+    Returns:
+        str: Generated Python code for analysis
+    """
+    if is_offline_mode():
+        # Return a simple placeholder in offline mode
+        return """
+        # Offline mode - no LLM available
+        import pandas as pd
+        
+        # Sample analysis code
+        def analyze():
+            return {"message": "Analysis code generation requires LLM. Running in offline mode."}
+            
+        results = analyze()
+        """
+
+    # Base system prompt
+    base_prompt = f"""
+    You are an expert Python developer specializing in data analysis. Generate executable Python code to analyze patient data based on the specified intent.
+
+    The available data schema is:
+    {json.dumps(data_schema, indent=2)}
+
+    The code must use **only** the helper functions exposed in the runtime (e.g., `db_query.get_all_vitals()`, `db_query.get_all_scores()`, `db_query.get_all_patients()`).
+    Do NOT read external CSV or Excel files from disk, and do NOT attempt internet downloads.
+
+    The code should use pandas and should be clean, efficient, and well-commented **and MUST assign the final output to a variable named `results`**. The UI downstream expects this variable.
+
+    Return only the Python code (no markdown fences) and ensure the last line sets `results`.
+
+    Include proper error handling and make sure to handle edge cases like empty dataframes and missing values.
+    """
+
+    # Use custom prompt if provided
+    system_prompt = custom_prompt if custom_prompt else base_prompt
+
+    # Create intent payload
+    if hasattr(intent, "model_dump"):
+        intent_payload = json.dumps(intent.model_dump())
+    elif hasattr(intent, "dict"):
+        intent_payload = json.dumps(intent.dict())
+    else:
+        intent_payload = json.dumps(intent)
+
+    # Generate code
+    query = f"Generate Python code for this analysis intent: {intent_payload}"
+
+    try:
+        response = ask_llm(
+            prompt=system_prompt,
+            query=query,
+            model="gpt-4",
+            temperature=0.2,
+            max_tokens=1000,
+        )
+
+        # Clean the response
+        if "```python" in response:
+            code = response.split("```python")[1].split("```")[0].strip()
+        elif "```" in response:
+            code = response.split("```")[1].split("```")[0].strip()
+        else:
+            code = response.strip()
+
+        # Ensure results variable is defined
+        if "results =" not in code:
+            code += "\n\n# Ensure results variable exists\nif 'results' not in locals():\n    results = {'error': 'No results generated'}"
+
+        return code
+
+    except Exception as e:
+        logger.error("Failed to generate analysis code: %s", e)
+        return f"""
+        # Error generating code: {str(e)}
+        def analysis_error():
+            return {{"error": "{str(e)}"}}
+            
+        results = analysis_error()
+        """

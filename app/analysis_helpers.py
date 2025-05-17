@@ -11,12 +11,10 @@ The module provides:
 4. Result aggregation and combination functions
 """
 
+import re
 import logging
 import pandas as pd
 import numpy as np
-import holoviews as hv
-import re
-import panel as pn
 
 from app.utils.patient_attributes import Gender, Active
 
@@ -28,6 +26,39 @@ FEMALE = Gender.FEMALE.value
 MALE = Gender.MALE.value
 ACTIVE = Active.ACTIVE.value
 INACTIVE = Active.INACTIVE.value
+
+# ------------------------------------------------------------------
+# Optional heavy dependencies – provide lightweight stubs when they
+# are unavailable (e.g. blocked by the sandbox import guard).  This
+# prevents ImportError from bubbling up and breaking scalar-only
+# analyses that have no need for plotting.
+# ------------------------------------------------------------------
+
+
+try:
+    import holoviews as hv  # type: ignore
+except Exception:  # pragma: no cover – stub when plotting libs disabled
+    import types
+    import sys
+
+    hv = types.ModuleType("holoviews")
+    # Provide minimal dummies for attrs accessed elsewhere
+    setattr(hv, "Div", lambda *a, **k: None)
+    setattr(hv, "Histogram", lambda *a, **k: None)
+    setattr(hv, "Curve", lambda *a, **k: None)
+    sys.modules["holoviews"] = hv
+
+
+try:
+    import panel as pn  # type: ignore
+except Exception:  # pragma: no cover – stub when plotting libs disabled
+    import types
+    import sys
+
+    pn = types.ModuleType("panel")
+    pn.pane = types.ModuleType("pane")
+    setattr(pn.pane, "Markdown", lambda *a, **k: None)
+    sys.modules["panel"] = pn
 
 
 def format_scalar_results(value, metric_type="value"):
@@ -113,6 +144,13 @@ def format_dict_results(result_dict, analysis_type=None):
             "type": "error",
             "message": result_dict["error"],
             "details": result_dict.get("traceback", ""),
+        }
+
+    # Handle threshold query results
+    if "threshold_info" in result_dict:
+        return {
+            "type": "threshold",
+            "data": result_dict,
         }
 
     # Handle dictionary with a visualization
@@ -213,6 +251,38 @@ def create_visualization_for_result(result, analysis_type=None, target_field=Non
     # Skip visualization if already present
     if isinstance(result, dict) and "visualization" in result:
         return result["visualization"]
+
+    # Handle threshold query results
+    if isinstance(result, dict) and "threshold_info" in result:
+        if (
+            "hist_data" in result
+            and "bin_edges" in result
+            and "threshold_value" in result
+        ):
+            try:
+                # Create a histogram with threshold line
+                field = result["threshold_info"].get("field", "value")
+                direction = result["threshold_info"].get("direction", "above")
+                value = result["threshold_value"]
+                title = f"Distribution of {field.upper()} with {direction.title()} {value} Threshold"
+
+                # Create histogram from pre-computed data
+                hist = histogram_from_bins(
+                    result["bin_edges"], result["hist_data"], title=title
+                )
+
+                # Try to add a threshold line if holoviews is available
+                try:
+                    threshold_line = hv.VLine(value).opts(
+                        color="red", line_width=2, line_dash="dashed"
+                    )
+                    return hist * threshold_line
+                except Exception:
+                    # If we can't add the line, just return the histogram
+                    return hist
+            except Exception as e:
+                logger.error(f"Error creating threshold visualization: {e}")
+                return None
 
     # Handle dictionary results
     if isinstance(result, dict):
@@ -515,7 +585,7 @@ def to_lbs(series):
     Convert weight values from kg to lbs where needed.
 
     Intelligently detects whether a series of weight values is likely to be
-    in kilograms (values below 100) and converts to pounds if needed.
+    in kilograms (median value below 100) and converts to pounds if needed.
     This helps standardize weight units for analysis and display.
 
     Args:
@@ -525,14 +595,147 @@ def to_lbs(series):
         pandas.Series: Weight values in pounds
     """
     if isinstance(series, pd.Series):
-        # Check if any values are likely in kg (below 100)
-        has_low_values = (series < 100).any()
+        if series.empty:
+            return series
 
-        if has_low_values:
-            # Convert kg to lbs
-            return series * 2.20462
+        try:
+            median_val = series.median()
+            if pd.isna(median_val):
+                return series
+            if median_val < 100:  # Very unlikely for adult body-weight in lbs
+                return series * 2.20462
+            return series
+        except Exception as e:
+            logger.warning(f"Error in to_lbs conversion: {e}")
+            return series
 
     return series
+
+
+def format_threshold_results(results, intent=None, show_narrative=True):
+    """
+    Format threshold query results for display.
+
+    Specialized formatting for threshold queries that includes visualizations and
+    statistics about the threshold comparison.
+
+    Args:
+        results: Threshold query results
+        intent: Query intent that produced the results
+        show_narrative: Whether to include narrative descriptions
+
+    Returns:
+        list: List of Panel components for display
+    """
+    formatted_results = []
+
+    if not results:
+        return formatted_results
+
+    # Extract threshold information
+    threshold_info = results.get("threshold_info", {})
+    if not threshold_info:
+        return formatted_results
+
+    field = threshold_info.get("field", "value")
+    direction = threshold_info.get("direction", "above")
+    value = threshold_info.get("value", 0)
+
+    # Get counts
+    matching_count = results.get("matching_count", 0)
+    if isinstance(matching_count, (pd.Series, np.ndarray)):
+        matching_count = matching_count.iloc[0] if len(matching_count) > 0 else 0
+
+    total_count = results.get("total_count", 0)
+    percentage = results.get("percentage", 0)
+    if percentage == 0 and total_count > 0:
+        percentage = (matching_count / total_count) * 100
+
+    # Add active patient information
+    patient_status_text = ""
+
+    # Check if we have active status information
+    include_inactive = False
+    active_only = False
+
+    # Check intent or engine parameters
+    if (
+        intent is not None
+        and hasattr(intent, "engine")
+        and hasattr(intent.engine, "parameters")
+    ):
+        include_inactive = intent.engine.parameters.get("include_inactive", False)
+        if not include_inactive:
+            active_only = True
+
+    # Also check the results dictionary, as some execution might set this directly
+    if "include_inactive" in results:
+        include_inactive = results.get("include_inactive", False)
+        if not include_inactive:
+            active_only = True
+
+    if active_only:
+        patient_status_text = " active"
+    elif include_inactive:
+        patient_status_text = " (including inactive)"
+
+    # Create title and narrative
+    title = f"Patients with {field} {direction.title()} {value}"
+
+    if show_narrative:
+        narrative = f"### {title}\n\nThere are **{matching_count:,}**{patient_status_text} patients with {field} {direction} {value}"
+        if total_count > 0:
+            narrative += f", representing **{percentage:.1f}%** of all patients"
+        narrative += ".\n\n"
+        formatted_results.append(pn.pane.Markdown(narrative))
+    else:
+        formatted_results.append(pn.pane.Markdown(f"### {title}"))
+        stats = f"**Count:** {matching_count:,}{patient_status_text} patients\n"
+        if total_count > 0:
+            stats += f"**Percentage:** {percentage:.1f}%\n"
+        formatted_results.append(pn.pane.Markdown(stats))
+
+    # Add visualization if available
+    viz = None
+    if "hist_data" in results and "bin_edges" in results:
+        try:
+            # Create histogram visualization
+            viz_title = f"Distribution of {field} with Threshold at {value}"
+            viz = create_visualization_for_result(
+                results, analysis_type="threshold", target_field=field
+            )
+            if viz is not None:
+                formatted_results.append(viz)
+        except Exception as e:
+            logger.error(f"Error creating threshold visualization: {e}")
+
+    # Add data table with key metrics
+    metrics = {
+        "Field": field,
+        "Threshold": f"{direction.title()} {value}",
+        "Matching Count": matching_count,
+        "Total Count": total_count,
+        "Percentage": f"{percentage:.1f}%",
+    }
+
+    # Add patient status information to metrics if available
+    if active_only:
+        metrics["Patient Status"] = "Active Only"
+    elif include_inactive:
+        metrics["Patient Status"] = "All Patients (Active & Inactive)"
+
+    metrics_df = pd.DataFrame([metrics])
+    formatted_results.append(
+        pn.widgets.Tabulator(
+            metrics_df,
+            pagination="local",
+            page_size=5,
+            sizing_mode="stretch_width",
+            theme="default",
+        )
+    )
+
+    return formatted_results
 
 
 def format_results(results, intent=None, show_narrative=True):
@@ -554,6 +757,34 @@ def format_results(results, intent=None, show_narrative=True):
 
     formatted_results = []
 
+    # Get active/inactive status information
+    include_inactive = False
+    active_only = False
+    patient_status_text = ""
+
+    # Check intent or engine parameters
+    if (
+        intent is not None
+        and hasattr(intent, "engine")
+        and hasattr(intent.engine, "parameters")
+    ):
+        include_inactive = intent.engine.parameters.get("include_inactive", False)
+        if not include_inactive:
+            active_only = True
+            patient_status_text = " for active patients"
+        elif include_inactive:
+            patient_status_text = " for all patients (active and inactive)"
+
+    # Also check if the result dictionary contains active status information
+    if isinstance(results, dict):
+        if "include_inactive" in results:
+            include_inactive = results.get("include_inactive", False)
+            if not include_inactive:
+                active_only = True
+                patient_status_text = " for active patients"
+            else:
+                patient_status_text = " for all patients (active and inactive)"
+
     # Add narrative summary if available and enabled
     if show_narrative and intent is not None and hasattr(intent, "analysis_type"):
         try:
@@ -566,18 +797,62 @@ def format_results(results, intent=None, show_narrative=True):
     if results is None:
         formatted_results.append(pn.pane.Markdown("No results available"))
     elif isinstance(results, (int, float)):
-        # Format scalar result
+        # Check if this is a threshold query result but returned as scalar
+        if (
+            hasattr(intent, "engine")
+            and hasattr(intent.engine, "threshold_info")
+            and intent.engine.threshold_info
+        ):
+            # Wrap the scalar in a dictionary with threshold info
+            wrapped_results = {
+                "scalar": results,
+                "threshold_info": intent.engine.threshold_info,
+                "matching_count": results,  # Assuming the scalar is the count
+                "total_count": 0,  # We don't know the total, will be updated if available
+            }
+            threshold_formatted = format_threshold_results(
+                wrapped_results, intent, show_narrative
+            )
+            if threshold_formatted:
+                return threshold_formatted
+
+        # Format standard scalar result
         metric_type = (
             intent.analysis_type
             if intent and hasattr(intent, "analysis_type")
             else "value"
         )
         formatted = format_scalar_results(results, metric_type)
+
+        # Add patient status to the label if available
+        label = formatted["label"]
+        if patient_status_text:
+            if "active" not in label.lower():
+                label += patient_status_text
+
         formatted_results.append(
-            pn.pane.Markdown(f"### {formatted['label']}\n\n**{formatted['value']}**")
+            pn.pane.Markdown(f"### {label}\n\n**{formatted['value']}**")
         )
     elif isinstance(results, dict):
-        # Format dictionary result
+        # Check for threshold query results first
+        if "threshold_info" in results:
+            threshold_formatted = format_threshold_results(
+                results, intent, show_narrative
+            )
+            if threshold_formatted:
+                return threshold_formatted
+
+        # Look for scalar field which might indicate a wrapped scalar result
+        if "scalar" in results and isinstance(results["scalar"], (int, float)):
+            # Check if we also have threshold info
+            if "threshold_info" in results:
+                threshold_formatted = format_threshold_results(
+                    results, intent, show_narrative
+                )
+                if threshold_formatted:
+                    return threshold_formatted
+
+        # Format other dictionary result
         if "error" in results:
             formatted_results.append(
                 pn.pane.Alert(
@@ -589,12 +864,13 @@ def format_results(results, intent=None, show_narrative=True):
 
             if "traceback" in results:
                 formatted_results.append(
-                    pn.pane.Code(
-                        results["traceback"],
+                    pn.widgets.CodeEditor(
+                        value=results["traceback"],
                         language="python",
                         sizing_mode="stretch_width",
-                        theme="light",
-                        line_numbers=True,
+                        theme="chrome",
+                        readonly=True,
+                        height=300,
                     )
                 )
         else:
@@ -615,40 +891,75 @@ def format_results(results, intent=None, show_narrative=True):
                 # Add data table
                 data_dict = formatted["data"]
                 if data_dict:
+                    # Add patient status to the result data if available
+                    if patient_status_text and "Patient Status" not in data_dict:
+                        status_value = (
+                            "Active Only"
+                            if active_only
+                            else "All Patients (Active & Inactive)"
+                        )
+                        data_dict["Patient Status"] = status_value
+
                     formatted_results.append(
                         pn.widgets.Tabulator(
                             pd.DataFrame([data_dict]),
                             pagination="local",
                             page_size=5,
                             sizing_mode="stretch_width",
-                            theme="light",
+                            theme="default",
                         )
                     )
             else:
+                # Add patient status to the result data if available
+                if (
+                    patient_status_text
+                    and isinstance(results, dict)
+                    and "Patient Status" not in results
+                ):
+                    results_copy = results.copy()
+                    status_value = (
+                        "Active Only"
+                        if active_only
+                        else "All Patients (Active & Inactive)"
+                    )
+                    results_copy["Patient Status"] = status_value
+                else:
+                    results_copy = results
+
                 # Format other dictionary types
                 formatted_results.append(
                     pn.widgets.Tabulator(
-                        pd.DataFrame([results]),
+                        pd.DataFrame([results_copy]),
                         pagination="local",
                         page_size=5,
                         sizing_mode="stretch_width",
-                        theme="light",
+                        theme="default",
                     )
                 )
     elif hasattr(results, "to_dict"):  # DataFrame-like
         # Format DataFrame result
         formatted = format_dataframe_results(results)
+
+        # Add header with patient status if available
+        if patient_status_text:
+            formatted_results.append(
+                pn.pane.Markdown(f"### Results{patient_status_text}")
+            )
+
         formatted_results.append(
             pn.widgets.Tabulator(
                 results,
                 pagination="local",
                 page_size=10,
                 sizing_mode="stretch_width",
-                theme="light",
+                theme="default",
             )
         )
     else:
         # Default display
-        formatted_results.append(pn.pane.Markdown(f"**Result:** {results}"))
+        label = "Result"
+        if patient_status_text:
+            label += patient_status_text
+        formatted_results.append(pn.pane.Markdown(f"**{label}:** {results}"))
 
     return formatted_results

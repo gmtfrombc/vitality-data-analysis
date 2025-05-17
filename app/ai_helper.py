@@ -1,5 +1,6 @@
 import sys
 import os
+from app.query_refinement import ALIASES
 from openai import OpenAI
 import logging
 import json
@@ -1009,22 +1010,6 @@ def _build_filters_clause(intent_obj: QueryIntent) -> str:
         "score_value": "scores",
     }
 
-    # Alias mapping for translating common field names
-    ALIASES = {
-        "test_date": "date",
-        "score": "score_value",
-        "scorevalue": "score_value",
-        "phq9_score": "score_value",
-        "phq_score": "score_value",
-        "sex": "gender",
-        "patient": "patient_id",
-        "assessment_type": "assessment_type",
-        "score_type": "score_type",
-        "activity_status": "active",
-        "status": "active",
-        "date": "program_start_date",
-    }
-
     # Helper to quote values properly for SQL
     def _quote(v):
         return f"'{v}'" if isinstance(v, str) else str(v)
@@ -1537,8 +1522,6 @@ results = 4.0
             "if _df.empty:\n"
             "    results = {}\n"
             "else:\n"
-            "    # Convert to appropriate data types\n"
-            "    results_dict = _df.iloc[0].to_dict()\n"
             "    # Convert string values to numeric\n"
             "    for k, v in results_dict.items():\n"
             "        if v is not None:\n"
@@ -1547,9 +1530,11 @@ results = 4.0
             "            except (ValueError, TypeError):\n"
             "                pass\n"
             "    # Convert weight to pounds if present\n"
-            "    if 'weight' in results_dict:\n"
-            "        # Convert kg to lbs (1 kg ≈ 2.20462 lbs)\n"
-            "        results_dict['weight'] = results_dict['weight'] * 2.20462\n"
+            "    if 'weight' in results_dict and results_dict['weight'] is not None:\n"
+            "        import pandas as pd\n"
+            "        from app.analysis_helpers import to_lbs\n"
+            "        weight_series = pd.Series([results_dict['weight']])\n"
+            "        results_dict['weight'] = float(to_lbs(weight_series)[0])\n"
             "    results = results_dict\n"
         )
 
@@ -3827,7 +3812,9 @@ def _generate_relative_change_analysis_code(intent: QueryIntent) -> str | None:
         "            else:\n"
         "                # Calculate change\n"
         "                _merged['change'] = _merged['baseline'] - _merged['follow_up']\n"
-        "                _merged['change_lbs'] = _merged['change'] * 2.20462  # Convert kg to lbs\n"
+        "                from app.analysis_helpers import to_lbs\n"
+        "                import pandas as pd\n"
+        "                _merged['change_lbs'] = to_lbs(_merged['change'])  # Convert kg to lbs\n"
         "                \n"
         "                # Calculate the average change - store as scalar value\n"
         "                avg_change = float(_merged['change_lbs'].mean())\n"

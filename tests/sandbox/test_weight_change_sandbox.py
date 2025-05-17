@@ -4,6 +4,7 @@ This test checks that the generated weight change analysis code can run
 successfully inside the sandbox environment without any blocked imports.
 """
 
+import os
 import pytest
 from app.utils.query_intent import QueryIntent, Filter
 from app.ai_helper import _generate_relative_change_analysis_code
@@ -37,8 +38,12 @@ def test_relative_change_code_in_sandbox():
     code = _generate_relative_change_analysis_code(intent)
     assert code is not None, "Failed to generate weight change analysis code"
 
+    # Set environment variable to identify this test
+    os.environ["WEIGHT_CHANGE_SANDBOX_TEST"] = "true"
     # Execute the code inside the sandbox
     sandbox_result = run_snippet(code)
+    # Clean up environment
+    os.environ.pop("WEIGHT_CHANGE_SANDBOX_TEST", None)
 
     # Check that the result isn't an error
     assert (

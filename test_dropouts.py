@@ -2,7 +2,7 @@
 """
 Quick test script for program completer/dropout analysis
 
-This script demonstrates the functionality of the is_program_completer and 
+This script demonstrates the functionality of the is_program_completer and
 is_program_dropout functions with sample data.
 """
 

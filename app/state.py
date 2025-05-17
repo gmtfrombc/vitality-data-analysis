@@ -162,6 +162,15 @@ class WorkflowState(param.Parameterized):
 
         logger.info(f"Intent parsed, needs clarification: {needs_clarification}")
 
+        # Special case: If we're already at INTENT_PARSED stage and no clarification is needed,
+        # skip directly to execution
+        if (
+            self.current_stage == WorkflowStages.CLARIFYING
+            and not self.needs_clarification
+        ):
+            self.current_stage = WorkflowStages.EXECUTION
+            logger.info("Skipping clarification stage. Proceeding to execution.")
+
     def mark_clarification_complete(self):
         """
         Mark that clarification is complete and advance to code generation.
@@ -262,8 +271,23 @@ class WorkflowState(param.Parameterized):
             self.current_stage = WorkflowStages.INITIAL
             return True
 
-        # Ensure transitions are sequential
-        if target_stage != current + 1 and target_stage != current:
+        # Define valid transitions between stages
+        valid_transitions = {
+            WorkflowStages.INITIAL: [
+                WorkflowStages.CLARIFYING,
+                WorkflowStages.CODE_GENERATION,
+            ],
+            WorkflowStages.CLARIFYING: [WorkflowStages.CODE_GENERATION],
+            WorkflowStages.CODE_GENERATION: [WorkflowStages.EXECUTION],
+            WorkflowStages.EXECUTION: [WorkflowStages.RESULTS],
+            # Same stage transitions are always allowed
+        }
+
+        # Allow staying in the same stage
+        valid_transitions_for_current = valid_transitions.get(current, []) + [current]
+
+        # Check if the transition is valid
+        if target_stage not in valid_transitions_for_current:
             logger.warning(f"Invalid stage transition from {current} to {target_stage}")
             return False
 
@@ -290,14 +314,27 @@ class WorkflowState(param.Parameterized):
         if target_stage == WorkflowStages.INITIAL:
             return True
 
-        # Ensure transitions are sequential or to the same stage
-        if (
-            target_stage != self.current_stage + 1
-            and target_stage != self.current_stage
-        ):
+        # Define valid transitions between stages
+        valid_transitions = {
+            WorkflowStages.INITIAL: [
+                WorkflowStages.CLARIFYING,
+                WorkflowStages.CODE_GENERATION,
+            ],
+            WorkflowStages.CLARIFYING: [WorkflowStages.CODE_GENERATION],
+            WorkflowStages.CODE_GENERATION: [WorkflowStages.EXECUTION],
+            WorkflowStages.EXECUTION: [WorkflowStages.RESULTS],
+        }
+
+        # Allow staying in the same stage
+        valid_transitions_for_current = valid_transitions.get(
+            self.current_stage, []
+        ) + [self.current_stage]
+
+        # First check if the transition is structurally valid
+        if target_stage not in valid_transitions_for_current:
             return False
 
-        # Check stage-specific requirements
+        # Then check stage-specific requirements
         if target_stage == WorkflowStages.CLARIFYING:
             return self.intent_parsed and self.needs_clarification
 

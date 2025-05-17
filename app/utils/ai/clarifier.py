@@ -40,17 +40,36 @@ def generate_clarifying_questions(query: str, model: str = "gpt-4") -> List[str]
 
     logger.info("Generating clarifying questions for query: %s", query)
 
+    # Check if we should include a question about active/inactive patients
+    query_lower = query.lower()
+    should_ask_active = True
+
+    # If the query explicitly mentions active or inactive, we don't need to ask
+    if (
+        "active" in query_lower
+        or "inactive" in query_lower
+        or "all patient" in query_lower
+    ):
+        should_ask_active = False
+
     # ---------------------------
     # Offline fast-path
     # ---------------------------
     if is_offline_mode():
         logger.info("Offline mode – returning default clarifying questions")
-        return [
+        default_questions = [
             "Could you clarify the time period of interest?",
             "Which patient subgroup (e.g., gender, age) should we focus on?",
             "Are you interested in averages, counts, or trends?",
-            "Do you need any visualisations?",
         ]
+
+        # Conditionally add active/inactive question
+        if should_ask_active:
+            default_questions.insert(
+                0, "Should we include inactive patients, or only use active patients?"
+            )
+
+        return default_questions[:4]  # Return at most 4 questions
 
     # ---------------------------
     # Build system prompt
@@ -63,7 +82,15 @@ The questions should address potential ambiguities about:
 - Specific patient demographics or subgroups
 - Inclusion/exclusion criteria
 - Preferred metrics or visualisation types
+"""
 
+    # Conditionally add active/inactive prompt
+    if should_ask_active:
+        system_prompt += """
+IMPORTANT: Always include a question about whether to include inactive patients or just active patients, unless the query explicitly specifies this.
+"""
+
+    system_prompt += """
 Return the questions as a *JSON array* of strings – no markdown fencing.
 """
 
@@ -98,6 +125,25 @@ Return the questions as a *JSON array* of strings – no markdown fencing.
                     questions.append(stripped.lstrip("- "))
 
         logger.info("Generated %d clarifying questions", len(questions))
+
+        # Ensure we have a question about active/inactive patients if needed
+        if should_ask_active and questions:
+            has_active_question = False
+            for q in questions:
+                if "active" in q.lower() and "patient" in q.lower():
+                    has_active_question = True
+                    break
+
+            if not has_active_question:
+                # Insert active question as the second question (after most important one)
+                active_question = (
+                    "Should we include inactive patients, or only use active patients?"
+                )
+                if len(questions) > 1:
+                    questions.insert(1, active_question)
+                else:
+                    questions.append(active_question)
+
         return questions[:4] if questions else []
 
     except Exception as exc:
@@ -105,9 +151,16 @@ Return the questions as a *JSON array* of strings – no markdown fencing.
         logger.error(
             "Error during clarifying-question generation: %s", exc, exc_info=True
         )
-        return [
+        default_questions = [
             "Would you like to filter the results by any specific criteria?",
             "Are you looking for a time-based analysis or current data?",
             "Would you like to compare different patient groups?",
-            "Should the results include visualisations or just data?",
         ]
+
+        # Conditionally add active/inactive question
+        if should_ask_active:
+            default_questions.insert(
+                0, "Should we include inactive patients, or only use active patients?"
+            )
+
+        return default_questions[:4]  # Return at most 4 questions
