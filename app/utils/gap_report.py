@@ -25,6 +25,7 @@ from textwrap import dedent
 
 from db_query import query_dataframe
 from app.utils.condition_mapper import condition_mapper
+from app.reference_ranges import REFERENCE_RANGES
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +90,12 @@ def _simple_lab_cte(test_name: str, where_clause: str) -> str:
 _RULES: Dict[str, ConditionRule] = {
     # Obesity – BMI ≥ 30
     "obesity": (
-        _vitals_cte("bmi", "bmi >= 30"),
+        _vitals_cte("bmi", f"bmi >= {REFERENCE_RANGES['bmi_obese']}"),
         "bmi",
     ),
     # Morbid obesity – BMI ≥ 40
     "morbid_obesity": (
-        _vitals_cte("bmi", "bmi >= 40"),
+        _vitals_cte("bmi", f"bmi >= {REFERENCE_RANGES['bmi_morbid_obesity']}"),
         "bmi",
     ),
     # Prediabetes – A1C 5.7–6.4  (inclusive of lower bound, exclusive upper)

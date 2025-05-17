@@ -13,6 +13,7 @@ import logging
 import re
 from app.utils.schema_cache import load_schema
 from app.utils.patient_attributes import Active, ETOH, Tobacco, GLP1Full, label_for
+from app.reference_ranges import get_reference_range
 
 # Configure logging
 logging.basicConfig(
@@ -633,28 +634,28 @@ def find_patients_with_abnormal_values(db_path=DB_PATH):
     """
     conn = sqlite3.connect(db_path)
 
-    # Define normal ranges for different measurements
-    normal_ranges = {
-        "glucose_level": (70, 99),  # mg/dL
-        "a1c": (4.0, 5.6),  # %
-        "total_cholesterol": (0, 200),  # mg/dL
-        "ldl": (0, 100),  # mg/dL
-        "hdl": (40, 999),  # mg/dL (higher is better)
-        "triglycerides": (0, 150),  # mg/dL
-        "sbp": (90, 120),  # mmHg
-        "dbp": (60, 80),  # mmHg
-        "bmi": (18.5, 24.9),  # kg/m²
-    }
-
     try:
         # Construct query parts for lab results outside normal ranges
         lab_conditions = []
         lab_columns = []
 
-        for measure, (low, high) in normal_ranges.items():
+        for measure in [
+            "glucose_level",
+            "a1c",
+            "total_cholesterol",
+            "ldl",
+            "hdl",
+            "triglycerides",
+            "sbp",
+            "dbp",
+            "bmi",
+        ]:
+            rng = get_reference_range(measure)
+            if rng is None:
+                continue
+            low, high = rng
             if measure in ["sbp", "dbp", "bmi"]:  # These are in vitals table
                 continue
-
             lab_conditions.append(
                 f"(lab_results.test_name = '{measure}' AND (lab_results.value < {low} OR lab_results.value > {high}))"
             )
@@ -666,7 +667,21 @@ def find_patients_with_abnormal_values(db_path=DB_PATH):
         vital_conditions = []
         vital_columns = []
 
-        for measure, (low, high) in normal_ranges.items():
+        for measure in [
+            "glucose_level",
+            "a1c",
+            "total_cholesterol",
+            "ldl",
+            "hdl",
+            "triglycerides",
+            "sbp",
+            "dbp",
+            "bmi",
+        ]:
+            rng = get_reference_range(measure)
+            if rng is None:
+                continue
+            low, high = rng
             if measure in ["sbp", "dbp", "bmi"]:
                 vital_conditions.append(
                     f"(vitals.{measure} < {low} OR vitals.{measure} > {high})"

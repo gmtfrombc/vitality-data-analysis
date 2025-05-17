@@ -15,6 +15,8 @@ import json
 import re
 from openai import OpenAI
 
+from app.reference_ranges import REFERENCE_RANGES
+
 logger = logging.getLogger(__name__)
 
 
@@ -138,13 +140,14 @@ class ConditionMapper:
         bmi_match = re.search(r"bmi\s+(\d+\.?\d*)", term_lower)
         if bmi_match:
             bmi_value = float(bmi_match.group(1))
-            if bmi_value >= 40:
+
+            if bmi_value >= REFERENCE_RANGES["bmi_morbid_obesity"]:
                 # Morbid obesity for BMI >= 40
                 return "morbid_obesity"
-            elif bmi_value >= 30:
+            elif bmi_value >= REFERENCE_RANGES["bmi_obese"]:
                 # Regular obesity for BMI 30-39.9
                 return "obesity"
-            elif bmi_value >= 25:
+            elif bmi_value >= REFERENCE_RANGES["bmi_overweight"]:
                 # Overweight for BMI 25-29.9
                 return "overweight"
 

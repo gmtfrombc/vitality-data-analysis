@@ -1,3 +1,15 @@
+# ------------------------------------------------------------------
+# Helper to iterate only valid filter/condition objects
+# ------------------------------------------------------------------
+def _iter_valid(objs):
+    """Yield items that have a non‑None .field attribute."""
+    if not objs:
+        return
+    for _o in objs:
+        if hasattr(_o, "field") and getattr(_o, "field", None) is not None:
+            yield _o
+
+
 import sys
 import os
 from app.query_refinement import ALIASES
@@ -397,7 +409,7 @@ class AIHelper:
                 )
                 has_active_filter = any(
                     f.field.lower() in {"active", "status", "activity_status"}
-                    for f in intent.filters
+                    for f in _iter_valid(intent.filters)
                 )
                 if (
                     intent.analysis_type == "count"
@@ -507,7 +519,7 @@ class AIHelper:
                 from app.utils.query_intent import get_canonical_condition
 
                 cleaned_filters = []
-                for _f in intent.filters:
+                for _f in _iter_valid(intent.filters):
                     if _f.field.lower() in {
                         "score_type",
                         "assessment_type",
@@ -990,6 +1002,11 @@ def simplify_for_json(obj):
 
 def _build_filters_clause(intent_obj: QueryIntent) -> str:
     """Build SQL WHERE clause from intent filters and conditions."""
+    # Ensure filters and conditions are iterable
+    if intent_obj.filters is None:
+        intent_obj.filters = []
+    if intent_obj.conditions is None:
+        intent_obj.conditions = []
     where_clauses: list[str] = []
 
     # Map fields to specific tables to ensure correct column references
@@ -1032,7 +1049,10 @@ def _build_filters_clause(intent_obj: QueryIntent) -> str:
 
     # Process filters (equality, ranges)
     for f in intent_obj.filters:
-        field_name = f.field.lower()
+        # Skip malformed filters with no field
+        if not getattr(f, "field", None):
+            continue
+        field_name = str(f.field).lower()
         canonical = ALIASES.get(field_name, field_name)
 
         # Add table prefix if we know which table this field belongs to
@@ -1082,7 +1102,10 @@ def _build_filters_clause(intent_obj: QueryIntent) -> str:
 
     # Process conditions (operators)
     for c in intent_obj.conditions:
-        field_name = c.field.lower()
+        # Skip malformed conditions with no field
+        if not getattr(c, "field", None):
+            continue
+        field_name = str(c.field).lower()
         canonical = ALIASES.get(field_name, field_name)
 
         # Add table prefix if we know which table this field belongs to
@@ -1108,8 +1131,8 @@ def _build_filters_clause(intent_obj: QueryIntent) -> str:
         else:
             where_clauses.append(f"{canonical_with_prefix} {op} {_quote(c.value)}")
 
-    # Build final WHERE clause
-    return "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+    # Return only the condition string; the caller will prepend "WHERE " if needed
+    return " AND ".join(where_clauses) if where_clauses else ""
 
 
 def _build_code_from_intent(intent: QueryIntent) -> str | None:
@@ -1147,18 +1170,22 @@ def _build_code_from_intent(intent: QueryIntent) -> str | None:
 
     from app.query_refinement import canonicalize_metric_name
 
-    metric_name = canonicalize_metric_name(intent)
+    # Guard against missing target_field so .lower() never crashes
+    metric_name_raw = canonicalize_metric_name(intent)
+    metric_name = "" if metric_name_raw is None else str(metric_name_raw)
 
     # --------------------------------------------------------------
     # Condition-based patient counts (e.g., "How many patients have anxiety?")
     # --------------------------------------------------------------
 
     # 1. Gather explicit condition filters
-    condition_filters = [f for f in intent.filters if f.field == CONDITION_FIELD]
+    condition_filters = [
+        f for f in _iter_valid(intent.filters) if f.field == CONDITION_FIELD
+    ]
 
     # 2. If no explicit filter, check if any equality filter value maps to a condition
     if not condition_filters:
-        for f in intent.filters:
+        for f in _iter_valid(intent.filters):
             # Avoid misclassifying common categorical values (e.g., gender "F"/"M") as conditions.
             if not isinstance(f.value, str):
                 continue
@@ -1263,7 +1290,7 @@ results = 16.0
 results = 4.0
 """
     # Determine what metric we're analyzing
-    what = metric_name.lower()
+    what = metric_name.lower() if metric_name else ""
     # What analysis type
     how = intent.analysis_type.lower()
 
@@ -1412,6 +1439,27 @@ results = 4.0
     # Add filtered fields to WHERE clause for patients, vitals, scores
     filters_clause = _build_filters_clause(intent)
     where = f"WHERE {filters_clause}" if filters_clause else ""
+    # ------------------------------------------------------------------
+    # Safety net: ensure 'active' filter is applied when query mentions
+    # 'active patient(s)' but filter injection failed for any reason.
+    # ------------------------------------------------------------------
+    # Guard against raw_query being None
+    raw_query_raw = getattr(intent, "raw_query", "")
+    raw_query_text = str(raw_query_raw or "").lower()
+    if "active patient" in raw_query_text and "patients.active" not in where:
+        logger.debug("Auto‑adding patients.active = 1 filter (fallback)")
+        if "WHERE" in where:
+            where += " AND patients.active = 1"
+        else:
+            where = "WHERE patients.active = 1"
+    # ------------------------------------------------------------------
+    # Ensure we join supplementary tables referenced only in conditions
+    # (e.g., BMI condition while counting patients)
+    # ------------------------------------------------------------------
+    if "vitals." in filters_clause and "JOIN vitals" not in joins:
+        joins += " INNER JOIN vitals ON patients.id = vitals.patient_id"
+    if "scores." in filters_clause and "JOIN scores" not in joins:
+        joins += " INNER JOIN scores ON patients.id = scores.patient_id"
 
     # Add aggregation based on analysis type
     if how == "average":
@@ -1653,10 +1701,13 @@ results = 4.0
         # Rebuild select clause with aggregations
         select_clause = ", ".join(selects)
 
-    # Special case: For all count queries without grouping, ensure we're using COUNT(*)
+    # Special case: For all count queries without grouping, ensure we're counting DISTINCT patients
     if how == "count" and not grouping:
-        # Override the SELECT clause for count queries
-        select_clause = "COUNT(*) AS patient_count"
+        if distinct_patient_count or "JOIN vitals" in joins or "JOIN scores" in joins:
+            # Count unique patients to avoid duplication from joins
+            select_clause = "COUNT(DISTINCT patients.id) AS patient_count"
+        else:
+            select_clause = "COUNT(*) AS patient_count"
 
     # ------------------------------------------------------------------
     # Build the final SQL query
