@@ -1,6 +1,6 @@
 """Tests for GROUP BY support in _build_code_from_intent()."""
 
-from app.ai_helper import AIHelper
+from app.utils.ai_helper import AIHelper
 from app.utils.query_intent import QueryIntent
 
 

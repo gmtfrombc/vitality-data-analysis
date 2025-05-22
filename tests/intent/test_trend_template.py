@@ -1,4 +1,4 @@
-from app.ai_helper import _build_code_from_intent
+from app.utils.ai.code_generator import generate_code
 from app.utils.query_intent import QueryIntent
 
 
@@ -13,7 +13,7 @@ def test_trend_template_sql():
         parameters={},
     )
 
-    code = _build_code_from_intent(intent)
+    code = generate_code(intent)
     assert code is not None
     assert "strftime('%Y-%m'" in code
-    assert "GROUP BY month" in code
+    assert "GROUP BY period" in code

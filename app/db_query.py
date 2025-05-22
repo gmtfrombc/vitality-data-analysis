@@ -14,6 +14,7 @@ import re
 from app.utils.schema_cache import load_schema
 from app.utils.patient_attributes import Active, ETOH, Tobacco, GLP1Full, label_for
 from app.reference_ranges import get_reference_range
+from app.config import get_mh_db_path
 
 # Configure logging
 logging.basicConfig(
@@ -37,7 +38,7 @@ def get_db_path() -> str:  # noqa: D401 – helper
     :pyfunc:`set_db_path`.
     """
 
-    return os.getenv("MH_DB_PATH", DEFAULT_DB_PATH)
+    return get_mh_db_path()
 
 
 def set_db_path(path: str | os.PathLike) -> None:  # noqa: D401 – setter

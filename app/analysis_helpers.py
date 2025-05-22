@@ -1,3 +1,5 @@
+from app.utils.assumptions import NO_DATA_MESSAGE
+
 """
 Analysis Helpers for Data Analysis Assistant
 
@@ -616,13 +618,10 @@ def format_threshold_results(results, intent=None, show_narrative=True):
     """
     Format threshold query results for display.
 
-    Specialized formatting for threshold queries that includes visualizations and
-    statistics about the threshold comparison.
-
     Args:
         results: Threshold query results
         intent: Query intent that produced the results
-        show_narrative: Whether to include narrative descriptions
+        show_narrative (bool): If True, show narrative; if False, show tabular only
 
     Returns:
         list: List of Panel components for display
@@ -630,11 +629,13 @@ def format_threshold_results(results, intent=None, show_narrative=True):
     formatted_results = []
 
     if not results:
+        formatted_results.append(pn.pane.Markdown(NO_DATA_MESSAGE))
         return formatted_results
 
     # Extract threshold information
     threshold_info = results.get("threshold_info", {})
     if not threshold_info:
+        formatted_results.append(pn.pane.Markdown(NO_DATA_MESSAGE))
         return formatted_results
 
     field = threshold_info.get("field", "value")
@@ -742,14 +743,10 @@ def format_results(results, intent=None, show_narrative=True):
     """
     Format results for display based on type and intent.
 
-    Main function for converting analysis results into Panel components for
-    display. Handles different result types (scalar, dictionary, DataFrame)
-    and formats them according to the analysis intent and display preferences.
-
     Args:
         results: Analysis results from code execution (any type)
         intent (QueryIntent, optional): The query intent that produced the results
-        show_narrative (bool): Whether to include narrative descriptions
+        show_narrative (bool): If True, show narrative; if False, show tabular only
 
     Returns:
         list: List of Panel components ready for display in the UI
@@ -795,7 +792,7 @@ def format_results(results, intent=None, show_narrative=True):
 
     # Format results based on type
     if results is None:
-        formatted_results.append(pn.pane.Markdown("No results available"))
+        formatted_results.append(pn.pane.Markdown(NO_DATA_MESSAGE))
     elif isinstance(results, (int, float)):
         # Check if this is a threshold query result but returned as scalar
         if (

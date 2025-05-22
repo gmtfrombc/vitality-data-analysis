@@ -14,8 +14,6 @@ in the "ask anything" assistant.
 from __future__ import annotations
 from app.utils.query_intent import QueryIntent, Filter
 from app.utils.sandbox import run_snippet
-from app.ai_helper import AIHelper
-
 import json
 import os
 import sqlite3
@@ -658,11 +656,12 @@ class TestCase:
 
 
 # Mock implementation for testing without OpenAI API
-class TestModeAIHelper(AIHelper):
+class TestModeAIHelper:
     """Special version of AIHelper that returns fixed intents and results for testing."""
 
     def __init__(self):
-        super().__init__()
+        self.conversation_history = []
+        self.model = "gpt-4"
         # Store mapping from queries to intents
         self.test_case_mappings = {
             # Map specific queries to predefined intent objects for offline testing

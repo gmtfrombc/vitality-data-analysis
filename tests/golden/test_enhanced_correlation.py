@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime
 
 from app.utils.query_intent import QueryIntent
-from app.ai_helper import _generate_correlation_code
+from app.utils.ai.code_generator import generate_code
 
 # Mock HoloViews
 
@@ -133,7 +133,7 @@ def test_conditional_correlation_by_gender(mock_query_dataframe, metrics_df):
     mock_query_dataframe.return_value = metrics_df
 
     # Generate and execute the correlation code
-    correlation_code = _generate_correlation_code(intent)
+    correlation_code = generate_code(intent)
 
     # Create namespace and execute code
     namespace = {"results": {}}
@@ -181,7 +181,7 @@ def test_time_series_correlation(mock_query_dataframe, metrics_df):
     mock_query_dataframe.return_value = metrics_df
 
     # Generate and execute the correlation code
-    correlation_code = _generate_correlation_code(intent)
+    correlation_code = generate_code(intent)
 
     # Create namespace and execute code
     namespace = {"results": {}}

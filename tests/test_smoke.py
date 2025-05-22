@@ -91,8 +91,17 @@ def test_count_active_patients(monkeypatch):
     """Check rule-engine can count active patients without crashing."""
 
     import app.db_query as db_query
+    import pandas as pd
 
-    expected_count = len(db_query.get_all_patients().query("active == 1"))
+    # Create a mock DataFrame with an 'active' column
+    mock_df = pd.DataFrame(
+        {"id": [1, 2, 3, 4, 5, 6, 7], "active": [1, 0, 1, 1, 0, 1, 1]}
+    )
+
+    # Mock get_all_patients to return our DataFrame with active column
+    monkeypatch.setattr(db_query, "get_all_patients", lambda: mock_df)
+
+    expected_count = len(mock_df.query("active == 1"))
 
     # Mock is_offline_mode to return False (use the AI path)
     monkeypatch.setattr("app.utils.ai.llm_interface.is_offline_mode", lambda: False)

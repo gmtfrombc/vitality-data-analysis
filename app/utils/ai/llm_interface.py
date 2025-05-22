@@ -4,15 +4,18 @@ LLM Interface Module
 This module handles all direct interactions with the LLM APIs (like OpenAI).
 It provides a clean interface for making LLM calls, handling retries, and
 managing API-specific quirks.
+
+Example:
+    >>> from app.utils.ai.llm_interface import ask_llm
+    >>> response = ask_llm("Summarize this data", "What is the average BMI?")
 """
 
-import os
 import logging
 from pathlib import Path
-from openai import OpenAI
-from dotenv import load_dotenv
+from app.config import OPENAI_API_KEY, OFFLINE_MODE
 import logging.handlers
 import json
+from app.errors import LLMError
 
 # Configure logging
 log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
@@ -35,14 +38,8 @@ if not any(
     file_handler.setLevel(logging.DEBUG)
     logger.addHandler(file_handler)
 
-# Load environment variables
-load_dotenv()
-
-# Initialize OpenAI API client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 # Determine if we are running in offline/test mode (no API key)
-_OFFLINE_MODE = not bool(os.getenv("OPENAI_API_KEY"))
+_OFFLINE_MODE = OFFLINE_MODE
 
 
 def ask_llm(
@@ -51,39 +48,55 @@ def ask_llm(
     model: str = "gpt-4",
     temperature: float = 0.3,
     max_tokens: int = 500,
+    client=None,
+    api_key=None,
 ):
-    """Send prompt + query to the LLM and return the raw assistant content.
+    """
+    Send prompt + query to the LLM and return the raw assistant content.
 
     In offline mode (e.g., during pytest when no OPENAI_API_KEY is set), this
-    function raises ``RuntimeError`` immediately so callers can fallback to
+    function raises ``LLMError`` immediately so callers can fallback to
     deterministic or template-based generation without waiting for network
     timeouts.
 
     Args:
-        prompt: The system prompt to send to the LLM
-        query: The user query to send to the LLM
-        model: The model to use (default: "gpt-4")
-        temperature: The temperature to use for generation (default: 0.3)
-        max_tokens: The maximum number of tokens to generate (default: 500)
+        prompt (str): The system prompt to send to the LLM.
+        query (str): The user query to send to the LLM.
+        model (str, optional): The model to use (default: "gpt-4").
+        temperature (float, optional): The temperature to use for generation (default: 0.3).
+        max_tokens (int, optional): The maximum number of tokens to generate (default: 500).
+        client (object, optional): Optional OpenAI client instance (for DI/testing).
+        api_key (str, optional): Optional API key (for DI/testing).
 
     Returns:
-        The raw text response from the LLM
+        str: The raw text response from the LLM.
 
     Raises:
-        RuntimeError: If in offline mode (no API key set)
+        LLMError: If in offline mode (no API key set) or API call fails.
     """
     if _OFFLINE_MODE:
-        raise RuntimeError("LLM call skipped – offline mode (no API key)")
+        raise LLMError("LLM call skipped – offline mode (no API key)")
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": query},
-        ],
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    # Allow DI of client or fallback to new client if not provided
+    if client is None:
+        from openai import OpenAI
+
+        _api_key = api_key if api_key is not None else OPENAI_API_KEY
+        client = OpenAI(api_key=_api_key)
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": query},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    except Exception as e:
+        logger.error("LLM API call failed: %s", e)
+        raise LLMError(f"LLM API call failed: {e}") from e
 
     # Log token usage if present (helps with cost debugging)
     if hasattr(response, "usage") and response.usage:
@@ -98,7 +111,12 @@ def ask_llm(
 
 
 def is_offline_mode() -> bool:
-    """Return whether we're running in offline mode (no API key)."""
+    """
+    Return whether we're running in offline mode (no API key).
+
+    Returns:
+        bool: True if offline mode is active, False otherwise.
+    """
     return _OFFLINE_MODE
 
 

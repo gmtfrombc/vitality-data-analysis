@@ -23,7 +23,7 @@ import logging
 import pandas as pd
 from textwrap import dedent
 
-from db_query import query_dataframe
+from app.db_query import query_dataframe
 from app.utils.condition_mapper import condition_mapper
 from app.reference_ranges import REFERENCE_RANGES
 

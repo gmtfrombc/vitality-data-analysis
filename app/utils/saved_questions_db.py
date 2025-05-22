@@ -19,6 +19,7 @@ import logging
 from typing import List, Dict
 import json
 import shutil
+from app.config import get_vp_data_db
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-DB_FILE = os.getenv(
-    "VP_DATA_DB",
-    os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "patient_data.db"),
-)
+DB_FILE = get_vp_data_db()
 
 TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS saved_questions (

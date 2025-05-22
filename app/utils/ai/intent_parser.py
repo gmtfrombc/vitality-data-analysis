@@ -26,6 +26,7 @@ from app.utils.ai.prompt_templates import (
     INTENT_STRICTER_SUFFIX,
 )
 from app.utils.intent_clarification import clarifier as _clarifier
+from app.errors import IntentParseError
 
 # Configure logging
 logger = logging.getLogger("intent_parser")
@@ -43,6 +44,9 @@ def get_query_intent(query: str) -> QueryIntent:
 
     Returns:
         A validated QueryIntent object with the parsed intent
+
+    Raises:
+        IntentParseError: If intent parsing or validation fails
     """
     logger.info(f"Getting intent for query: {query}")
 
@@ -114,16 +118,7 @@ def get_query_intent(query: str) -> QueryIntent:
 
     # All attempts failed – return fallback structure with error message
     logger.error("All intent parse attempts failed: %s", last_err)
-    return QueryIntent(
-        analysis_type="unknown",
-        target_field="unknown",
-        filters=[],
-        conditions=[],
-        parameters={"error": str(last_err) if last_err else "unknown"},
-        additional_fields=[],
-        group_by=[],
-        time_range=None,
-    )
+    raise IntentParseError(str(last_err) if last_err else "Unknown intent parse error")
 
 
 def apply_post_processing_heuristics(intent: QueryIntent, query: str) -> None:

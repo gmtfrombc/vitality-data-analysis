@@ -5,15 +5,18 @@ from typing import Dict, List
 
 import pytest
 
-from app.ai_helper import AIHelper
+from app.utils.ai_helper import AIHelper
 from app.utils.query_intent import QueryIntent
 
 
 @pytest.fixture()
-def ai_helper_stub(monkeypatch) -> AIHelper:  # noqa: D401 - fixture
+def ai_helper_stub(mock_llm_client) -> AIHelper:  # noqa: D401 - fixture
     """Return an AIHelper whose LLM call is stubbed for offline testing."""
 
-    helper = AIHelper()
+    helper = AIHelper(ask_llm_func=None)
+    helper.ask_llm = (
+        lambda prompt, query, model, temperature, max_tokens: '{"analysis_type": "count", "target_field": "patients"}'
+    )
 
     _next_response: Dict[str, str] | None = None
 
@@ -25,7 +28,7 @@ def ai_helper_stub(monkeypatch) -> AIHelper:  # noqa: D401 - fixture
         _next_response = None
         return reply
 
-    monkeypatch.setattr(helper, "_ask_llm", _fake_llm)
+    helper._ask_llm = _fake_llm
 
     def _queue(json_dict: Dict[str, str]):  # noqa: D401
         nonlocal _next_response

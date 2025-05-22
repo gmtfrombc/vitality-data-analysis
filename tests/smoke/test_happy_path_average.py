@@ -17,7 +17,7 @@ import pytest
 import os
 
 import app.db_query as db_query
-from app.ai_helper import AIHelper
+from app.utils.ai_helper import AIHelper
 from app.utils.sandbox import run_snippet
 
 

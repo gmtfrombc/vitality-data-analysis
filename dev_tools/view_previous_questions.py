@@ -7,18 +7,15 @@ or variations during your daily tests.
 """
 
 import sqlite3
-import os
 import pandas as pd
 from datetime import datetime, timedelta
 import argparse
+from app.config import get_vp_data_db
 
 
 def get_db_path():
     """Return the path to the patient database."""
-    return os.getenv(
-        "VP_DATA_DB",
-        os.path.join(os.path.dirname(__file__), "patient_data.db"),
-    )
+    return get_vp_data_db()
 
 
 def fetch_previous_questions(days=7, limit=50, include_feedback=True):

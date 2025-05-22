@@ -1,3 +1,99 @@
+from ..utils.ai.llm_interface import ask_llm, is_offline_mode
+from typing import List
+from app.utils.intent_clarification import clarifier
+from app.utils.query_intent import QueryIntent, compute_intent_confidence
+import logging
+import json
+
+
+def is_truly_ambiguous_query(intent):
+    """
+    Return True only when the query is genuinely ambiguous and requires clarification.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    from app.config import OFFLINE_MODE
+
+    if OFFLINE_MODE:
+        return False
+
+    # Treat clear parsing failures as ambiguous; mocks/unknown objects as NOT ambiguous
+    # Treat clear parsing failures as ambiguous
+    if intent is None:
+        logger.warning("is_truly_ambiguous_query: None intent → True (ambiguous)")
+        return True
+
+    if isinstance(intent, dict):
+        return True
+
+    # ------------------------------------------------------------------
+    # Low‑confidence detection – only for real QueryIntent objects
+    # ------------------------------------------------------------------
+    from app.utils.query_intent import QueryIntent
+
+    if isinstance(intent, QueryIntent):
+        # helper defined later in this file
+        if _is_low_confidence_intent(intent):
+            return True
+    else:
+        # Generic object (e.g., MagicMock) – robust pseudo-intent check
+        if hasattr(intent, "analysis_type") and hasattr(intent, "target_field"):
+            # Treat like a pseudo‑QueryIntent
+            analysis_type = str(getattr(intent, "analysis_type", "unknown")).lower()
+            target_field = str(getattr(intent, "target_field", "unknown")).lower()
+
+            # If either key part is unknown ⇒ ambiguous
+            if analysis_type == "unknown" or target_field == "unknown":
+                return True
+
+            # Otherwise treat as a well‑formed intent ⇒ NOT ambiguous
+            return False
+        else:
+            # Object lacks intent‑like attributes ⇒ we cannot be confident → ambiguous
+            logger.debug(
+                "is_truly_ambiguous_query: Object (%s) lacks intent fields → True (ambiguous)",
+                type(intent).__name__,
+            )
+            return True
+    # Check if the query is entirely unclear about what metric or analysis is wanted
+    if (
+        getattr(intent, "analysis_type", "unknown") == "unknown"
+        and getattr(intent, "target_field", "unknown") == "unknown"
+    ):
+        return True
+
+    # Check if multiple interpretations are equally valid (critical ambiguity)
+    raw_query = getattr(intent, "raw_query", "")
+    if not raw_query:
+        return False
+
+    raw_query = raw_query.lower()
+
+    ambiguous_patterns = [
+        "compare",
+        "between",
+        "versus",
+        "vs",
+        "which",
+        "better",
+        "best",
+        "correlation",
+        "relationship between",
+    ]
+    has_ambiguous_pattern = any(pattern in raw_query for pattern in ambiguous_patterns)
+    has_unclear_targets = (
+        not getattr(intent, "additional_fields", None)
+        and getattr(intent, "target_field", "unknown") == "unknown"
+    )
+    if has_ambiguous_pattern and has_unclear_targets:
+        return True
+
+    # Default to not asking questions
+    return False
+
+
 """
 Clarifier Module
 
@@ -10,13 +106,46 @@ are ambiguous or missing critical details. It includes functionality for:
 - Identifying ambiguous slots that need clarification from users
 """
 
-import json
-import logging
-from typing import List
-
-from .llm_interface import ask_llm, is_offline_mode
 
 logger = logging.getLogger(__name__)
+
+
+def _is_low_confidence_intent(intent):
+    """Return True when *intent* should trigger clarification (low confidence)."""
+
+    from app.config import OFFLINE_MODE
+
+    # In offline/test mode we skip clarification to keep smoke tests fast.
+    if OFFLINE_MODE:
+        return False
+
+    # If parsing failed → low confidence
+    if isinstance(intent, dict):
+        return True
+
+    assert isinstance(intent, QueryIntent)
+
+    # Prepare raw_query_str robustly (ensuring string, not None)
+    raw_query_str = getattr(intent, "raw_query", "") or ""
+
+    # Use the slot-based clarifier to determine if we need clarification
+    needs_clarification, _ = clarifier.get_specific_clarification(intent, raw_query_str)
+
+    if needs_clarification:
+        logger.debug("Slot-based clarifier identified missing information")
+        return True
+
+    # Fallback to the confidence score for cases not caught by the slot-based clarifier
+    confidence = compute_intent_confidence(intent, raw_query_str)
+
+    # Threshold grey zone: below 0.75 ask clarification
+    if confidence < 0.75:
+        logger.debug(
+            "Low confidence %.2f for intent – requesting clarification", confidence
+        )
+        return True
+
+    return False
 
 
 def generate_clarifying_questions(query: str, model: str = "gpt-4") -> List[str]:

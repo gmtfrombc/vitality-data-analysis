@@ -1,8 +1,6 @@
-import os
 from openai import OpenAI
 import logging
 import json
-from dotenv import load_dotenv
 import logging.handlers
 from pathlib import Path
 from app.utils.query_intent import (
@@ -18,6 +16,7 @@ from app.utils.metrics import METRIC_REGISTRY
 import re
 import pandas as pd
 from app.utils.condition_mapper import condition_mapper
+from app.config import OPENAI_API_KEY, OFFLINE_MODE
 
 # Configure logging
 log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
@@ -39,14 +38,11 @@ if not any(
     file_handler.setLevel(logging.DEBUG)
     logger.addHandler(file_handler)
 
-# Load environment variables
-load_dotenv()
-
 # Initialize OpenAI API client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Determine if we are running in offline/test mode (no API key)
-_OFFLINE_MODE = not bool(os.getenv("OPENAI_API_KEY"))
+_OFFLINE_MODE = OFFLINE_MODE
 
 
 class AIHelper:

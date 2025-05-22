@@ -8,15 +8,13 @@ import logging
 from app.pages.ai_assistant import AIAssistant
 from app.pages.patient_view import PatientView
 from app.pages.dashboard import Dashboard
+from app.ui import UIComponents
 import holoviews as hv
 import panel as pn
 import app.db_query as db_query
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
+import app.config
 
 # Add the parent directory to path so we can import db_query
 sys.path.append(str(Path(__file__).parent.parent))
@@ -67,10 +65,21 @@ def create_app():
             menu,
         )
 
-    # Create the pages
-    dashboard = Dashboard()
-    patient_view = PatientView()
-    ai_assistant = AIAssistant()
+    # Instantiate shared UI object
+    ui = UIComponents()
+
+    # Create the pages, passing shared UI if supported
+    dashboard = (
+        Dashboard(ui=ui)
+        if "ui" in Dashboard.__init__.__code__.co_varnames
+        else Dashboard()
+    )
+    patient_view = (
+        PatientView(ui=ui)
+        if "ui" in PatientView.__init__.__code__.co_varnames
+        else PatientView()
+    )
+    ai_assistant = AIAssistant(ui=ui)
 
     # Create the sidebar
     side_panel, menu = sidebar()

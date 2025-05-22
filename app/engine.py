@@ -5,22 +5,33 @@ This module handles the core pipeline for transforming natural language queries 
 executable code and analyzing results. It separates the query processing, code generation,
 and execution logic from the UI components.
 
-The engine is responsible for:
-1. Processing natural language queries into structured intents
-2. Generating executable Python code based on query intents
-3. Safely executing analysis code in a sandbox environment
-4. Extracting and processing analysis results
-5. Generating visualizations and explanations
+Example:
+    >>> from app.engine import AnalysisEngine
+    >>> engine = AnalysisEngine()
+    >>> intent = engine.process_query("average BMI of active patients")
+    >>> code = engine.generate_code()
+    >>> results = engine.execute_analysis()
 """
 
 import logging
 import time
 import re
 from pathlib import Path
-
-from app.ai_helper import ai, get_data_schema
+from app.utils.assumptions import CLARIFICATION_CONFIDENCE_THRESHOLD
+from app.utils.schema import get_data_schema
 from app.utils.sandbox import run_snippet
 from app.utils.query_intent import QueryIntent, compute_intent_confidence
+from app.utils.assumptions import (
+    resolve_gender_filter,
+    resolve_time_window,
+    resolve_patient_status,
+    resolve_metric_source,
+    get_default_aggregator,
+)
+from app.utils.ai_helper import AIHelper
+
+ai = AIHelper()
+
 
 # Configure logging
 logger = logging.getLogger("data_assistant.engine")
@@ -40,8 +51,11 @@ class AnalysisEngine:
     - Result extraction and visualization generation
     - Data sample generation for context
 
-    The engine maintains the state of the current analysis process and provides
-    methods to execute each step of the pipeline independently.
+    Example:
+        >>> engine = AnalysisEngine()
+        >>> intent = engine.process_query("average BMI of active patients")
+        >>> code = engine.generate_code()
+        >>> results = engine.execute_analysis()
     """
 
     def __init__(self):
@@ -88,6 +102,23 @@ class AnalysisEngine:
 
         # Check for active/inactive patient filters
         self.detect_active_inactive_filter(query)
+
+        # Gender filter (using assumptions module)
+        gender = resolve_gender_filter(query)
+        self.parameters["gender"] = gender
+
+        # Time window resolution (use helper for default/fallback)
+        self.parameters["window"] = resolve_time_window(self.parameters)
+
+        # Patient status (active/all) using resolve_patient_status
+        patient_status = resolve_patient_status(query)
+        self.parameters["patient_status"] = patient_status
+
+        # Metric instance (e.g., most recent or earliest) using resolve_metric_source
+        self.parameters["metric_instance"] = resolve_metric_source(query)
+
+        # Aggregator (average/min/max) using get_default_aggregator
+        self.parameters["aggregator"] = get_default_aggregator(query)
 
         # Parse the query intent (step 1)
         return self.get_query_intent()
@@ -156,6 +187,7 @@ class AnalysisEngine:
         Returns:
             bool: True if active/inactive filter is explicitly mentioned
         """
+
         query = query_text.lower()
 
         # Detect explicit mentions of all patients or inactive patients
@@ -189,6 +221,7 @@ class AnalysisEngine:
         Raises:
             Exception: If there is an error during intent parsing
         """
+
         logger.info(f"Getting intent for query: {self.query}")
         try:
             self.intent = ai.get_query_intent(self.query)
@@ -196,6 +229,61 @@ class AnalysisEngine:
             # Store the original query in the intent for reference
             if isinstance(self.intent, QueryIntent):
                 self.intent.raw_query = self.query
+
+                # Gender filter: override/add to intent using resolve_gender_filter
+                gender = self.parameters.get(
+                    "gender", resolve_gender_filter(self.query)
+                )
+                if hasattr(self.intent, "filters"):
+                    # Remove any existing gender filter
+                    self.intent.filters = [
+                        f
+                        for f in self.intent.filters
+                        if getattr(f, "field", None) != "gender"
+                    ]
+                    if gender != "all":
+                        try:
+                            from app.utils.query_intent import Filter
+
+                            self.intent.filters.append(
+                                Filter(field="gender", value=gender)
+                            )
+                        except Exception as e:
+                            logger.error(f"Could not add gender filter: {e}")
+
+                # Time window: ensure intent.parameters has the resolved time window
+                if not hasattr(self.intent, "parameters") or not isinstance(
+                    self.intent.parameters, dict
+                ):
+                    self.intent.parameters = {}
+                # Always use the helper to resolve the time window
+                self.intent.parameters["window"] = resolve_time_window(self.parameters)
+
+                # Patient status filter: control active/all logic
+                patient_status = self.parameters.get("patient_status", "active")
+                if hasattr(self.intent, "filters"):
+                    # Remove any existing 'active' filter
+                    self.intent.filters = [
+                        f
+                        for f in self.intent.filters
+                        if getattr(f, "field", None) != "active"
+                    ]
+                    if patient_status == "active":
+                        try:
+                            from app.utils.query_intent import Filter
+
+                            self.intent.filters.append(Filter(field="active", value=1))
+                        except Exception as e:
+                            logger.error(f"Could not add active filter: {e}")
+                    # If 'all', do NOT add any filter for active/inactive
+
+                # Metric instance: ensure intent.parameters has the resolved metric instance
+                self.intent.parameters["metric_instance"] = self.parameters[
+                    "metric_instance"
+                ]
+
+                # Aggregator: ensure intent.parameters has the resolved aggregator
+                self.intent.parameters["aggregator"] = self.parameters["aggregator"]
 
             # Calculate confidence if possible
             if isinstance(self.intent, QueryIntent):
@@ -237,8 +325,11 @@ class AnalysisEngine:
         # Check confidence score if available
         if hasattr(intent, "parameters") and isinstance(intent.parameters, dict):
             confidence = intent.parameters.get("confidence", 1.0)
-            if confidence < 0.7:  # Arbitrary threshold
-                return True
+        """
+        Clarification confidence threshold is set in assumptions.py (CLARIFICATION_CONFIDENCE_THRESHOLD).
+        """
+        if confidence < CLARIFICATION_CONFIDENCE_THRESHOLD:  # See assumptions.py
+            return True
 
         return False
 
@@ -592,7 +683,9 @@ except Exception as viz_error:
     def interpret_results(self):
         """Generate a human-readable interpretation of the results"""
         if not self.execution_results:
-            return "No results available to interpret."
+            from app.utils.assumptions import NO_DATA_MESSAGE
+
+            return NO_DATA_MESSAGE
 
         try:
             # Gather active/inactive status information for AI interpretation

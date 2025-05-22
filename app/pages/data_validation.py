@@ -1,4 +1,6 @@
 """
+TODO: Refactor in progress – database access and query logic are being moved to app/services/data_service.py.
+
 Data Validation Page
 
 This module provides a Panel-based UI for validating and correcting patient data,
@@ -10,12 +12,17 @@ import logging
 import panel as pn
 import param
 import pandas as pd
-import sqlite3
 from pathlib import Path
 import time
 
 # Internal data-access helpers
-import app.db_query as db_query  # noqa: F401 -- used throughout for DB reads
+from app.db_query import (
+    get_patient_by_id,
+    get_patient_vitals,
+    get_patient_labs,
+    get_patient_scores,
+    get_patient_visit_metrics,
+)
 
 # Optional spinner (Panel >= 1.2). Guard import so older Panel versions still work.
 try:
@@ -24,7 +31,6 @@ except ImportError:  # pragma: no cover – spinner not available in older Panel
     LoadingSpinner = None  # fallback handled later
 
 from app.utils.validation_engine import ValidationEngine
-from app.utils.rule_loader import initialize_validation_rules
 
 # Import date helpers
 from app.utils.date_helpers import (
@@ -49,11 +55,10 @@ pn.extension()
 
 
 def get_db_path():
-    """Get the database path from db_query module to ensure consistent source."""
-    # Import here to avoid circular imports
-    import app.db_query as db_query
+    """Get the database path from app.db_query module to ensure consistent source. (Moved to data_service)"""
+    from app.services.data_service import get_db_path as ds_get_db_path
 
-    return db_query.get_db_path()
+    return ds_get_db_path()
 
 
 # CSS for the page
@@ -210,28 +215,10 @@ class DataValidationPage(param.Parameterized):
             logger.error(f"Error during initial data refresh: {e}")
 
     def _ensure_rules_exist(self):
-        """Make sure validation rules exist in the database."""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+        """Make sure validation rules exist in the database. (Moved to data_service)"""
+        from app.services.data_service import ensure_rules_exist
 
-            # Check if any rules exist
-            cursor.execute("SELECT COUNT(*) FROM validation_rules")
-            count = cursor.fetchone()[0]
-
-            if count == 0:
-                logger.info(
-                    "No validation rules found in database. Initializing from default file."
-                )
-                conn.close()
-                initialize_validation_rules(self.db_path)
-            else:
-                logger.info(f"Found {count} validation rules in database.")
-                conn.close()
-
-        except Exception as e:
-            logger.error(f"Error checking for existing rules: {e}")
-            raise
+        return ensure_rules_exist(self.db_path)
 
     def refresh_data(self, event=None):
         """Refresh all data from the database."""
@@ -251,46 +238,17 @@ class DataValidationPage(param.Parameterized):
             logger.error(f"Error refreshing data: {e}")
 
     def _load_summary_data(self):
-        """Load summary statistics for the dashboard."""
+        """Load summary statistics for the dashboard. (Refactored to data_service)"""
+        from app.services import data_service
+
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            # Get counts by status
-            cursor.execute(
-                "SELECT status, COUNT(*) FROM validation_results GROUP BY status"
-            )
-            self.status_counts = {row[0]: row[1] for row in cursor.fetchall()}
-            self.total_issues = sum(self.status_counts.values())
-
-            # Get counts by severity
-            cursor.execute(
-                """
-                SELECT vru.severity, COUNT(*) 
-                FROM validation_results vr
-                JOIN validation_rules vru ON vr.rule_id = vru.rule_id
-                GROUP BY vru.severity
-            """
-            )
-            self.severity_counts = {row[0]: row[1] for row in cursor.fetchall()}
-
-            # Get counts by rule type
-            cursor.execute(
-                """
-                SELECT vru.rule_type, COUNT(*) 
-                FROM validation_results vr
-                JOIN validation_rules vru ON vr.rule_id = vru.rule_id
-                GROUP BY vru.rule_type
-            """
-            )
-            self.rule_type_counts = {row[0]: row[1] for row in cursor.fetchall()}
-
-            # Get patient count
-            cursor.execute("SELECT COUNT(DISTINCT patient_id) FROM validation_results")
-            self.patient_count = cursor.fetchone()[0]
-
-            conn.close()
-
+            (
+                self.status_counts,
+                self.severity_counts,
+                self.rule_type_counts,
+                self.total_issues,
+                self.patient_count,
+            ) = data_service.load_summary_data(self.db_path)
         except Exception as e:
             logger.error(f"Error loading summary data: {e}")
             self.status_counts = {}
@@ -300,42 +258,12 @@ class DataValidationPage(param.Parameterized):
             self.patient_count = 0
 
     def _load_quality_metrics(self):
-        """Load aggregated issue counts by field and over time (daily)."""
+        """Load aggregated issue counts by field and over time (daily). (Refactored to data_service)"""
+        from app.services import data_service
+
         try:
-            conn = sqlite3.connect(self.db_path)
-            query = """
-                SELECT vr.field_name            AS field,
-                       date(vr.detected_at)     AS dt,
-                       vru.severity             AS severity,
-                       COUNT(*)                 AS n
-                FROM validation_results vr
-                JOIN validation_rules vru ON vr.rule_id = vru.rule_id
-                WHERE vr.field_name IS NOT NULL
-                GROUP BY field, dt, severity
-                """
-            df = pd.read_sql_query(query, conn)
-            conn.close()
-
-            if df.empty:
-                # No issues yet – clear metrics
-                self.quality_field_df = pd.DataFrame()
-                self.quality_date_df = pd.DataFrame()
-                return
-
-            # Pivot for field summary (rows = field, cols = severity)
-            field_summary = df.groupby(["field", "severity"], as_index=False)["n"].sum()
-            self.quality_field_df = (
-                field_summary.pivot(index="field", columns="severity", values="n")
-                .fillna(0)
-                .reset_index()
-            )
-
-            # Daily summary (rows = date, cols = severity)
-            date_summary = df.groupby(["dt", "severity"], as_index=False)["n"].sum()
-            self.quality_date_df = (
-                date_summary.pivot(index="dt", columns="severity", values="n")
-                .fillna(0)
-                .reset_index()
+            self.quality_field_df, self.quality_date_df = (
+                data_service.load_quality_metrics(self.db_path)
             )
         except Exception as exc:
             logger.error("Error loading quality metrics: %s", exc)
@@ -343,7 +271,7 @@ class DataValidationPage(param.Parameterized):
             self.quality_date_df = pd.DataFrame()
 
     def _load_patient_list(self):
-        """Load list of patients with validation issues."""
+        """Load list of patients with validation issues. (Refactored to data_service)"""
         # Return cached result when filters unchanged and cache still valid
         cache_key = (
             self.filter_status_value,
@@ -357,53 +285,20 @@ class DataValidationPage(param.Parameterized):
                 self.patient_df = cached_df.copy()
                 return
 
+        from app.services import data_service
+
         try:
-            conn = sqlite3.connect(self.db_path)
-
-            # Build query based on current filters
-            query = """
-                SELECT vr.patient_id, p.first_name, p.last_name, 
-                       COUNT(DISTINCT vr.rule_id) as issue_count,
-                       COUNT(DISTINCT CASE WHEN vr.status = 'open' THEN vr.rule_id END) as open_count,
-                       MAX(CASE WHEN vru.severity = 'error' THEN 1 ELSE 0 END) as has_errors
-                FROM validation_results vr
-                JOIN patients p ON vr.patient_id = p.id
-                JOIN validation_rules vru ON vr.rule_id = vru.rule_id
-                WHERE 1=1
-            """
-
-            params = []
-
-            # Add filters
-            if self.filter_status_value != "all":
-                query += " AND vr.status = ?"
-                params.append(self.filter_status_value)
-
-            if self.filter_severity_value != "all":
-                query += " AND vru.severity = ?"
-                params.append(self.filter_severity_value)
-
-            if self.filter_type_value != "all":
-                query += " AND vru.rule_type = ?"
-                params.append(self.filter_type_value)
-
-            # Group and order
-            query += """
-                GROUP BY vr.patient_id, p.first_name, p.last_name
-                ORDER BY open_count DESC, has_errors DESC, issue_count DESC
-            """
-
-            # Execute query
-            self.patient_df = pd.read_sql_query(query, conn, params=params)
-
-            conn.close()
-
+            self.patient_df = data_service.load_patient_list(
+                self.db_path,
+                self.filter_status_value,
+                self.filter_severity_value,
+                self.filter_type_value,
+            )
             # Update cache
             self._patient_list_cache[cache_key] = (
                 self.patient_df.copy(),
                 time.time(),
             )
-
         except Exception as e:
             logger.error(f"Error loading patient list: {e}")
             self.patient_df = pd.DataFrame(
@@ -416,6 +311,7 @@ class DataValidationPage(param.Parameterized):
                     "has_errors",
                 ]
             )
+        # TODO: Consider moving caching to the service layer if needed
 
     def _refresh_patient_list(self):
         """Reload patient DataFrame and rebuild the visible list."""
@@ -546,121 +442,53 @@ class DataValidationPage(param.Parameterized):
             logger.error("Error rebuilding patient view after show_correction: %s", exc)
 
     def submit_correction(self, event=None):
-        """Submit a correction for an issue."""
+        """Submit a correction for an issue. (Refactored to data_service)"""
         if not self.selected_issue_id or not self.correction_value:
             return
 
+        from app.services import data_service
+
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            # Get information about the issue
-            cursor.execute(
-                """
-                SELECT vr.patient_id, vr.field_name, vr.rule_id
-                FROM validation_results vr
-                WHERE vr.result_id = ?
-            """,
-                (self.selected_issue_id,),
+            success = data_service.submit_correction_db(
+                self.db_path,
+                self.selected_issue_id,
+                self.correction_value,
+                self.correction_reason,
             )
-
-            row = cursor.fetchone()
-            if not row:
-                logger.error(f"Issue not found: {self.selected_issue_id}")
-                conn.close()
+            if not success:
+                logger.error(f"Error submitting correction: {self.selected_issue_id}")
                 return
-
-            patient_id, field_name, rule_id = row
-
-            # Insert correction
-            cursor.execute(
-                """
-                INSERT INTO data_corrections 
-                (result_id, patient_id, field_name, table_name, record_id, new_value, applied_by)
-                VALUES (?, ?, ?, 'vitals', 0, ?, 'current_user')
-            """,
-                (self.selected_issue_id, patient_id, field_name, self.correction_value),
-            )
-
-            correction_id = cursor.lastrowid
-
-            # Add audit record
-            cursor.execute(
-                """
-                INSERT INTO correction_audit 
-                (correction_id, result_id, action_type, action_reason, action_by)
-                VALUES (?, ?, 'correction', ?, 'current_user')
-            """,
-                (correction_id, self.selected_issue_id, self.correction_reason),
-            )
-
-            # Update issue status
-            cursor.execute(
-                """
-                UPDATE validation_results
-                SET status = 'corrected'
-                WHERE result_id = ?
-            """,
-                (self.selected_issue_id,),
-            )
-
-            conn.commit()
-            conn.close()
-
             # Reset form flag and refresh data
             self.show_correction_form = False
             self.refresh_data()
-
             # Re-render patient view to reflect updated status
             self.patient_view_panel.objects = [self._build_patient_view()]
-
         except Exception as e:
             logger.error(f"Error submitting correction: {e}")
 
     def mark_as_reviewed(self, result_id, reason="Reviewed and confirmed as correct"):
         """
-        Mark an issue as reviewed.
+        Mark an issue as reviewed. (Refactored to data_service)
 
         Args:
             result_id: ID of the validation result
             reason: Reason for marking as reviewed
         """
+        from app.services import data_service
+
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            # Add audit record
-            cursor.execute(
-                """
-                INSERT INTO correction_audit 
-                (result_id, action_type, action_reason, action_by)
-                VALUES (?, 'review', ?, 'current_user')
-            """,
-                (result_id, reason),
-            )
-
-            # Update issue status
-            cursor.execute(
-                """
-                UPDATE validation_results
-                SET status = 'reviewed'
-                WHERE result_id = ?
-            """,
-                (result_id,),
-            )
-
-            conn.commit()
-            conn.close()
-
+            success = data_service.mark_as_reviewed_db(self.db_path, result_id, reason)
+            if not success:
+                logger.error(f"Error marking as reviewed: {result_id}")
+                return
             # Refresh data
             self.refresh_data()
-
         except Exception as e:
             logger.error(f"Error marking as reviewed: {e}")
 
     def validate_patient(self, patient_id=None):
         """
-        Run validation on a patient or all patients.
+        Run validation on a patient or all patients. (Refactored DB purge to data_service)
 
         Args:
             patient_id: ID of the patient to validate, or None for all patients
@@ -669,37 +497,20 @@ class DataValidationPage(param.Parameterized):
             logger.error("Validation engine is not initialized")
             return
 
+        from app.services import data_service
+
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            # Purge previous results so we don't accumulate outdated records
-            if patient_id:
-                cursor.execute(
-                    "DELETE FROM validation_results WHERE patient_id = ?", (patient_id,)
-                )
-                logger.info(
-                    "Cleared previous validation results for patient %s", patient_id
-                )
-            else:
-                cursor.execute("DELETE FROM validation_results")
-                logger.info("Cleared all previous validation results")
-            conn.commit()
-            conn.close()
-
+            data_service.validate_patient_db_ops(self.db_path, patient_id)
             # Notify user validation is running
             pn.state.notifications.info("Running validation – please wait …")
-
             if patient_id:
                 logger.info(f"Validating patient: {patient_id}")
                 self.validation_engine.validate_patient(patient_id)
             else:
                 logger.info("Validating all patients")
                 self.validation_engine.validate_all_patients()
-
             # Refresh data
             self.refresh_data()
-
             # Notify user completion
             pn.state.notifications.success("Validation completed")
         except Exception as e:
@@ -819,7 +630,7 @@ class DataValidationPage(param.Parameterized):
         """Create a table displaying Vitality Score and Heart Fit Score data from the scores table."""
         try:
             # Get scores data for the selected patient
-            scores_df = db_query.get_patient_scores(self.selected_patient_id)
+            scores_df = get_patient_scores(self.selected_patient_id)
 
             if scores_df.empty:
                 return pn.Column(
@@ -901,7 +712,7 @@ class DataValidationPage(param.Parameterized):
         """Creates a replacement for the timeline visualization using tabular displays."""
         try:
             # Get visit metrics info
-            visits = self._fetch_visit_metrics(self.selected_patient_id)
+            visits = get_patient_visit_metrics(self.selected_patient_id)
             prov_visits = (
                 int(visits.get("provider_visits", 0)) if not visits.empty else 0
             )
@@ -1092,7 +903,7 @@ class DataValidationPage(param.Parameterized):
         # ------------------------------------------------------------------
         # 2. Status tiles
         # ------------------------------------------------------------------
-        visits = self._fetch_visit_metrics(self.selected_patient_id)
+        visits = get_patient_visit_metrics(self.selected_patient_id)
         prov_visits = int(visits.get("provider_visits", 0)) if not visits.empty else 0
         coach_visits = (
             int(visits.get("health_coach_visits", 0)) if not visits.empty else 0
@@ -1189,8 +1000,8 @@ class DataValidationPage(param.Parameterized):
         # ------------------------------------------------------------------
         # 5. Vitals display as table (replacing sparkline cards)
         # ------------------------------------------------------------------
-        vit_df = db_query.get_patient_vitals(self.selected_patient_id)
-        labs_df = db_query.get_patient_labs(self.selected_patient_id)
+        vit_df = get_patient_vitals(self.selected_patient_id)
+        labs_df = get_patient_labs(self.selected_patient_id)
 
         # Create vitals table
         if not vit_df.empty:
@@ -1731,7 +1542,7 @@ class DataValidationPage(param.Parameterized):
         columns directly via attribute or key access without additional checks.
         """
         try:
-            demo_df = db_query.get_patient_by_id(patient_id)
+            demo_df = get_patient_by_id(patient_id)
             if demo_df.empty:
                 return pd.Series(dtype="object")
             return demo_df.iloc[0]
@@ -1742,43 +1553,11 @@ class DataValidationPage(param.Parameterized):
             return pd.Series(dtype="object")
 
     def _compute_record_quality(self, patient_id: int) -> tuple[float, str]:
-        """Compute *blocking-rule* pass-rate and return *(ratio, colour_key)*.
+        """Compute *blocking-rule* pass-rate and return *(ratio, colour_key)*. (Refactored to data_service)"""
+        from app.services import data_service
 
-        Current implementation treats **error**-severity rules as *blocking*.
-        • *ratio* = passed / total (0–1).  Returns (1.0, 'success') if no rules.
-        • *colour_key* ∈ {'success', 'warning', 'danger'} for Panel themes.
-        """
         try:
-            # Total active blocking rules (severity == 'error')
-            conn = sqlite3.connect(self.db_path)
-            total_blocking = conn.execute(
-                "SELECT COUNT(*) FROM validation_rules WHERE severity = 'error' AND is_active = 1"
-            ).fetchone()[0]
-
-            # Distinct blocking rules that currently have *open* issues for this patient
-            failing = conn.execute(
-                """
-                SELECT COUNT(DISTINCT vr.rule_id)
-                FROM validation_results vr
-                JOIN validation_rules vru ON vr.rule_id = vru.rule_id
-                WHERE vr.patient_id = ? AND vru.severity = 'error' AND vr.status IN ('open', 'reviewed')
-                """,
-                (str(patient_id),),
-            ).fetchone()[0]
-            conn.close()
-
-            if total_blocking == 0:
-                return 1.0, "success"
-
-            passed = max(total_blocking - failing, 0)
-            ratio = passed / total_blocking
-            if ratio >= 0.95:
-                colour = "success"  # green
-            elif ratio >= 0.80:
-                colour = "warning"  # amber
-            else:
-                colour = "danger"  # red
-            return ratio, colour
+            return data_service.compute_record_quality_db(self.db_path, patient_id)
         except Exception as exc:
             logger.error("Error computing record quality: %s", exc)
             return 0.0, "danger"
@@ -1786,7 +1565,7 @@ class DataValidationPage(param.Parameterized):
     def _fetch_visit_metrics(self, patient_id: int) -> pd.Series:
         """Return the single-row Series of *patient_visit_metrics* for *patient_id* (may be empty)."""
         try:
-            vm_df = db_query.get_patient_visit_metrics(patient_id)
+            vm_df = get_patient_visit_metrics(patient_id)
             if vm_df.empty:
                 return pd.Series(dtype="object")
             return vm_df.iloc[0]
@@ -1799,7 +1578,7 @@ class DataValidationPage(param.Parameterized):
     def _latest_vitality_score(self, patient_id: int) -> str | None:
         """Return most recent Vitality Score value (as str) or None."""
         try:
-            scores = db_query.get_patient_scores(patient_id)
+            scores = get_patient_scores(patient_id)
             if scores.empty:
                 return None
             # Assume score_type column exists and we filter on vitality_score
@@ -1830,58 +1609,28 @@ class DataValidationPage(param.Parameterized):
     def mark_patient_as_verified(
         self, patient_id, reason="Patient data verified – all issues addressed"
     ):
-        """Mark *all* validation_results for *patient_id* as **verified**.
+        """Mark *all* validation_results for *patient_id* as **verified**. (Refactored to data_service)
 
         This hides the patient from the Issues list immediately.  On the next JSON
         import the entire table is replaced, so the *verified* flag naturally
         resets; any newly-detected issues will re-appear as *open*.
         """
+        from app.services import data_service
+
         try:
-            if not patient_id:
-                return
-
-            logger.info("Marking patient %s as verified", patient_id)
-
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            # Get *all* result_ids for this patient (independent of current status)
-            cursor.execute(
-                "SELECT result_id FROM validation_results WHERE patient_id = ?",
-                (patient_id,),
+            result = data_service.mark_patient_as_verified_db(
+                self.db_path, patient_id, reason
             )
-            result_ids = [row[0] for row in cursor.fetchall()]
-
-            if not result_ids:
-                conn.close()
+            if not result["success"]:
                 pn.state.notifications.warning(
-                    "No validation results found for this patient"
+                    result.get(
+                        "message", "No validation results found for this patient"
+                    )
                 )
                 return
-
-            # Audit table entries (one per result)
-            audit_rows = [(rid, "verify", reason, "current_user") for rid in result_ids]
-            cursor.executemany(
-                """
-                INSERT INTO correction_audit (result_id, action_type, action_reason, action_by)
-                VALUES (?, ?, ?, ?)
-                """,
-                audit_rows,
-            )
-
-            # Update all results to status = 'verified'
-            cursor.execute(
-                "UPDATE validation_results SET status = 'verified' WHERE patient_id = ?",
-                (patient_id,),
-            )
-
-            conn.commit()
-            conn.close()
-
             # Refresh summaries and patient list
             self.refresh_data()
             self._refresh_patient_list()
-
             # If the just-verified patient was selected, clear the view and prompt
             if self.selected_patient_id == patient_id:
                 self.selected_patient_id = None
@@ -1890,10 +1639,7 @@ class DataValidationPage(param.Parameterized):
                         "## Patient verified and removed from list.\n\nSelect another patient on the left."
                     ),
                 ]
-
-            pn.state.notifications.success(
-                f"Patient {patient_id} verified (\u2713 {len(result_ids)} issues)."
-            )
+            pn.state.notifications.success(result["message"])
         except Exception as exc:
             logger.error("Error marking patient as verified: %s", exc)
             pn.state.notifications.error("Failed to verify patient – check logs")

@@ -9,7 +9,10 @@ from datetime import date, datetime
 from app.data_assistant import DataAnalysisAssistant
 
 # Import both ai and get_data_schema
-from app.ai_helper import ai, get_data_schema
+from app.utils.schema import get_data_schema
+from app.utils.ai_helper import AIHelper
+
+ai = AIHelper()
 
 
 class TestQueries(unittest.TestCase):
@@ -41,10 +44,16 @@ class TestQueries(unittest.TestCase):
             self.assertEqual(intent.target_field, "weight")
             self.assertIsNotNone(intent.time_range)
             if intent.time_range:
-                # Start with January 2025
-                self.assertEqual(intent.time_range.start_date[:7], "2025-01")
-                # End with March 2025
-                self.assertEqual(intent.time_range.end_date[:7], "2025-03")
+                start = intent.time_range.start_date
+                end = intent.time_range.end_date
+                if isinstance(start, str):
+                    self.assertEqual(start[:7], "2025-01")
+                else:
+                    self.assertEqual(start.strftime("%Y-%m"), "2025-01")
+                if isinstance(end, str):
+                    self.assertEqual(end[:7], "2025-03")
+                else:
+                    self.assertEqual(end.strftime("%Y-%m"), "2025-03")
 
         # Check that the date range is correctly interpreted
         if isinstance(intent, dict):

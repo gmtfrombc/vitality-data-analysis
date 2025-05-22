@@ -1,4 +1,4 @@
-from app.ai_helper import _build_code_from_intent
+from app.utils.ai.code_generator import generate_code
 from app.utils.query_intent import QueryIntent
 
 
@@ -13,7 +13,7 @@ def test_average_bmi_template():
         parameters={},
     )
 
-    code = _build_code_from_intent(intent)
+    code = generate_code(intent)
     assert code is not None
     assert "AVG(bmi)" in code
     assert "SELECT" in code
@@ -30,7 +30,7 @@ def test_activity_status_alias(monkeypatch):
         parameters={},
     )
 
-    code = _build_code_from_intent(intent)
+    code = generate_code(intent)
     assert code is not None
     assert "active" in code
     assert "= 1" in code

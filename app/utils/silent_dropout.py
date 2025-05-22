@@ -17,7 +17,7 @@ import pandas as pd
 import sqlite3
 from datetime import datetime, timedelta
 
-from db_query import query_dataframe, get_db_path
+from app.db_query import query_dataframe, get_db_path
 from app.utils.date_helpers import format_date_for_display
 
 logger = logging.getLogger(__name__)

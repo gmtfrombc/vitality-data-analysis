@@ -15,6 +15,10 @@ from pathlib import Path
 import traceback
 from dotenv import load_dotenv
 
+# from app.pages.ai_assistant import ai_assistant_page  # Commented out to disable SQL assistant for Data Assistant tab
+# Use robust Data Analysis Assistant
+from app.data_assistant import data_assistant_page
+
 # Configure logging first
 logging.basicConfig(
     level=logging.INFO,
@@ -89,7 +93,8 @@ def safe_import(module_path, fallback_message=None):
 
         # Create a fallback module
         class FallbackModule:
-            def get_page():
+            @staticmethod
+            def gap_report_page():
                 message = (
                     fallback_message or f"Error loading module {module_path}: {str(e)}"
                 )
@@ -98,6 +103,10 @@ def safe_import(module_path, fallback_message=None):
                     pn.pane.Markdown(message),
                     pn.pane.Markdown("Check application logs for details."),
                 )
+
+            @staticmethod
+            def get_page():
+                return FallbackModule.gap_report_page()
 
         return FallbackModule
 
@@ -197,9 +206,10 @@ def create_app():
     )
 
     # Create the main application layout with combined Data Quality & Engagement tab
+    print("Registering Data Assistant tab with data_assistant_page")
     tabs = pn.Tabs(
         ("Dashboard", dashboard.dashboard_page()),
-        ("Data Assistant", data_assistant.data_assistant_page()),
+        ("Data Assistant", data_assistant_page()),
         ("Patient View", patient_view.patient_view_page()),
         ("Data Validation", data_validation.get_page()),
         ("Data Quality & Engagement", gap_report_page_mod.gap_report_page()),

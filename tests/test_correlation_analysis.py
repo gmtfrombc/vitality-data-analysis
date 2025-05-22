@@ -17,7 +17,7 @@ import os
 from app.utils.plots import scatter_plot
 from app.utils.metrics import correlation_coefficient
 from app.utils.query_intent import QueryIntent
-from app.ai_helper import _build_code_from_intent
+from app.utils.ai.code_generator import generate_code
 
 # Create a fixture for a temporary SQLite database with test data
 
@@ -160,7 +160,7 @@ def test_build_code_from_intent_correlation():
     )
 
     # Generate code
-    code = _build_code_from_intent(intent)
+    code = generate_code(intent)
 
     # Check code components
     assert code is not None

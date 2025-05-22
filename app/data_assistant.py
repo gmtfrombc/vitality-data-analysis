@@ -1,3 +1,12 @@
+from app.utils.assumptions import (
+    resolve_gender_filter,
+    resolve_time_window,
+    resolve_patient_status,
+    resolve_metric_source,
+    get_default_aggregator,
+)
+from app.query_refinement.clarifier import is_truly_ambiguous_query
+
 """
 Data Analysis Assistant
 
@@ -6,11 +15,10 @@ a complete data analysis assistant experience.
 """
 
 import logging
-import os
 import panel as pn
 import param
+from app.query_refinement.clarification_workflow import ClarificationWorkflow
 from pathlib import Path
-
 from app.ui import UIComponents
 from app.engine import AnalysisEngine
 from app.analysis_helpers import (
@@ -21,8 +29,8 @@ from app.utils.feedback_db import insert_feedback
 from app.utils.saved_questions_db import (
     load_saved_questions as _load_saved_questions_db,
     upsert_question,
+    delete_question as _delete_question_db,
 )
-from app.utils.query_intent import QueryIntent
 
 # Define exports
 __all__ = ["DataAnalysisAssistant", "data_assistant_page"]
@@ -34,36 +42,49 @@ logger = logging.getLogger("data_assistant")
 pn.extension("tabulator")
 pn.extension("plotly")
 
+print("[DEBUG] app.data_assistant.py imported")
+
 
 class DataAnalysisAssistant(param.Parameterized):
-    """Data Analysis Assistant with AI-powered data analysis capabilities"""
+    """Data Analysis Assistant with AI-powered data analysis capabilities
+
+    Args:
+        test_mode (bool): If True, disables threading for test predictability.
+    """
 
     query_text = param.String(default="", doc="Natural language query")
     analysis_result = param.Dict(default={})
     question_name = param.String(default="", doc="Name for saving the current query")
     saved_questions = param.List(default=[], doc="List of saved questions")
-    show_narrative = param.Boolean(
-        default=True, doc="Whether to show narrative summary"
+    show_narrative = param.String(
+        default="Narrative", doc="Results view mode: 'Narrative' or 'Tabular'"
     )
     generated_code = param.String(default="", doc="Generated analysis code")
     intermediate_results = param.Dict(
         default=None, doc="Intermediate results from analysis"
     )
 
-    def __init__(self, **params):
-        """Initialize the data analysis assistant"""
+    def __init__(self, test_mode=False, **params):
+        """Initialize the data analysis assistant
+
+        Args:
+            test_mode (bool): If True, disables threading for test predictability.
+        """
         super().__init__(**params)
+        self.test_mode = test_mode
 
         # Initialize components
         self.ui = UIComponents()
         self.engine = AnalysisEngine()
         self.workflow = WorkflowState()
-
+        self.clarification_workflow = ClarificationWorkflow(self.engine, self.workflow)
         # Initialize feedback component
         self.feedback_widget = None
 
         # Load saved questions
         self.saved_questions = _load_saved_questions_db()
+        logger.info(f"[INIT] Loaded saved_questions: {self.saved_questions}")
+        print(f"[INIT] Loaded saved_questions: {self.saved_questions}")
 
         # Initialize UI components
         self._initialize_ui()
@@ -94,8 +115,8 @@ class DataAnalysisAssistant(param.Parameterized):
         # Set up reset button
         self.ui.reset_button.on_click(self._reset_all)
 
-        # Set up narrative toggle
-        self.ui._show_narrative_checkbox.param.watch(
+        # Set up results view toggle
+        self.ui.results_view_toggle.param.watch(
             self._update_display_after_toggle, "value"
         )
 
@@ -220,7 +241,9 @@ class DataAnalysisAssistant(param.Parameterized):
 
                 # Get Python executable
                 python_exe = sys.executable
-
+                # NOTE: This subprocess call is strictly for internal/mock data regeneration.
+                # No user input is used—arguments are hardcoded, and only trusted scripts are executed.
+                # If ever expanded or changed, ensure NO user input can reach subprocess.run().
                 # Run the generate_test_database.py script
                 cmd = [python_exe, "scripts/dev/generate_test_database.py"]
                 process = subprocess.run(cmd, capture_output=True, text=True)
@@ -241,78 +264,95 @@ class DataAnalysisAssistant(param.Parameterized):
         thread.start()
 
     def _update_display_after_toggle(self, *_):
-        """Update display when narrative toggle changes"""
-        self.show_narrative = self.ui._show_narrative_checkbox.value
+        """Update display when results view toggle changes"""
+        self.show_narrative = self.ui.results_view_toggle.value
+        print(f"[DEBUG] Results view toggled to: {self.show_narrative}")
         self._display_final_results()
 
     def _process_query(self):
-        """Process the natural language query"""
-        # Validate query
-        if not self.query_text:
-            self.ui.update_status("Please enter a query")
-            return
+        """Process the natural language query in a background thread unless test_mode is True"""
+        import threading
+        import panel as pn
+        from functools import partial
 
-        # Start AI indicator
-        self.ui.start_ai_indicator("AI is analyzing your query...")
+        def _worker():
+            print("[THREAD] _process_query started")
+            if not self.query_text:
+                if getattr(pn.state, "curdoc", None) is not None:
+                    pn.state.curdoc.add_next_tick_callback(
+                        partial(self.ui.update_status, "Please enter a query")
+                    )
+                else:
+                    self.ui.update_status("Please enter a query")
+                print("[THREAD] _process_query: No query, exiting thread")
+                return
+            if getattr(pn.state, "curdoc", None) is not None:
+                pn.state.curdoc.add_next_tick_callback(
+                    partial(self.ui.start_ai_indicator, "AI is analyzing your query...")
+                )
+            else:
+                self.ui.start_ai_indicator("AI is analyzing your query...")
+            gender = resolve_gender_filter(self.query_text)
+            self.engine.parameters["gender"] = gender
+            self.engine.parameters["window"] = resolve_time_window(
+                self.engine.parameters
+            )
+            self.engine.parameters["patient_status"] = resolve_patient_status(
+                self.query_text
+            )
+            self.engine.parameters["metric_instance"] = resolve_metric_source(
+                self.query_text
+            )
+            self.engine.parameters["aggregator"] = get_default_aggregator(
+                self.query_text
+            )
+            self.workflow.start_query(self.query_text)
+            intent = self.engine.process_query(self.query_text)
+            # Use real ambiguity/confidence logic
+            needs_clarification = is_truly_ambiguous_query(intent)
+            print(
+                f"[DEBUG] Clarification triggered: {needs_clarification} (intent: {getattr(intent, 'analysis_type', None)}, confidence: {getattr(intent, 'parameters', {}).get('confidence', None)})"
+            )
+            self.workflow.mark_intent_parsed(needs_clarification)
+            if getattr(pn.state, "curdoc", None) is not None:
+                pn.state.curdoc.add_next_tick_callback(self._process_current_stage)
+            else:
+                self._process_current_stage()
+            print("[THREAD] _process_query finished")
 
-        # Process the query using the engine
-        self.workflow.start_query(self.query_text)
-        intent = self.engine.process_query(self.query_text)
-
-        # Check if intent needs clarification
-        needs_clarification = self._is_truly_ambiguous_query(intent)
-        self.workflow.mark_intent_parsed(needs_clarification)
-
-        # Update UI based on workflow state
-        self._process_current_stage()
-
-    def _is_truly_ambiguous_query(self, intent):
-        """Return True only when the query is genuinely ambiguous and requires clarification."""
-        # In offline/test mode we skip clarification to keep smoke tests fast
-        if not os.getenv("OPENAI_API_KEY"):
-            return False
-
-        # If parsing failed → truly ambiguous
-        if isinstance(intent, dict):
-            return True
-
-        assert isinstance(intent, QueryIntent)
-
-        # Check if the query is entirely unclear about what metric or analysis is wanted
-        if intent.analysis_type == "unknown" and intent.target_field == "unknown":
-            return True
-
-        # Check if multiple interpretations are equally valid (critical ambiguity)
-        raw_query = getattr(intent, "raw_query", "").lower()
-        if not raw_query:
-            return False
-
-        # Ambiguous queries with multiple possible valid interpretations
-        ambiguous_patterns = [
-            "compare",
-            "between",
-            "versus",
-            "vs",
-            "which",
-            "better",
-            "best",
-            "correlation",
-            "relationship between",
-        ]
-
-        # If query contains ambiguous patterns but doesn't specify what to compare
-        has_ambiguous_pattern = any(
-            pattern in raw_query for pattern in ambiguous_patterns
-        )
-        has_unclear_targets = (
-            not intent.additional_fields and intent.target_field == "unknown"
-        )
-
-        if has_ambiguous_pattern and has_unclear_targets:
-            return True
-
-        # Default to not asking questions
-        return False
+        if self.test_mode:
+            # Run synchronously for tests
+            print("[TEST_MODE] _process_query running synchronously")
+            if not self.query_text:
+                self.ui.update_status("Please enter a query")
+                return
+            self.ui.start_ai_indicator("AI is analyzing your query...")
+            gender = resolve_gender_filter(self.query_text)
+            self.engine.parameters["gender"] = gender
+            self.engine.parameters["window"] = resolve_time_window(
+                self.engine.parameters
+            )
+            self.engine.parameters["patient_status"] = resolve_patient_status(
+                self.query_text
+            )
+            self.engine.parameters["metric_instance"] = resolve_metric_source(
+                self.query_text
+            )
+            self.engine.parameters["aggregator"] = get_default_aggregator(
+                self.query_text
+            )
+            self.workflow.start_query(self.query_text)
+            intent = self.engine.process_query(self.query_text)
+            needs_clarification = is_truly_ambiguous_query(intent)
+            print(
+                f"[DEBUG] Clarification triggered: {needs_clarification} (intent: {getattr(intent, 'analysis_type', None)}, confidence: {getattr(intent, 'parameters', {}).get('confidence', None)})"
+            )
+            self.workflow.mark_intent_parsed(needs_clarification)
+            self._process_current_stage()
+        else:
+            thread = threading.Thread(target=_worker)
+            thread.daemon = True
+            thread.start()
 
     def _process_current_stage(self):
         """Process the current workflow stage"""
@@ -344,8 +384,26 @@ class DataAnalysisAssistant(param.Parameterized):
 
     def _display_clarifying_questions(self):
         """Display clarifying questions to the user"""
-        # Generate clarifying questions
-        questions = self.engine.generate_clarifying_questions()
+        # If intent is None or not a valid object, provide a generic fallback question
+        intent = self.engine.intent
+        if intent is None or not hasattr(intent, "__dict__"):
+            print(
+                "[WARN] Intent is None or invalid; showing generic clarification question."
+            )
+            questions = [
+                "Could you clarify what you want to compare or specify more details about your request?"
+            ]
+        else:
+            try:
+                # Generate clarifying questions using the clarification workflow
+                questions = self.clarification_workflow.get_clarifying_questions(
+                    intent, self.query_text
+                )
+            except Exception as e:
+                print(f"[ERROR] Clarification workflow failed: {e}")
+                questions = [
+                    "Could you clarify your request? (An error occurred while generating specific questions.)"
+                ]
 
         # Create the clarifying questions UI using the UI component
         self.ui.display_clarifying_questions(questions, self._process_clarification)
@@ -365,32 +423,58 @@ class DataAnalysisAssistant(param.Parameterized):
         # Start AI indicator
         self.ui.start_ai_indicator("Processing your clarification...")
 
-        # Process the clarification
-        self.engine.process_clarification(clarification_text)
+        # Process the clarification using the workflow
+        result, msg = self.clarification_workflow.process_clarification_response(
+            self.engine.intent, clarification_text
+        )
 
         # Mark clarification complete
         self.workflow.mark_clarification_complete()
+        # Optionally update status if 'msg' is not empty
+        if msg:
+            self.ui.update_status(msg)
 
         # Update UI
         self.ui.clarifying_pane.visible = False
         self._process_current_stage()
 
     def _generate_analysis_code(self):
-        """Generate analysis code based on intent"""
-        # Start AI indicator
-        self.ui.start_ai_indicator("Generating analysis code...")
+        """Generate analysis code based on intent in a background thread unless test_mode is True"""
+        import threading
+        import panel as pn
+        from functools import partial
 
-        # Generate code
-        self.engine.generate_analysis_code()
+        def _worker():
+            print("[THREAD] _generate_analysis_code started")
+            if getattr(pn.state, "curdoc", None) is not None:
+                pn.state.curdoc.add_next_tick_callback(
+                    partial(self.ui.start_ai_indicator, "Generating analysis code...")
+                )
+            else:
+                self.ui.start_ai_indicator("Generating analysis code...")
+            self.engine.generate_analysis_code()
+            if getattr(pn.state, "curdoc", None) is not None:
+                pn.state.curdoc.add_next_tick_callback(self._display_generated_code)
+            else:
+                self._display_generated_code()
+            self.workflow.mark_code_generated()
+            if getattr(pn.state, "curdoc", None) is not None:
+                pn.state.curdoc.add_next_tick_callback(self._process_current_stage)
+            else:
+                self._process_current_stage()
+            print("[THREAD] _generate_analysis_code finished")
 
-        # Display generated code
-        self._display_generated_code()
-
-        # Mark code generated
-        self.workflow.mark_code_generated()
-
-        # Process next stage
-        self._process_current_stage()
+        if self.test_mode:
+            print("[TEST_MODE] _generate_analysis_code running synchronously")
+            self.ui.start_ai_indicator("Generating analysis code...")
+            self.engine.generate_analysis_code()
+            self._display_generated_code()
+            self.workflow.mark_code_generated()
+            self._process_current_stage()
+        else:
+            thread = threading.Thread(target=_worker)
+            thread.daemon = True
+            thread.start()
 
     def _display_generated_code(self):
         """Display the generated code"""
@@ -401,21 +485,42 @@ class DataAnalysisAssistant(param.Parameterized):
         self.ui.update_status("Analysis code generated")
 
     def _execute_analysis(self):
-        """Execute the generated analysis code"""
-        # Start AI indicator
-        self.ui.start_ai_indicator("Executing analysis...")
+        """Execute the generated analysis code in a background thread unless test_mode is True"""
+        import threading
+        import panel as pn
+        from functools import partial
 
-        # Execute code
-        results = self.engine.execute_analysis()
+        def _worker():
+            print("[THREAD] _execute_analysis started")
+            if getattr(pn.state, "curdoc", None) is not None:
+                pn.state.curdoc.add_next_tick_callback(
+                    partial(self.ui.start_ai_indicator, "Executing analysis...")
+                )
+            else:
+                self.ui.start_ai_indicator("Executing analysis...")
+            results = self.engine.execute_analysis()
+            if getattr(pn.state, "curdoc", None) is not None:
+                pn.state.curdoc.add_next_tick_callback(self._display_execution_results)
+            else:
+                self._display_execution_results()
+            self.workflow.mark_execution_complete()
+            if getattr(pn.state, "curdoc", None) is not None:
+                pn.state.curdoc.add_next_tick_callback(self._process_current_stage)
+            else:
+                self._process_current_stage()
+            print("[THREAD] _execute_analysis finished")
 
-        # Display execution results
-        self._display_execution_results()
-
-        # Mark execution complete
-        self.workflow.mark_execution_complete()
-
-        # Process next stage
-        self._process_current_stage()
+        if self.test_mode:
+            print("[TEST_MODE] _execute_analysis running synchronously")
+            self.ui.start_ai_indicator("Executing analysis...")
+            results = self.engine.execute_analysis()
+            self._display_execution_results()
+            self.workflow.mark_execution_complete()
+            self._process_current_stage()
+        else:
+            thread = threading.Thread(target=_worker)
+            thread.daemon = True
+            thread.start()
 
     def _display_execution_results(self):
         """Display execution results"""
@@ -434,7 +539,9 @@ class DataAnalysisAssistant(param.Parameterized):
         """Display final formatted results with visualizations"""
         # Format results
         formatted_results = format_results(
-            self.engine.execution_results, self.engine.intent, self.show_narrative
+            self.engine.execution_results,
+            self.engine.intent,
+            self.show_narrative == "Narrative",
         )
 
         # Add refine option
@@ -509,8 +616,10 @@ class DataAnalysisAssistant(param.Parameterized):
 
     def _save_question(self, event=None):
         """Save the current question"""
+        print(f"[SAVE] Before save, saved_questions: {self.saved_questions}")
         if not self.query_text:
-            self.ui.update_status("No query to save")
+            self.ui.update_status("No query to save", type="warning")
+            print("No query to save")
             return
 
         # Use default name if not provided
@@ -524,36 +633,42 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Save the question
         question = {"name": name, "query": self.query_text}
-        success = upsert_question(name, self.query_text)
+        try:
+            upsert_question(name, self.query_text)
+            logger.info(f"Saved question: {name}")
+            print(f"Saved question: {name}")
+            self.ui.update_status(f"Question saved: {name}", type="success")
+        except Exception as e:
+            logger.error(f"Error saving question: {str(e)}", exc_info=True)
+            print(f"Error saving question: {str(e)}")
+            self.ui.update_status(f"Error saving question: {str(e)}", type="error")
+            return
 
-        if success:
-            self.ui.update_status(f"Question saved: {name}")
+        # Reload saved questions
+        self.saved_questions = _load_saved_questions_db()
+        print(f"[SAVE] After save, saved_questions: {self.saved_questions}")
+        self._update_saved_question_buttons()
 
-            # Reload saved questions
-            self.saved_questions = _load_saved_questions_db()
-
-            # Update saved question buttons
-            self._update_saved_question_buttons()
-
-            # Clear question name
-            self.question_name = ""
-            self.ui.save_question_input.value = ""
-        else:
-            self.ui.update_status("Error saving question")
+        # Clear question name
+        self.question_name = ""
+        self.ui.save_question_input.value = ""
 
     def _update_saved_question_buttons(self):
-        """Update saved question buttons"""
+        """Update saved question buttons with delete functionality and robust state management"""
+        print(f"[UI] Updating saved question buttons: {self.saved_questions}")
+        logger.info(f"[UI] Updating saved question buttons: {self.saved_questions}")
         buttons = []
+        has_questions = len(self.saved_questions) > 0
 
         for q in self.saved_questions:
-            # Create button for each saved question
+            # Create a row with the question button and a delete button
             btn = pn.widgets.Button(
                 name=q["name"],
                 button_type="light",
                 sizing_mode="stretch_width",
             )
 
-            # Create click handler
+            # Create click handler for loading the query
             def make_click_handler(q):
                 def on_click(event):
                     self._use_example_query(q)
@@ -561,7 +676,53 @@ class DataAnalysisAssistant(param.Parameterized):
                 return on_click
 
             btn.on_click(make_click_handler(q))
-            buttons.append(btn)
+
+            # Create delete button
+            del_btn = pn.widgets.Button(
+                name="🗑️",
+                button_type="danger",
+                width=40,
+                height=28,
+                margin=(0, 0, 0, 5),
+                disabled=not has_questions,
+            )
+
+            def make_delete_handler(q, del_btn):
+                def on_delete(event):
+                    del_btn.disabled = True  # Prevent double-clicks
+                    try:
+                        _delete_question_db(q["name"])
+                        logger.info(f"Deleted saved question: {q['name']}")
+                        print(f"Deleted saved question: {q['name']}")
+                        self.ui.update_status(
+                            f"Deleted question: {q['name']}", type="success"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Error deleting question: {str(e)}", exc_info=True
+                        )
+                        print(f"Error deleting question: {str(e)}")
+                        self.ui.update_status(
+                            f"Error deleting question: {str(e)}", type="error"
+                        )
+                    # Reload saved questions and update UI
+                    self.saved_questions = _load_saved_questions_db()
+                    self._update_saved_question_buttons()
+
+                return on_delete
+
+            del_btn.on_click(make_delete_handler(q, del_btn))
+
+            # Add both buttons in a row
+            row = pn.Row(btn, del_btn, sizing_mode="stretch_width")
+            buttons.append(row)
+
+        # If no questions, show a disabled message
+        if not has_questions:
+            empty_msg = pn.pane.Markdown(
+                "*No saved questions yet*", styles={"color": "#888"}
+            )
+            buttons.append(empty_msg)
 
         # Update buttons container
         self.ui.saved_question_buttons_container.objects = buttons
@@ -569,16 +730,21 @@ class DataAnalysisAssistant(param.Parameterized):
     def _use_example_query(self, query):
         """Set the query text from a saved question"""
         logger.info(f"Using example query: {query['name']}")
+        print(f"Loaded saved question: {query['name']}")
         self.query_text = query["query"]
 
         # Update the input field
         self.ui.query_input.value = query["query"]
+
+        # Show status
+        self.ui.update_status(f"Loaded query: {query['name']}", type="info")
 
         # Process the query
         self._process_query()
 
     def _reset_all(self, event=None):
         """Reset the analysis assistant to initial state"""
+        print(f"[RESET] Before reset, saved_questions: {self.saved_questions}")
         # Reset workflow
         self.workflow.reset()
 
@@ -734,7 +900,7 @@ class DataAnalysisAssistant(param.Parameterized):
             pn.Spacer(height=15),
             self.ui.delete_mock_panel,
             pn.Spacer(height=20),
-            self.ui._show_narrative_checkbox,
+            self.ui.results_view_toggle,
             sizing_mode="stretch_width",
         )
 
@@ -777,5 +943,6 @@ class DataAnalysisAssistant(param.Parameterized):
 
 def data_assistant_page():
     """Create and return the data assistant page for the application."""
+    print("[DEBUG] data_assistant_page() called")
     assistant = DataAnalysisAssistant()
     return assistant.view()

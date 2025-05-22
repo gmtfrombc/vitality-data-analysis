@@ -15,6 +15,7 @@ import sys
 
 from .query_intent import QueryIntent, _CANONICAL_FIELDS, CONDITION_FIELD
 from .condition_mapper import condition_mapper
+from app.utils.assumptions import get_fallback_intent
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,10 @@ class MissingSlot:
 
 class SlotBasedClarifier:
     """Identifies missing information in intents and generates specific clarifying questions."""
+
+    """
+    Clarification confidence threshold for ambiguous queries is defined in assumptions.py (CLARIFICATION_CONFIDENCE_THRESHOLD).
+    """
 
     # Common demographics for filtering
     DEMOGRAPHICS = frozenset(["gender", "age", "ethnicity", "active"])
@@ -151,7 +156,7 @@ class SlotBasedClarifier:
         is_test_env = (
             "pytest" in sys.modules
             or "TESTING" in os.environ
-            or not os.getenv("OPENAI_API_KEY")
+            or __import__("app.config").config.OFFLINE_MODE
         )
 
         if (
@@ -296,17 +301,10 @@ class SlotBasedClarifier:
 
         Returns:
             A safe generic intent that will trigger appropriate clarification
+
+        Fallback intent policy is defined in app.utils.assumptions.get_fallback_intent.
         """
-        return QueryIntent(
-            analysis_type="count",
-            target_field="unknown",
-            filters=[],
-            conditions=[],
-            parameters={"original_query": raw_query, "is_fallback": True},
-            additional_fields=[],
-            group_by=[],
-            time_range=None,
-        )
+        return get_fallback_intent(raw_query)
 
 
 # Create a singleton instance for import by other modules

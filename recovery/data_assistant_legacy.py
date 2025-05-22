@@ -322,7 +322,7 @@ class DataAnalysisAssistant(param.Parameterized):
                 if notifier:
                     notifier.error("File too large (max 10 MB).")
                 else:
-                    self._update_status("File too large (max 10 MB).")
+                    self.ui.update_status("File too large(max 10 MB).", type="warning")
                 return
 
             # Write uploaded bytes to a temp file
@@ -345,14 +345,18 @@ class DataAnalysisAssistant(param.Parameterized):
                     if notifier:
                         notifier.success(f"Import complete – {summary_local}")
                     else:
-                        self._update_status(f"Import complete – {summary_local}")
+                        self.ui.update_status(
+                            f"Import complete – {summary_local}", type="success"
+                        )
                 except Exception as exc_inner:  # noqa: BLE001 – explicit
                     logger.error("JSON ingest failed: %s", exc_inner, exc_info=True)
                     notifier = getattr(pn.state, "notifications", None)
                     if notifier:
                         notifier.error(f"Import failed: {exc_inner}")
                     else:
-                        self._update_status(f"Import failed: {exc_inner}")
+                        self.ui.update_status(
+                            f"Import failed: {exc_inner}", type="error"
+                        )
                 finally:
                     # Restore UI in main thread
                     self.import_spinner.visible = False
@@ -415,13 +419,13 @@ class DataAnalysisAssistant(param.Parameterized):
                     if notifier:
                         notifier.success(msg)
                     else:
-                        self._update_status(msg)
+                        self.ui.update_status(msg, type="success")
                 except Exception as exc_del:
                     notifier = getattr(pn.state, "notifications", None)
                     if notifier:
                         notifier.error(f"Delete failed: {exc_del}")
                     else:
-                        self._update_status(f"Delete failed: {exc_del}")
+                        self.ui.update_status(f"Delete failed: {exc_del}", type="error")
 
             threading.Thread(target=_worker, daemon=True).start()
 
@@ -725,7 +729,7 @@ class DataAnalysisAssistant(param.Parameterized):
         self._start_ts = time.perf_counter()
 
         if not self.query_text:
-            self._update_status("Please enter a query")
+            self.ui.update_status("Please enter a query", type="warning")
             logger.warning("Empty query detected")
             return
 
@@ -745,7 +749,7 @@ class DataAnalysisAssistant(param.Parameterized):
             # Accelerate workflow indicators but let regular processing pipeline run
             self.current_stage = self.STAGE_INITIAL
             self._update_stage_indicators()
-            self._update_status("Test mode - workflow accelerated")
+            self.ui.update_status("Test mode - workflow accelerated", type="info")
             # Do NOT early-return – continue into the standard multi-stage loop below.
 
         else:
@@ -764,7 +768,7 @@ class DataAnalysisAssistant(param.Parameterized):
             # Set up workflow
             self.current_stage = self.STAGE_INITIAL
             self._update_stage_indicators()
-            self._update_status("Starting analysis workflow...")
+            self.ui.update_status("Starting analysis workflow...", type="info")
 
             # Process only the initial stage first - this will determine if clarification is needed
             self._process_current_stage()
@@ -783,7 +787,7 @@ class DataAnalysisAssistant(param.Parameterized):
                 else:
                     # In normal operation, stop and wait for user input
                     logger.info("Waiting for user clarification input")
-                    self._update_status("Waiting for your input...")
+                    self.ui.update_status("Waiting for your input...", type="info")
                     return  # Stop here and wait for user to submit clarification
 
             # If no clarification needed, continue with the remaining stages
@@ -801,7 +805,7 @@ class DataAnalysisAssistant(param.Parameterized):
                 self._display_final_results()
 
             logger.info("Query processing completed successfully")
-            self._update_status("Analysis complete")
+            self.ui.update_status("Analysis complete", type="success")
 
             # Duration measured here as fallback (in case final results display skipped)
             setattr(
@@ -818,7 +822,7 @@ class DataAnalysisAssistant(param.Parameterized):
 
         except Exception as e:
             logger.error(f"Error processing query: {str(e)}", exc_info=True)
-            self._update_status(f"Error: {str(e)}")
+            self.ui.update_status(f"Error: {str(e)}", type="error")
             self.result_pane.object = f"### Error\n\nSorry, there was an error processing your query: {str(e)}"
 
     def _generate_analysis_code(self):
@@ -827,7 +831,7 @@ class DataAnalysisAssistant(param.Parameterized):
 
         try:
             # Show AI is thinking for intent analysis
-            self._start_ai_indicator("ChatGPT is analyzing your query intent...")
+            self.ui.start_ai_indicator("ChatGPT is analyzing your query intent...")
 
             # First, get the query intent using AI (safe wrapper avoids external calls during tests)
             intent = self._get_query_intent_safe(self.query_text)
@@ -877,7 +881,7 @@ class DataAnalysisAssistant(param.Parameterized):
                         logger.info("Removed active filter based on clarification")
 
             # Update status for code generation
-            self._start_ai_indicator("ChatGPT is generating analysis code...")
+            self.ui.start_ai_indicator("ChatGPT is generating analysis code...")
 
             # Get data schema for code generation
             data_schema = get_data_schema()
@@ -891,7 +895,7 @@ class DataAnalysisAssistant(param.Parameterized):
                 generated_code = self._add_sandbox_safety(generated_code)
 
             # Hide the indicator when done
-            self._stop_ai_indicator()
+            self.ui.stop_ai_indicator()
 
             # Store the generated code
             self.generated_code = generated_code
@@ -903,7 +907,7 @@ class DataAnalysisAssistant(param.Parameterized):
 
         except Exception as e:
             # Hide the indicator in case of error
-            self._stop_ai_indicator()
+            self.ui.stop_ai_indicator()
 
             logger.error(
                 f"Error generating AI-powered analysis code: {str(e)}", exc_info=True
@@ -2306,7 +2310,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
         # Use AI to interpret results
         if self.intermediate_results is not None:
             # Show AI is thinking
-            self._start_ai_indicator("ChatGPT is interpreting your results...")
+            self.ui.start_ai_indicator("ChatGPT is interpreting your results...")
 
             # Prepare visualization descriptions
             visualizations = []
@@ -2326,7 +2330,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 )
 
             # Hide the indicator when done
-            self._stop_ai_indicator()
+            self.ui.stop_ai_indicator()
 
             # Store the results
             if isinstance(self.intermediate_results, (int, float, np.generic)):
@@ -2462,11 +2466,11 @@ Intermediate results and visualisations are still shown so you can audit the pro
     def _display_final_results(self):
         """Display the final results of the analysis with visualizations."""
         logger.info("Displaying final results")
-        self._update_status("Generating final results")
 
+        self.ui.update_status("Generating final results", type="info")
         if not self.analysis_result:
             logger.warning("No results to display")
-            self._update_status("No analysis results to display")
+            self.ui.update_status("No analysis results to display", type="warning")
             return
 
         # Format the results
@@ -2499,10 +2503,11 @@ Intermediate results and visualisations are still shown so you can audit the pro
             self.feedback_widget.visible = True
 
             logger.info("Results displayed successfully")
-            self._update_status("Analysis complete")
+
+            self.ui.update_status("Analysis complete", type="success")
         except Exception as e:
             logger.error(f"Error displaying results: {str(e)}", exc_info=True)
-            self._update_status(f"Error: {str(e)}")
+            self.ui.update_status(f"Error: {str(e)}", type="error")
             self.result_pane.object = f"### Error\n\nSorry, there was an error displaying your results: {str(e)}"
 
         # Ensure any generated visualization is shown in the Visualization tab
@@ -2520,7 +2525,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
         self.continue_button.name = "Analysis Complete"
         self.reset_button.disabled = False
 
-        self._stop_ai_indicator()
+        self.ui.stop_ai_indicator()
 
     def _format_results(self):
         """Format the results for display."""
@@ -2761,7 +2766,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 logger.info("Refinement indicates ONLY active patients")
 
             logger.info(f"Refinement added: {refinement}")
-            self._update_status("Refinement added to query")
+            self.ui.update_status("Refinement added to query", type="info")
 
             # Hide the refinement UI
             self._hide_refine_input()
@@ -2822,14 +2827,14 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     self._display_final_results()
 
                 logger.info("Query processing completed after skipping clarification")
-                self._update_status("Analysis complete")
+                self.ui.update_status("Analysis complete", type="success")
 
             except Exception as e:
                 logger.error(
                     f"Error processing query after skipping clarification: {str(e)}",
                     exc_info=True,
                 )
-                self._update_status(f"Error: {str(e)}")
+                self.ui.update_status(f"Error: {str(e)}", type="error")
                 self.result_pane.object = f"### Error\n\nSorry, there was an error processing your query: {str(e)}"
                 # Early return to prevent further execution
                 return
@@ -2911,14 +2916,14 @@ Intermediate results and visualisations are still shown so you can audit the pro
             # Step 1: Get query intent
             try:
                 # Show AI is thinking
-                self._start_ai_indicator("Analyzing your query...")
+                self.ui.start_ai_indicator("Analyzing your query...")
 
                 # Get intent using AI (safe wrapper avoids external calls during tests)
                 intent = self._get_query_intent_safe(self.query_text)
                 self.query_intent = intent
 
                 # Hide indicator
-                self._stop_ai_indicator()
+                self.ui.stop_ai_indicator()
 
                 # First check if the query is truly ambiguous (critical ambiguity)
                 is_ambiguous = self._is_truly_ambiguous_query(intent)
@@ -2933,7 +2938,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
                 if is_ambiguous:
                     # Only generate clarifying questions if the query is truly ambiguous
-                    self._start_ai_indicator("Preparing specific questions...")
+                    self.ui.start_ai_indicator("Preparing specific questions...")
 
                     # Get specific questions using our slot-based clarifier
                     needs_clarification, slot_questions = (
@@ -2947,7 +2952,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                         )
 
                     self.clarifying_questions = slot_questions
-                    self._stop_ai_indicator()
+                    self.ui.stop_ai_indicator()
 
                     # Update stage and show clarification UI
                     self.current_stage = self.STAGE_CLARIFYING
@@ -2962,7 +2967,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                     self._display_generated_code()
             except Exception as e:
                 logger.error("Error in initial stage: %s", e, exc_info=True)
-                self._update_status(f"Error: {str(e)}")
+                self.ui.update_status(f"Error: {str(e)}", type="error")
                 return
 
         elif self.current_stage == self.STAGE_CLARIFYING:
@@ -3089,7 +3094,7 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 logger.info("Clarification indicates ONLY active patients")
 
             logger.info(f"Clarification added: {clarification}")
-            self._update_status("Clarification added to query")
+            self.ui.update_status("Clarification added to query", type="info")
         else:
             logger.info("No clarification provided, continuing with original query")
 
@@ -3122,13 +3127,13 @@ Intermediate results and visualisations are still shown so you can audit the pro
                 self._display_final_results()
 
             logger.info("Query processing completed after clarification")
-            self._update_status("Analysis complete")
+            self.ui.update_status("Analysis complete", type="success")
 
         except Exception as e:
             logger.error(
                 f"Error processing query after clarification: {str(e)}", exc_info=True
             )
-            self._update_status(f"Error: {str(e)}")
+            self.ui.update_status(f"Error: {str(e)}", type="error")
             self.result_pane.object = f"### Error\n\nSorry, there was an error processing your query: {str(e)}"
 
     def _generate_data_samples(self):
@@ -3261,11 +3266,13 @@ Intermediate results and visualisations are still shown so you can audit the pro
     def _save_question(self, event=None):
         """Save the current query to the saved questions list."""
         if not self.query_text:
-            self._update_status("No query to save")
+            self.ui.update_status("No query to save", type="warning")
             return
 
         if not self.question_name:
-            self._update_status("Please enter a name for the question")
+            self.ui.update_status(
+                "Please enter a name for the question", type="warning"
+            )
             return
 
         # Check if a question with this name already exists
@@ -3289,10 +3296,12 @@ Intermediate results and visualisations are still shown so you can audit the pro
         # Save to database using the imported helper
         try:
             upsert_question(self.question_name, self.query_text)
-            self._update_status(f"Question '{self.question_name}' saved")
+            self.ui.update_status(
+                f"Question '{self.question_name}' saved", type="success"
+            )
         except Exception as e:
             logger.error(f"Error saving question to database: {str(e)}", exc_info=True)
-            self._update_status(f"Error saving to database: {str(e)}")
+            self.ui.update_status(f"Error saving to database: {str(e)}", type="error")
 
         # Update the sidebar buttons
         self._update_saved_question_buttons()
@@ -3371,9 +3380,9 @@ Intermediate results and visualisations are still shown so you can audit the pro
         self.analysis_result = {}
 
         # Stop any AI indicator animation if running
-        self._stop_ai_indicator()
+        self.ui.stop_ai_indicator()
 
-        self._update_status("Interface reset")
+        self.ui.update_status("Interface reset", type="info")
 
     # --------------------------------------------------
     # Minimal deterministic fallback when AI code-gen fails
@@ -3764,58 +3773,6 @@ Intermediate results and visualisations are still shown so you can audit the pro
 
         # Update the display
         self.data_sample_pane.objects = sample_panels
-
-    def _is_truly_ambiguous_query(self, intent):
-        """Return True only when the query is genuinely ambiguous and requires clarification.
-
-        This is different from _is_low_confidence_intent which used to trigger clarification
-        for any missing information. Now we only ask clarifying questions when the
-        query is critically ambiguous.
-        """
-        # In offline/test mode we skip clarification to keep smoke tests fast.
-        if not os.getenv("OPENAI_API_KEY"):
-            return False
-
-        # If parsing failed → truly ambiguous
-        if isinstance(intent, dict):
-            return True
-
-        assert isinstance(intent, QueryIntent)
-
-        # Check if the query is entirely unclear about what metric or analysis is wanted
-        if intent.analysis_type == "unknown" and intent.target_field == "unknown":
-            return True
-
-        # Check if multiple interpretations are equally valid (critical ambiguity)
-        raw_query = getattr(intent, "raw_query", "").lower()
-        if not raw_query:
-            return False
-
-        # Ambiguous queries with multiple possible valid interpretations
-        ambiguous_patterns = [
-            "compare",
-            "between",
-            "versus",
-            "vs",
-            "which",
-            "better",
-            "best",
-            "correlation",
-            "relationship between",
-        ]
-
-        # If the query contains ambiguous patterns but doesn't specify what to compare
-        has_ambiguous_pattern = any(
-            pattern in raw_query for pattern in ambiguous_patterns
-        )
-        has_unclear_targets = (
-            not intent.additional_fields and intent.target_field == "unknown"
-        )
-        if has_ambiguous_pattern and has_unclear_targets:
-            return True
-
-        # Default to not asking questions
-        return False
 
     # --------------------------------------------------
     # Feedback helpers

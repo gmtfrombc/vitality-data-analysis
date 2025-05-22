@@ -9,7 +9,16 @@ import holoviews as hv
 import panel as pn
 import param
 import pandas as pd
-import app.db_query as db_query
+from app.db_query import (
+    get_patient_overview,
+    get_patient_scores,
+    get_patient_vitals,
+    get_patient_labs,
+    get_patient_pmh,
+    get_patient_visit_metrics,
+    get_patient_mental_health,
+    get_all_patients,
+)
 import sys
 import logging
 from pathlib import Path
@@ -24,7 +33,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("patient_view")
 
-# Add the parent directory to path so we can import db_query
+# Add the parent directory to path so we can import app.db_query
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 # Initialize rendering backend for HoloViews plots
@@ -58,7 +67,7 @@ class PatientView(param.Parameterized):
     def _update_patient_list(self):
         """Update the list of patients based on active filter"""
         # Get list of all patients
-        patients_df = db_query.get_all_patients()
+        patients_df = get_all_patients()
 
         # Filter for active patients if show_active_only is True
         if self.show_active_only:
@@ -127,7 +136,7 @@ class PatientView(param.Parameterized):
 
             # Update the patient selector with new options
 
-        patients_df = db_query.get_all_patients()
+        patients_df = get_all_patients()
         if self.show_active_only:
             patients_df = patients_df[patients_df["active"] == Active.ACTIVE.value]
 
@@ -175,7 +184,7 @@ class PatientView(param.Parameterized):
         self._filter_buttons = filter_buttons
 
         # Create patient selector with filtered options
-        patients_df = db_query.get_all_patients()
+        patients_df = get_all_patients()
         if self.show_active_only:
             patients_df = patients_df[patients_df["active"] == Active.ACTIVE.value]
 
@@ -288,12 +297,12 @@ class PatientView(param.Parameterized):
     def _update_patient_data(self, *events):
         """Update the patient data when a new patient is selected"""
         logger.debug("Updating patient data for ID: %s", self.selected_patient_id)
-        self.patient_data = db_query.get_patient_overview(self.selected_patient_id)
+        self.patient_data = get_patient_overview(self.selected_patient_id)
         logger.debug("Patient data received: %s", self.patient_data)
 
     def create_scores_tab(self, patient_id):
         logger.debug("Getting scores for patient ID: %s", patient_id)
-        scores_df = db_query.get_patient_scores(patient_id)
+        scores_df = get_patient_scores(patient_id)
         logger.debug("Scores data rows: %s", len(scores_df))
         logger.info(f"Scores data for patient {patient_id}: {len(scores_df)} rows")
 
@@ -302,7 +311,7 @@ class PatientView(param.Parameterized):
             logger.info(f"Sample scores data: {scores_df.head(1).to_dict('records')}")
 
         # Get patient data for program start date
-        patient_data = db_query.get_patient_overview(patient_id)
+        patient_data = get_patient_overview(patient_id)
         program_start_date = patient_data.get("demographics", {}).get(
             "program_start_date", None
         )
@@ -392,7 +401,7 @@ class PatientView(param.Parameterized):
         logger.debug("Getting vitals for patient ID: %s", patient_id)
         # Always get the current ID, not a cached version
         current_id = patient_id
-        vitals_df = db_query.get_patient_vitals(current_id)
+        vitals_df = get_patient_vitals(current_id)
         logger.debug("Vitals data rows: %s", len(vitals_df))
         logger.info(f"Vitals data for patient {patient_id}: {len(vitals_df)} rows")
 
@@ -401,7 +410,7 @@ class PatientView(param.Parameterized):
             logger.info(f"Sample vitals data: {vitals_df.head(1).to_dict('records')}")
 
         # Get patient data for program start date
-        patient_data = db_query.get_patient_overview(patient_id)
+        patient_data = get_patient_overview(patient_id)
         program_start_date = patient_data.get("demographics", {}).get(
             "program_start_date", None
         )
@@ -565,11 +574,11 @@ class PatientView(param.Parameterized):
         logger.debug("Getting mental health data for patient ID: %s", patient_id)
         # Always get the current ID, not a cached version
         current_id = patient_id
-        mh_df = db_query.get_patient_mental_health(current_id)
+        mh_df = get_patient_mental_health(current_id)
         logger.debug("Mental health data rows: %s", len(mh_df))
 
         # Get patient data for program start date
-        patient_data = db_query.get_patient_overview(patient_id)
+        patient_data = get_patient_overview(patient_id)
         program_start_date = patient_data.get("demographics", {}).get(
             "program_start_date", None
         )
@@ -686,11 +695,11 @@ class PatientView(param.Parameterized):
         print(f"Debug: Getting lab data for patient ID: '{patient_id}'")
         # Always get the current ID, not a cached version
         current_id = patient_id
-        labs_df = db_query.get_patient_labs(current_id)
+        labs_df = get_patient_labs(current_id)
         print(f"Debug: Lab data rows: {len(labs_df)}")
 
         # Get patient data for program start date
-        patient_data = db_query.get_patient_overview(patient_id)
+        patient_data = get_patient_overview(patient_id)
         program_start_date = patient_data.get("demographics", {}).get(
             "program_start_date", None
         )
@@ -811,7 +820,7 @@ class PatientView(param.Parameterized):
         """Create tab for Past Medical History data"""
         print(f"Debug: Getting PMH for patient ID: '{patient_id}'")
         current_id = str(patient_id)
-        pmh_df = db_query.get_patient_pmh(current_id)
+        pmh_df = get_patient_pmh(current_id)
 
         if pmh_df.empty:
             return pn.pane.Markdown("No past medical history records available")
@@ -843,7 +852,7 @@ class PatientView(param.Parameterized):
         """Create tab for Visit Metrics data"""
         print(f"Debug: Getting Visit Metrics for patient ID: '{patient_id}'")
         current_id = str(patient_id)
-        visit_df = db_query.get_patient_visit_metrics(current_id)
+        visit_df = get_patient_visit_metrics(current_id)
 
         if visit_df.empty:
             return pn.pane.Markdown("No visit metrics available")
@@ -928,7 +937,7 @@ class PatientView(param.Parameterized):
     def patient_info_card(self, patient_id):
         print(f"Debug: Creating patient info card for patient ID: '{patient_id}'")
         # Always get fresh data
-        patient_data = db_query.get_patient_overview(patient_id)
+        patient_data = get_patient_overview(patient_id)
         demographics = patient_data.get("demographics", {})
         formatted_bools = patient_data.get("formatted_bools", {})
         print(f"Debug: Patient info card data: {demographics}")

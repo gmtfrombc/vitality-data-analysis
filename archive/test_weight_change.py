@@ -1,5 +1,5 @@
 from app.utils.query_intent import QueryIntent, Filter
-from app.ai_helper import _generate_relative_change_analysis_code
+from app.utils.ai.code_generator import generate_code
 from app.utils.sandbox import run_snippet
 import sqlite3
 import pandas as pd
@@ -26,7 +26,7 @@ intent = QueryIntent(
 )
 
 # Generate the code
-code = _generate_relative_change_analysis_code(intent)
+code = generate_code(intent)
 print("Generated code:")
 print(code)
 

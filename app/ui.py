@@ -1,14 +1,16 @@
+from app.utils.assumptions import NO_DATA_MESSAGE
+
 """
 UI Components for Data Analysis Assistant
 
 This module contains all the UI components (widgets, buttons, user inputs) for the
 data analysis assistant, separated from business logic for better maintainability.
 
-The module is designed around a central UIComponents class that provides:
-1. Widget initialization and management
-2. Layout and display functionality
-3. User interface state management
-4. Visual feedback mechanisms
+Example:
+    >>> from app.ui import UIComponents
+    >>> ui = UIComponents()
+    >>> ui.query_input.value = "average BMI of active patients"
+    >>> # Use ui in Panel app or pass to DataAnalysisAssistant
 """
 
 import panel as pn
@@ -33,6 +35,10 @@ class UIComponents(param.Parameterized):
     - User input collection and validation
     - Visual feedback (status messages, animations, etc.)
     - Layout management and component organization
+
+    Example:
+        >>> ui = UIComponents()
+        >>> ui.query_input.value = "average BMI of active patients"
     """
 
     # Core UI widgets that need to be accessible
@@ -89,8 +95,8 @@ class UIComponents(param.Parameterized):
     delete_mock_panel = param.Parameter(
         default=None, doc="Panel for resetting to mock data"
     )
-    _show_narrative_checkbox = param.Parameter(
-        default=None, doc="Checkbox to toggle narrative descriptions"
+    results_view_toggle = param.Parameter(
+        default=None, doc="Toggle between narrative and tabular results view"
     )
     data_sample_pane = param.Parameter(
         default=None, doc="Pane showing sample data relevant to the query"
@@ -218,10 +224,15 @@ class UIComponents(param.Parameterized):
             css_classes=["card", "rounded-card"],
         )
 
-        # Initialize narrative checkbox
-        self._show_narrative_checkbox = pn.widgets.Checkbox(
-            name="Show narrative summary", value=True
+        # Initialize narrative/tabular toggle
+        self.results_view_toggle = pn.widgets.RadioButtonGroup(
+            name="Results View",
+            options=["Narrative", "Tabular"],
+            value="Narrative",
+            button_type="primary",
+            sizing_mode="stretch_width",
         )
+        self._show_narrative_checkbox = self.results_view_toggle
 
         # Initialize feedback components
         self._feedback_up = pn.widgets.Button(
@@ -286,10 +297,24 @@ class UIComponents(param.Parameterized):
             else:
                 indicator.styles = {"color": "gray"}
 
-    def update_status(self, message):
-        """Update the status message display"""
+    def update_status(self, message, type="info"):
+        """
+        Update the status display message with color and emphasis based on type.
+        Args:
+            message: The message to display
+            type: One of "info", "success", "warning", "error"
+        """
+        color_map = {
+            "info": "#2176ff",  # Blue
+            "success": "#28a745",  # Green
+            "warning": "#f0ad4e",  # Orange
+            "error": "#dc3545",  # Red
+        }
+        color = color_map.get(type, "#2176ff")
         if self.status_display is not None:
-            self.status_display.object = f"**Status:** {message}"
+            self.status_display.object = (
+                f"<span style='color:{color};font-weight:bold'>{message}</span>"
+            )
 
     def start_ai_indicator(self, message="AI is thinking..."):
         """Start the AI indicator animation"""
@@ -442,7 +467,7 @@ class UIComponents(param.Parameterized):
                 )
             else:
                 # Default display
-                elements.append(pn.pane.Markdown(f"**Result:** {results}"))
+                elements.append(pn.pane.Markdown(NO_DATA_MESSAGE))
 
         # Update execution pane
         self.execution_pane.objects = elements

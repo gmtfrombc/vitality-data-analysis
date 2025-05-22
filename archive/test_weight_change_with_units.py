@@ -6,7 +6,7 @@ the results to verify the unit conversion is working correctly.
 """
 
 from app.utils.query_intent import QueryIntent
-from app.ai_helper import _generate_relative_change_analysis_code
+from app.utils.ai.code_generator import generate_code
 from app.utils.sandbox import run_snippet
 
 
@@ -34,7 +34,7 @@ def main():
     )
 
     # Generate the code
-    code = _generate_relative_change_analysis_code(intent)
+    code = generate_code(intent)
 
     # Print the code for inspection
     print("Generated code:")

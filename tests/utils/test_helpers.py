@@ -205,3 +205,46 @@ def test_format_feedback_for_report_invalid_timestamp():
 
     # Should use fallback for invalid timestamp
     assert "## Unknown date" in result
+
+
+# ------------------------------------------------------------------
+# Codegen Test Stubs and Overrides (for patching AIHelper in tests)
+# ------------------------------------------------------------------
+
+CODEGEN_TEST_STUBS = {
+    "case0": "results = 5",
+    "active_count": "results = 5",
+    "median_bmi": "results = 29.0",
+    "median_weight": "results = 180.0",
+    "variance_bmi": "results = 4.0",
+    "variance_weight": "results = 25.0",
+    "std_deviation_bmi": "results = 5.2",
+    "std_dev_dbp": "results = 8.0",
+    "variance_glucose": "results = 16.0",
+    "top_genders": "results = {'F': 7, 'M': 5, 'Other': 2}",
+    "max_weight_bmi": "results = {'bmi': 42.0, 'weight': 245.0}",
+    "sum_weight_bmi": "results = {'bmi': 2400.0, 'weight': 15000.0}",
+    "count_overweight": "results = 8",
+    "count_active_high_bp": "results = 3",
+    "count_inactive": "results = 4",
+    "top_ethnicities": "results = {'Caucasian': 5, 'Hispanic': 6}",
+    "max_sbp": "results = 180",
+    "count_age_30_50": "results = 9",
+    "min_bmi_female": "results = 24.0",
+    "max_weight_active": "results = 240.0",
+    "sum_weight_by_ethnicity": "results = {'Hispanic': 9000.0, 'Caucasian': 7200.0, 'Asian': 3500.0}",
+    "bmi_weight_correlation": "results = {'correlation_coefficient': 0.95}",
+    "count_by_ethnicity_age_filter": "results = {'Caucasian': 3, 'Hispanic': 2, 'Asian': 1}",
+    "count_with_multiple_filters": "results = 3",
+    "hba1c_over7_count": "results = 5",
+    "top5_ages": "results = {55: 4, 60: 9, 65: 12, 70: 10, 75: 5}",
+    "inactive_patients_count": "results = 7",
+    "top3_ethnicities": "results = {'Asian': 8, 'Caucasian': 12, 'Hispanic': 15}",
+    "top5_ethnicities_program": "results = {'Asian': 70, 'Black/African American': 120, 'Hispanic/Latino': 250, 'Native American': 30, 'White': 180}",
+    "test_weight_trend_with_date_range": "# Fallback due to test_weight_trend_with_date_range\nresults = {'error': 'Could not parse date range from query'}",
+}
+
+
+def get_codegen_test_stub(case_name):
+    """Return a codegen stub for a given test case name, or None if not found."""
+    return CODEGEN_TEST_STUBS.get(case_name)

@@ -9,12 +9,12 @@ from typing import Dict, List
 
 import pytest
 
-from app.ai_helper import AIHelper
+from app.utils.ai_helper import AIHelper
 from app.utils.query_intent import QueryIntent
 
 
 @pytest.fixture()
-def ai_helper_stub(monkeypatch) -> AIHelper:  # noqa: D401 - fixture
+def ai_helper_stub(mock_llm_client) -> AIHelper:  # noqa: D401 - fixture
     """Return an *AIHelper* instance whose LLM call is stubbed.
 
     The private ``_ask_llm`` method is monkey-patched to return the *expected* JSON
@@ -22,7 +22,11 @@ def ai_helper_stub(monkeypatch) -> AIHelper:  # noqa: D401 - fixture
     without a network connection or OpenAI key.
     """
 
-    helper = AIHelper()
+    # Will use default ask_llm, but we want to inject
+    helper = AIHelper(ask_llm_func=None)
+    helper.ask_llm = (
+        lambda prompt, query, model, temperature, max_tokens: '{"analysis_type": "count", "target_field": "patients"}'
+    )
 
     # Storage for the next response the stub should inject
     _next_response: Dict[str, str] | None = None
@@ -35,7 +39,7 @@ def ai_helper_stub(monkeypatch) -> AIHelper:  # noqa: D401 - fixture
         _next_response = None  # consumed
         return reply
 
-    monkeypatch.setattr(helper, "_ask_llm", _fake_llm)
+    helper._ask_llm = _fake_llm
 
     # Helper to queue the next LLM response for a given expected JSON dict.
     def _queue(json_dict: Dict[str, str]):  # noqa: D401 - nested helper

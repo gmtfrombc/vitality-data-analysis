@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime
 from app.utils.query_intent import QueryIntent, DateRange, Filter
-from app.ai_helper import _build_code_from_intent
+from app.utils.ai.code_generator import generate_code
 
 
 def test_date_range_validation():
@@ -87,7 +87,7 @@ def test_code_generation_with_date_range():
     )
 
     # Generate code
-    code = _build_code_from_intent(intent)
+    code = generate_code(intent)
 
     # Verify the date range appears in the SQL query
     assert code is not None
@@ -100,7 +100,7 @@ def test_code_generation_with_date_range():
         time_range=DateRange(start_date="2025-01-01", end_date="2025-03-31"),
     )
 
-    code = _build_code_from_intent(intent)
+    code = generate_code(intent)
     assert code is not None
     assert "date BETWEEN '2025-01-01' AND '2025-03-31'" in code
 
@@ -118,7 +118,7 @@ def test_filter_date_range_in_code_generation():
     )
 
     # Generate code
-    code = _build_code_from_intent(intent)
+    code = generate_code(intent)
 
     # Verify the date range appears in the SQL query
     assert code is not None

@@ -7,7 +7,7 @@ successfully inside the sandbox environment without any blocked imports.
 import os
 import pytest
 from app.utils.query_intent import QueryIntent, Filter
-from app.ai_helper import _generate_relative_change_analysis_code
+from app.utils.ai.code_generator import generate_code
 from app.utils.sandbox import run_snippet
 
 
@@ -35,7 +35,7 @@ def test_relative_change_code_in_sandbox():
     )
 
     # Generate the weight change analysis code
-    code = _generate_relative_change_analysis_code(intent)
+    code = generate_code(intent)
     assert code is not None, "Failed to generate weight change analysis code"
 
     # Set environment variable to identify this test
@@ -72,7 +72,7 @@ def test_weight_change_no_blocked_imports():
         filters=[Filter(field="gender", value="F")],
     )
 
-    code = _generate_relative_change_analysis_code(intent)
+    code = generate_code(intent)
     assert code is not None, "Failed to generate weight change analysis code"
 
     # Verify no import of copy module

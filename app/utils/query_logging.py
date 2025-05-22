@@ -28,18 +28,15 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
 from typing import Any, List, Dict
+from app.config import get_vp_data_db
 
 # Re-use the same DB path as other helpers to keep everything in one file.
 try:
     from app.utils.saved_questions_db import DB_FILE  # pragma: no cover
 except Exception:  # Fallback when import path changes in tests
-    DB_FILE = os.getenv(
-        "VP_DATA_DB",
-        os.path.join(os.path.dirname(__file__), "..", "..", "patient_data.db"),
-    )
+    DB_FILE = get_vp_data_db()
 
 logger = logging.getLogger(__name__)
 

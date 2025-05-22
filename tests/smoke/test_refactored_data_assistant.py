@@ -23,7 +23,7 @@ def test_refactored_components_basic_flow():
         mock_workflow.return_value = workflow_instance
 
         # Create the assistant with the mocked workflow
-        assistant = DataAnalysisAssistant()
+        assistant = DataAnalysisAssistant(test_mode=True)
 
         # Directly patch the instance methods
         assistant._process_current_stage = MagicMock()
@@ -48,8 +48,10 @@ def test_refactored_components_basic_flow():
         assistant.engine.process_query = MagicMock(return_value=mock_intent)
         assistant.engine.intent = mock_intent
 
-        # Mock is_truly_ambiguous_query to always return False to simplify the test
-        assistant._is_truly_ambiguous_query = MagicMock(return_value=False)
+        # Mock needs_clarification to always return False to simplify the test
+        assistant.clarification_workflow.needs_clarification = MagicMock(
+            return_value=False
+        )
 
         # Execute the query processing
         assistant._process_query()
@@ -143,7 +145,7 @@ def test_refactored_components_with_clarification():
         workflow_instance.current_stage = WorkflowStages.CLARIFYING
 
         # Create the assistant with the mocked workflow
-        assistant = DataAnalysisAssistant()
+        assistant = DataAnalysisAssistant(test_mode=True)
 
         # Mock the UI updates to prevent panel rendering issues in tests
         assistant.ui.update_status = MagicMock()
@@ -169,7 +171,16 @@ def test_refactored_components_with_clarification():
         # Mock the engine methods
         assistant.engine.process_query = MagicMock(return_value=ambiguous_intent)
         assistant.engine.intent = ambiguous_intent
-        assistant.engine.generate_clarifying_questions = MagicMock(
+        # Remove any mock for engine.generate_clarifying_questions
+        # assistant.engine.generate_clarifying_questions = MagicMock(
+        #     return_value=["Which patient groups do you want to compare?"]
+        # )
+
+        # Patch clarification_workflow to always need clarification and return a test question
+        assistant.clarification_workflow.needs_clarification = MagicMock(
+            return_value=True
+        )
+        assistant.clarification_workflow.get_clarifying_questions = MagicMock(
             return_value=["Which patient groups do you want to compare?"]
         )
 
@@ -188,7 +199,7 @@ def test_refactored_components_with_clarification():
         assistant._display_clarifying_questions()
 
         # Verify clarification UI
-        assistant.engine.generate_clarifying_questions.assert_called_once()
+        assistant.clarification_workflow.get_clarifying_questions.assert_called_once()
         assistant.ui.display_clarifying_questions.assert_called_once()
         assistant.ui.update_status.assert_called_with(
             "Please answer the clarifying questions"
