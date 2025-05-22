@@ -154,3 +154,6 @@ def generate_basic_code(intent, parameters=None):
         return code
 
     return None
+
+
+# NO-OP: Trigger CI rebuild for unterminated string fix
