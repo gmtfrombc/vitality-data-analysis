@@ -100,11 +100,11 @@ def load_rules_from_json(json_path: str, db_path: str) -> bool:
                 )
                 logger.info(f"Updated rule: {rule['rule_id']}")
             else:
-                # Insert new rule
+                # Insert new rule with all columns for new schema
                 cursor.execute(
                     """INSERT INTO validation_rules 
-                       (rule_id, description, rule_type, validation_logic, parameters, severity) 
-                       VALUES (?, ?, ?, ?, ?, ?)""",
+                       (rule_id, description, rule_type, validation_logic, parameters, severity, created_at, updated_at, is_active) 
+                       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)""",
                     (
                         rule["rule_id"],
                         rule["description"],
@@ -216,7 +216,7 @@ def _load_rules_from_stream(rules: List[Dict[str, Any]], db_path: str) -> bool:
                 logger.info(f"Updated rule: {rule['rule_id']}")
             else:
                 cursor.execute(
-                    """INSERT INTO validation_rules (rule_id, description, rule_type, validation_logic, parameters, severity) VALUES (?, ?, ?, ?, ?, ?)""",
+                    """INSERT INTO validation_rules (rule_id, description, rule_type, validation_logic, parameters, severity, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)""",
                     (
                         rule["rule_id"],
                         rule["description"],

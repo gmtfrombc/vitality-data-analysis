@@ -4,6 +4,7 @@ import pytest
 import yaml
 
 from app.utils.rule_loader import load_rules_from_yaml
+from app.utils.db_migrations import apply_pending_migrations
 
 
 @pytest.fixture()
@@ -15,17 +16,19 @@ def tmp_db(tmp_path):
         """
         CREATE TABLE validation_rules (
             rule_id TEXT PRIMARY KEY,
-            description TEXT,
-            rule_type TEXT,
-            validation_logic TEXT,
-            parameters TEXT,
-            severity TEXT,
-            is_active INTEGER DEFAULT 1,
-            updated_at TEXT
+            description TEXT NOT NULL,
+            rule_type TEXT NOT NULL,
+            validation_logic TEXT NOT NULL,
+            parameters TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            created_at TIMESTAMP,
+            updated_at TIMESTAMP,
+            is_active INTEGER
         );
         """
     )
     conn.commit()
+    apply_pending_migrations(str(db_path))
     conn.close()
     return str(db_path)
 

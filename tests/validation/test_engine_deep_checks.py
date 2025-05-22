@@ -34,7 +34,6 @@ def test_engine_flags_expected_rules(patient_id, expected_rule, mock_validation_
         conn,
         params=(str(patient_id),),
     )
-
     rule_ids = set(df["rule_id"].tolist())
     conn.close()
 
@@ -58,8 +57,8 @@ def test_allowed_values_check_detects_invalid_value(mock_validation_db):
     cursor = conn.cursor()
     cursor.execute(
         """
-        INSERT INTO patients (id, first_name, last_name, program_start_date, active, provider_visit_count, bmi, weight, provider, health_coach)
-        VALUES (5, 'Bad', 'Active', '2025-01-01', 2, 0, 24.0, 155.0, 'Dr. Bad', 'Coach Bad')
+        INSERT INTO patients (id, first_name, last_name, program_start_date, active, provider_visits, health_coach_visits)
+        VALUES (5, 'Bad', 'Active', '2025-01-01', 2, 0, 0)
         """
     )
     conn.commit()
