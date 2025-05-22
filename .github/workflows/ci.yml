@@ -27,4 +27,4 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure
       - name: Run tests with coverage
         run: |
-          pytest --cov --cov-report=xml --cov-fail-under=60 -q 
+          pytest --cov --cov-report=xml --cov-fail-under=60 -q # Trigger workflow update
