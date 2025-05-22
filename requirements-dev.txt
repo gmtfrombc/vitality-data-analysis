@@ -1,7 +1,6 @@
 pytest
-pytest - cov
-pre - commit
+pytest-cov
+pre-commit
 ruff
 black
-pytest - mock
-pytest-cov
+pytest-mock
