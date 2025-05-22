@@ -32,6 +32,7 @@ def tmp_db():
         """
     )
     conn.close()
+    apply_pending_migrations(tmp.name)
     yield tmp.name
     try:
         os.remove(tmp.name)
@@ -40,7 +41,6 @@ def tmp_db():
 
 
 def test_apply_pending_migrations_adds_columns(tmp_db):
-    apply_pending_migrations(tmp_db)
     conn = sqlite3.connect(tmp_db)
     try:
         cols_patients = {r[1] for r in conn.execute("PRAGMA table_info(patients)")}

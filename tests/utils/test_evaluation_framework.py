@@ -24,6 +24,7 @@ from app.utils.evaluation_framework import (
     _check_clarification,
     _count_metrics,
 )
+from app.utils.db_migrations import apply_pending_migrations
 
 
 @pytest.fixture
@@ -31,50 +32,8 @@ def temp_db():
     """Create a temporary SQLite database for testing."""
     fd, path = tempfile.mkstemp()
     conn = sqlite3.connect(path)
-
-    # Create necessary tables
-    conn.execute(
-        """
-    CREATE TABLE assistant_feedback (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT DEFAULT 'anon',
-        question TEXT NOT NULL,
-        rating TEXT CHECK(rating IN ('up','down')) NOT NULL,
-        comment TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-    """
-    )
-
-    conn.execute(
-        """
-    CREATE TABLE assistant_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        query TEXT NOT NULL,
-        intent_json TEXT,
-        generated_code TEXT,
-        result_summary TEXT,
-        duration_ms INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-    """
-    )
-
-    conn.execute(
-        """
-    CREATE TABLE assistant_metrics (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        metric_type TEXT NOT NULL,
-        metric_name TEXT NOT NULL,
-        metric_value REAL,
-        metric_details TEXT,
-        period_start TEXT,
-        period_end TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(metric_type, metric_name, period_start, period_end)
-    );
-    """
-    )
+    apply_pending_migrations(path)
+    # Remove all CREATE TABLE statements. Only insert data after this point.
 
     # Insert test data
     conn.execute(

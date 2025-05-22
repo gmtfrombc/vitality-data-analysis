@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 import importlib
 
 
@@ -17,10 +16,10 @@ def test_db_path_env_override(tmp_path, monkeypatch, table_name):
     # 1. Build a minimal SQLite file with a single table
     # ------------------------------------------------------------------
     mock_db = tmp_path / "mock.db"
-    conn = sqlite3.connect(mock_db)
-    conn.execute(f"CREATE TABLE {table_name} (id TEXT PRIMARY KEY);")
-    conn.commit()
-    conn.close()
+    # Do not create the table manually; just create the file and run migrations
+    from app.utils.db_migrations import apply_pending_migrations
+
+    apply_pending_migrations(str(mock_db))
 
     # ------------------------------------------------------------------
     # 2. Point code at our mock DB – must happen *before* we import db_query

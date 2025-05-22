@@ -12,6 +12,7 @@ import tempfile
 import pytest
 
 from app.utils import saved_questions_db as sqdb
+from app.utils.db_migrations import apply_pending_migrations
 
 
 def _tmp_db_file() -> str:
@@ -24,6 +25,7 @@ def _tmp_db_file() -> str:
 @pytest.fixture()
 def db_path():
     path = _tmp_db_file()
+    apply_pending_migrations(path)
     yield path
     # Teardown – remove file if it still exists
     try:

@@ -39,7 +39,11 @@ def tmp_json_file(tmp_path: Path):
 
 @pytest.fixture()
 def tmp_db_file(tmp_path: Path):
-    return tmp_path / "test.db"
+    db_file = tmp_path / "test.db"
+    from app.utils.db_migrations import apply_pending_migrations
+
+    apply_pending_migrations(str(db_file))
+    return db_file
 
 
 def _count(conn: sqlite3.Connection, table: str) -> int:

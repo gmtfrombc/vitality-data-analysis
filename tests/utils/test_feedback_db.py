@@ -7,6 +7,7 @@ import tempfile
 import pytest
 
 from app.utils.feedback_db import insert_feedback, load_feedback
+from app.utils.db_migrations import apply_pending_migrations
 
 
 # Use a fresh temporary database for these tests to avoid side effects
@@ -17,6 +18,7 @@ def temp_db():
     try:
         # Close the file descriptor opened by mkstemp
         os.close(fd)
+        apply_pending_migrations(path)
         yield path  # This is the value returned by the fixture
     finally:
         # Cleanup: remove the temp file when test is done
