@@ -79,7 +79,7 @@ def generate_basic_code(intent, parameters=None):
                 f"# SQL equivalent:\n"
                 f"# SELECT {', '.join([f'v.{g}' for g in group_by])}, "
                 f"{', '.join([f'{sql_agg_func}(v.{m})' for m in metrics])
-                   } FROM vitals v"
+                       } FROM vitals v"
             )
             if sql_where_clause:
                 code += f" WHERE {sql_where_clause}"
