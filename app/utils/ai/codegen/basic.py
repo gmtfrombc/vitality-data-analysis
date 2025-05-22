@@ -78,8 +78,7 @@ def generate_basic_code(intent, parameters=None):
             code += (
                 f"# SQL equivalent:\n"
                 f"# SELECT {', '.join([f'v.{g}' for g in group_by])}, "
-                f"{', '.join([f'{sql_agg_func}(v.{m})' for m in metrics])
-                       } FROM vitals v"
+                f"{', '.join([f'{sql_agg_func}(v.{m})' for m in metrics])} FROM vitals v"
             )
             if sql_where_clause:
                 code += f" WHERE {sql_where_clause}"
@@ -112,7 +111,7 @@ def generate_basic_code(intent, parameters=None):
         select_fields = [f"v.{m}" for m in metrics]
         if group_by:
             select_fields += [f"v.{g}" for g in group_by]
-        code += f'sql = """SELECT {', '.join(select_fields)} FROM vitals v'
+        code += f'sql = """SELECT {", ".join(select_fields)} FROM vitals v'
         if sql_where_clause:
             code += f" WHERE {sql_where_clause}"
         code += '"""\n'
@@ -133,8 +132,7 @@ def generate_basic_code(intent, parameters=None):
             code += (
                 f"# SQL equivalent:\n"
                 f"# SELECT {', '.join([f'v.{g}' for g in group_by])}, "
-                f"{', '.join([f'{agg_func.upper()}(v.{m})' for m in metrics])
-                   } FROM vitals v"
+                f"{', '.join([f'{agg_func.upper()}(v.{m})' for m in metrics])} FROM vitals v"
             )
             if sql_where_clause:
                 code += f" WHERE {sql_where_clause}"
