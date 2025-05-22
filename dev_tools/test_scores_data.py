@@ -4,6 +4,20 @@ import sqlite3
 conn = sqlite3.connect("patient_data.db")
 cursor = conn.cursor()
 
+# Ensure 'scores' table exists with correct schema
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS scores (
+        score_id INTEGER PRIMARY KEY,
+        patient_id TEXT NOT NULL,
+        date TEXT,
+        score_type TEXT,
+        score_value INTEGER
+    )
+"""
+)
+conn.commit()
+
 # Get sample score data
 print("Sample data from scores table:")
 cursor.execute("SELECT * FROM scores LIMIT 10")
