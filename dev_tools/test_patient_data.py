@@ -4,6 +4,37 @@ import sqlite3
 conn = sqlite3.connect("patient_data.db")
 cursor = conn.cursor()
 
+# Ensure required tables exist with minimal schema
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS patients (
+        id INTEGER PRIMARY KEY
+    )
+"""
+)
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS vitals (
+        patient_id INTEGER
+    )
+"""
+)
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS mental_health (
+        patient_id INTEGER
+    )
+"""
+)
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS lab_results (
+        patient_id INTEGER
+    )
+"""
+)
+conn.commit()
+
 # Test for patient with ID 2 (from sample data)
 test_id = "2"
 print(f"Testing data for patient ID: {test_id}")
