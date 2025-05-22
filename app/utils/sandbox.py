@@ -535,9 +535,22 @@ def _execute_code_in_process(code: str, queue: multiprocessing.Queue):
         # Patch builtins.__import__
         _builtins.__import__ = _safe_import  # type: ignore[assignment]
 
+        # Ensure db_query alias is present for generated code
+        # Ensure db_query alias is present for generated code
+        # Ensure db_query alias is present for generated code
+        import sys
+
+        try:
+            import app.db_query as db_query
+
+            _EXEC_GLOBALS["db_query"] = db_query
+            # <-- critical for import db_query
+            sys.modules["db_query"] = db_query
+        except ImportError:
+            pass
+
         # Execute the code
         exec(code, _EXEC_GLOBALS, safe_locals)
-
         # Check for results
         if "results" not in safe_locals:
             queue.put(
@@ -822,6 +835,16 @@ def _run_with_signal_timeout(code: str) -> SandboxResult:
         signal.alarm(3)  # three-second cap
 
     try:
+        import sys
+
+        try:
+            import app.db_query as db_query
+
+            _EXEC_GLOBALS["db_query"] = db_query
+            # <-- critical for import db_query
+            sys.modules["db_query"] = db_query
+        except ImportError:
+            pass
         exec(code, _EXEC_GLOBALS, safe_locals)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("Sandbox execution failed: %s", exc, exc_info=True)

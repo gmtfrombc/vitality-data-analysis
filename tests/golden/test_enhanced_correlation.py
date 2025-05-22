@@ -114,7 +114,7 @@ def metrics_df():
     )
 
 
-@patch("db_query.query_dataframe")
+@patch("app.db_query.query_dataframe")
 def test_conditional_correlation_by_gender(mock_query_dataframe, metrics_df):
     """Test conditional correlation analysis by gender."""
     # Create intent for conditional correlation by gender
@@ -158,7 +158,7 @@ def test_conditional_correlation_by_gender(mock_query_dataframe, metrics_df):
     assert abs(correlation_by_group["F"]) > abs(correlation_by_group["M"])
 
 
-@patch("db_query.query_dataframe")
+@patch("app.db_query.query_dataframe")
 def test_time_series_correlation(mock_query_dataframe, metrics_df):
     """Test time-series correlation analysis."""
     # Create intent for time-series correlation
