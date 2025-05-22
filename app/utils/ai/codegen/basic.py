@@ -75,9 +75,12 @@ def generate_basic_code(intent, parameters=None):
                     f"grouped = df.groupby({group_by})[{metrics}].agg('{agg_func}')\n"
                     "results = grouped.reset_index().to_dict(orient='records')\n"
                 )
-            code += "# SQL equivalent:\n"
-            code += f"# SELECT {', '.join([f'v.{g}' for g in group_by])}, {', '.join(
-                [f'{sql_agg_func}(v.{m})' for m in metrics])} FROM vitals v"
+            code += (
+                f"# SQL equivalent:\n"
+                f"# SELECT {', '.join([f'v.{g}' for g in group_by])}, "
+                f"{', '.join([f'{sql_agg_func}(v.{m})' for m in metrics])
+                   } FROM vitals v"
+            )
             if sql_where_clause:
                 code += f" WHERE {sql_where_clause}"
             code += f" GROUP BY {', '.join([f'v.{g}' for g in group_by])}\n"
@@ -127,9 +130,12 @@ def generate_basic_code(intent, parameters=None):
                     f"grouped = df.groupby({group_by})[{metrics}].agg('{agg_func}')  # {agg_func}()\n"
                     "results = grouped.reset_index().to_dict(orient='records')\n"
                 )
-            code += "# SQL equivalent:\n"
-            code += f"# SELECT {', '.join([f'v.{g}' for g in group_by])}, {', '.join(
-                [f'{agg_func.upper()}(v.{m})' for m in metrics])} FROM vitals v"
+            code += (
+                f"# SQL equivalent:\n"
+                f"# SELECT {', '.join([f'v.{g}' for g in group_by])}, "
+                f"{', '.join([f'{agg_func.upper()}(v.{m})' for m in metrics])
+                   } FROM vitals v"
+            )
             if sql_where_clause:
                 code += f" WHERE {sql_where_clause}"
             code += f" GROUP BY {', '.join([f'v.{g}' for g in group_by])}\n"
