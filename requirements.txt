@@ -11,4 +11,5 @@ openai>=0.27.0
 python-dotenv>=1.0.0
 sqlalchemy==2.0.25
 tqdm==4.66.1
-sqlite3_api==2.0.4 
+sqlite3_api==2.0.4
+scipy 
