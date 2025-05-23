@@ -115,6 +115,18 @@ def get_fallback_intent(raw_query: str) -> QueryIntent:
     Fallback intent policy is defined here.
     """
     q = raw_query.lower()
+    # Special case: trend queries about weight
+    if any(kw in q for kw in ["weight trend", "weight trends", "trend of weight"]):
+        return QueryIntent(
+            analysis_type="trend",
+            target_field="weight",
+            filters=[],
+            conditions=[],
+            parameters={"original_query": raw_query, "is_fallback": True},
+            additional_fields=[],
+            group_by=[],
+            time_range=None,
+        )
     if any(kw in q for kw in ["trend", "change", "over time"]):
         return QueryIntent(
             analysis_type="trend",
