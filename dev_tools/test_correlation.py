@@ -27,30 +27,31 @@ def test_correlation_with_real_data():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    # Seed vitals and patients tables if empty
-    cur.execute("SELECT COUNT(*) FROM vitals")
-    if cur.fetchone()[0] == 0:
-        # Insert sample patients
-        cur.execute(
-            "INSERT OR IGNORE INTO patients (id, first_name, last_name, engagement_score) VALUES (1, 'Test', 'Patient', 80)"
-        )
-        cur.execute(
-            "INSERT OR IGNORE INTO patients (id, first_name, last_name, engagement_score) VALUES (2, 'Demo', 'User', 60)"
-        )
-        # Insert sample vitals
-        cur.execute(
-            "INSERT INTO vitals (patient_id, weight, bmi, sbp, dbp) VALUES (1, 180, 25, 120, 80)"
-        )
-        cur.execute(
-            "INSERT INTO vitals (patient_id, weight, bmi, sbp, dbp) VALUES (1, 200, 28, 130, 85)"
-        )
-        cur.execute(
-            "INSERT INTO vitals (patient_id, weight, bmi, sbp, dbp) VALUES (2, 150, 22, 110, 70)"
-        )
-        cur.execute(
-            "INSERT INTO vitals (patient_id, weight, bmi, sbp, dbp) VALUES (2, 170, 24, 115, 75)"
-        )
-        conn.commit()
+    # Always clear and seed vitals and patients tables for test isolation
+    cur.execute("DELETE FROM vitals")
+    cur.execute("DELETE FROM patients")
+    conn.commit()
+    # Insert sample patients
+    cur.execute(
+        "INSERT INTO patients (id, first_name, last_name, engagement_score) VALUES (1, 'Test', 'Patient', 80)"
+    )
+    cur.execute(
+        "INSERT INTO patients (id, first_name, last_name, engagement_score) VALUES (2, 'Demo', 'User', 60)"
+    )
+    # Insert sample vitals
+    cur.execute(
+        "INSERT INTO vitals (patient_id, weight, bmi, sbp, dbp) VALUES (1, 180, 25, 120, 80)"
+    )
+    cur.execute(
+        "INSERT INTO vitals (patient_id, weight, bmi, sbp, dbp) VALUES (1, 200, 28, 130, 85)"
+    )
+    cur.execute(
+        "INSERT INTO vitals (patient_id, weight, bmi, sbp, dbp) VALUES (2, 150, 22, 110, 70)"
+    )
+    cur.execute(
+        "INSERT INTO vitals (patient_id, weight, bmi, sbp, dbp) VALUES (2, 170, 24, 115, 75)"
+    )
+    conn.commit()
 
     # Query for weight-BMI correlation (same table)
     weight_bmi_sql = """
