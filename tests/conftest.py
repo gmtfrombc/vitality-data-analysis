@@ -570,3 +570,9 @@ def mock_llm_client():
         chat = types.SimpleNamespace(completions=MockChatCompletions())
 
     return MockClient()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def set_openai_api_key():
+    """Ensure OPENAI_API_KEY is set for all tests to disable offline mode."""
+    os.environ["OPENAI_API_KEY"] = "test-key"
