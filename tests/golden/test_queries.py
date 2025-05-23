@@ -29,7 +29,7 @@ class TestQueries(unittest.TestCase):
         # Using a temporary settings dictionary to avoid affecting real storage
         self.assistant = DataAnalysisAssistant()
 
-    @patch("app.utils.ai.llm_interface.is_offline_mode", return_value=True)
+    @patch("app.utils.ai.intent_parser.is_offline_mode", return_value=True)
     def test_weight_trend_with_date_range(self, mock_offline_mode):
         """Test querying weight trend within a specific date range."""
         # Note: This test is using a specific date range pattern that should be recognized
