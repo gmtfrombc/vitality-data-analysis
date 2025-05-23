@@ -102,15 +102,23 @@ class AIHelper:
         _original_ask_llm = _intent_parser.ask_llm
         try:
             _response_cache = {}
+            retry_count = {"n": 0}  # Track LLM call attempts
 
             def _patched_ask_llm(prompt: str, q: str, model: str = "gpt-4", **_kw):
                 key = (prompt, q)
                 if key not in _response_cache:
+                    retry_count["n"] += 1
                     _response_cache[key] = self._ask_llm(prompt, q)
                 return _response_cache[key]
 
             _intent_parser.ask_llm = _patched_ask_llm
-            intent_res = _ai_get_query_intent(query)
+            try:
+                intent_res = _ai_get_query_intent(query)
+            except IntentParseError as e:
+                logger.error(
+                    f"Intent parse error after {retry_count['n']} attempts: {e}"
+                )
+                raise
 
             # Ensure old test compatibility (sometimes returns dict)
             if (
@@ -119,6 +127,13 @@ class AIHelper:
             ):
                 intent_res = intent_res.model_dump()
                 intent_res.setdefault("analysis_type", "unknown")
+
+            # Attach retry count for test introspection (if needed)
+            intent_res._llm_retry_count = (
+                retry_count["n"]
+                if hasattr(intent_res, "__setattr__")
+                else retry_count["n"]
+            )
 
             return intent_res
         except LLMError as e:
