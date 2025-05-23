@@ -265,7 +265,9 @@ class DataAnalysisAssistant(param.Parameterized):
 
     def _update_display_after_toggle(self, *_):
         """Update display when results view toggle changes"""
-        self.show_narrative = self.ui.results_view_toggle.value
+        self.show_narrative = (
+            "Narrative" if self.ui.results_view_toggle.value else "Tabular"
+        )
         print(f"[DEBUG] Results view toggled to: {self.show_narrative}")
         self._display_final_results()
 
@@ -680,8 +682,8 @@ class DataAnalysisAssistant(param.Parameterized):
             # Create delete button
             del_btn = pn.widgets.Button(
                 name="🗑️",
-                button_type="danger",
-                width=40,
+                button_type="light",
+                width=30,
                 height=28,
                 margin=(0, 0, 0, 5),
                 disabled=not has_questions,
@@ -858,8 +860,8 @@ class DataAnalysisAssistant(param.Parameterized):
             self.ui.continue_button, sizing_mode="stretch_width", align="start"
         )
 
-        # Save/reset panel
-        save_reset_panel = pn.Column(
+        # Save panel (without reset button)
+        save_panel = pn.Column(
             pn.Row(
                 pn.pane.Markdown("### Save This Question", margin=(0, 0, 5, 0)),
                 sizing_mode="stretch_width",
@@ -870,16 +872,17 @@ class DataAnalysisAssistant(param.Parameterized):
                 self.save_button,
                 sizing_mode="stretch_width",
             ),
-            pn.Spacer(height=15),
-            pn.Row(
-                pn.Spacer(),
-                self.ui.reset_button,
-                sizing_mode="stretch_width",
-                align="end",
-            ),
             sizing_mode="stretch_width",
             styles={"background": "#f8f9fa", "border-radius": "5px"},
             css_classes=["card", "rounded-card"],
+        )
+
+        # Reset button panel (moved to bottom)
+        reset_panel = pn.Row(
+            pn.Spacer(),
+            self.ui.reset_button,
+            sizing_mode="stretch_width",
+            align="end",
         )
 
         # Create tabs for results, code, and visualizations
@@ -911,7 +914,7 @@ class DataAnalysisAssistant(param.Parameterized):
             workflow_content,
             workflow_nav_buttons,
             pn.layout.Divider(),
-            save_reset_panel,
+            save_panel,
             sizing_mode="stretch_width",
             css_classes=["workflow-panel"],
         )
@@ -928,12 +931,15 @@ class DataAnalysisAssistant(param.Parameterized):
             self.ui.ai_status_row_ref,
             pn.layout.Divider(),
             result_tabs,
+            pn.Spacer(height=20),
+            reset_panel,
             sizing_mode="stretch_width",
         )
 
         # Simplified layout with responsive sizes
         layout = pn.Row(
             pn.Column(sidebar, width=300),
+            pn.Spacer(width=30),
             pn.Column(main_content_area, margin=(0, 10, 0, 20)),
             sizing_mode="stretch_width",
         )

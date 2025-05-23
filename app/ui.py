@@ -225,11 +225,9 @@ class UIComponents(param.Parameterized):
         )
 
         # Initialize narrative/tabular toggle
-        self.results_view_toggle = pn.widgets.RadioButtonGroup(
-            name="Results View",
-            options=["Narrative", "Tabular"],
-            value="Narrative",
-            button_type="primary",
+        self.results_view_toggle = pn.widgets.Checkbox(
+            name="ChatGPT Narrative",
+            value=True,
             sizing_mode="stretch_width",
         )
         self._show_narrative_checkbox = self.results_view_toggle
@@ -377,20 +375,82 @@ class UIComponents(param.Parameterized):
 
     def display_generated_code(self, code):
         """Display the generated code"""
-        self.code_display.objects = [
-            pn.pane.Markdown("### Generated Python Code"),
-            pn.pane.Markdown(
-                "The following code will be executed to analyze your query:"
-            ),
-            pn.widgets.CodeEditor(
-                value=code,
-                language="python",
-                sizing_mode="stretch_width",
-                theme="chrome",
-                readonly=True,
-                height=300,
-            ),
+        # Extract SQL from code comments
+        sql_statements = self._extract_sql_from_code(code)
+
+        if sql_statements:
+            self.code_display.objects = [
+                pn.pane.Markdown("### SQL Statement"),
+                pn.pane.Markdown(
+                    "The following SQL statement is used for the analysis:"
+                ),
+                pn.widgets.CodeEditor(
+                    value=sql_statements,
+                    language="sql",
+                    sizing_mode="stretch_width",
+                    theme="chrome",
+                    readonly=True,
+                    height=200,
+                ),
+                pn.pane.Markdown("### Generated Python Code"),
+                pn.pane.Markdown(
+                    "The following Python code executes the SQL and processes results:"
+                ),
+                pn.widgets.CodeEditor(
+                    value=code,
+                    language="python",
+                    sizing_mode="stretch_width",
+                    theme="chrome",
+                    readonly=True,
+                    height=300,
+                ),
+            ]
+        else:
+            self.code_display.objects = [
+                pn.pane.Markdown("### Generated Python Code"),
+                pn.pane.Markdown(
+                    "The following code will be executed to analyze your query:"
+                ),
+                pn.widgets.CodeEditor(
+                    value=code,
+                    language="python",
+                    sizing_mode="stretch_width",
+                    theme="chrome",
+                    readonly=True,
+                    height=300,
+                ),
+            ]
+
+    def _extract_sql_from_code(self, code):
+        """Extract SQL statements from code comments"""
+        import re
+
+        # Look for SQL in various comment patterns
+        patterns = [
+            # Multi-line SQL comments
+            r"# SQL equivalent:\s*\n# (.+?)(?=\n#|\n[^#]|\Z)",
+            # Single-line SQL comments
+            r"# SQL equivalent:\s*(.+?)(?=\n|$)",
+            # SQL in string variables
+            r'sql\s*=\s*["\']([^"\']+)["\']',
+            r'_sql\s*=\s*["\']([^"\']+)["\']',  # _sql variables
+            r'sql\s*=\s*"""([^"]+)"""',  # Triple-quoted SQL
+            r'_sql\s*=\s*"""([^"]+)"""',  # Triple-quoted _sql
         ]
+
+        sql_statements = []
+        for pattern in patterns:
+            matches = re.findall(pattern, code, re.MULTILINE | re.DOTALL)
+            for match in matches:
+                if isinstance(match, tuple):
+                    match = match[0] if match else ""
+                # Clean up the SQL
+                sql = match.strip().replace("\\n", "\n").replace('\\"', '"')
+                if sql and "SELECT" in sql.upper():
+                    sql_statements.append(sql)
+
+        # Return the first valid SQL statement found
+        return sql_statements[0] if sql_statements else ""
 
     def display_execution_results(self, results, visualizations):
         """Display execution results"""
@@ -429,31 +489,25 @@ class UIComponents(param.Parameterized):
             if isinstance(results, (int, float)):
                 elements.append(pn.pane.Markdown(f"**Result:** {results}"))
             elif isinstance(results, dict):
-                # Remove visualization from display for cleaner output
+                # Remove unnecessary fields from display
                 display_results = {
-                    k: v for k, v in results.items() if k != "visualization"
+                    k: v
+                    for k, v in results.items()
+                    if k not in ["visualization", "execution_time", "index", "bmi_mean"]
                 }
 
-                # Show execution time if available
-                if "execution_time" in display_results:
-                    elements.append(
-                        pn.pane.Markdown(
-                            f"**Execution Time:** {display_results['execution_time']:.2f} seconds"
-                        )
-                    )
-
-                # Show other results
-                import pandas as pd
-
-                elements.append(
-                    pn.widgets.Tabulator(
-                        pd.DataFrame([display_results]),
-                        pagination="local",
-                        page_size=5,
-                        sizing_mode="stretch_width",
-                        theme="default",
-                    )
-                )
+                # If there are meaningful results to show, display them
+                if display_results:
+                    if len(display_results) == 1:
+                        # Single result - display as simple text
+                        key, value = next(iter(display_results.items()))
+                        elements.append(pn.pane.Markdown(f"**{key.title()}:** {value}"))
+                    else:
+                        # Multiple results - display as formatted text
+                        for key, value in display_results.items():
+                            elements.append(
+                                pn.pane.Markdown(f"**{key.title()}:** {value}")
+                            )
             elif hasattr(results, "to_dict"):
                 # Handle DataFrame-like objects
                 elements.append(
@@ -473,11 +527,14 @@ class UIComponents(param.Parameterized):
         self.execution_pane.objects = elements
         self.execution_pane.visible = True
 
-        # Update visualization pane if visualizations exist
+        # Update visualization pane if visualizations exist or can be created
         if visualizations:
             combined_viz = combine_visualizations(visualizations)
             if combined_viz:
                 self.visualization_pane.objects = [combined_viz]
+        else:
+            # Try to create visualization from results
+            self._create_visualization_from_results(results)
 
     def add_refine_option(self, formatted_results, process_refinement_callback):
         """Add refine option to formatted results"""
@@ -538,6 +595,116 @@ class UIComponents(param.Parameterized):
         formatted_results.append(refine_section)
 
         return formatted_results
+
+    def _create_visualization_from_results(self, results):
+        """Create visualization from results if appropriate"""
+        try:
+            from app.utils.plots import (
+                bar_chart,
+                html_bar_chart,
+            )
+            import pandas as pd
+
+            viz_elements = []
+            # Handle dictionary results that might be suitable for visualization
+            if isinstance(results, dict):
+                # Remove non-data fields
+                data_dict = {
+                    k: v
+                    for k, v in results.items()
+                    if k
+                    not in [
+                        "visualization",
+                        "execution_time",
+                        "index",
+                        "bmi_mean",
+                        "error",
+                    ]
+                    and isinstance(v, (int, float, str))
+                    and v is not None
+                }
+                # If we have multiple numeric values, create a bar chart
+                if len(data_dict) > 1:
+                    numeric_data = {
+                        k: v
+                        for k, v in data_dict.items()
+                        if isinstance(v, (int, float))
+                    }
+                    if len(numeric_data) > 1:
+                        try:
+                            df = pd.DataFrame(
+                                list(numeric_data.items()),
+                                columns=["Category", "Value"],
+                            )
+                            chart = bar_chart(
+                                df,
+                                x="Category",
+                                y="Value",
+                                title="Analysis Results",
+                                height=300,
+                                width=500,
+                            )
+                            viz_elements.append(chart)
+                        except Exception:
+                            try:
+                                categories = list(numeric_data.keys())
+                                values = list(numeric_data.values())
+                                html_chart = html_bar_chart(
+                                    categories, values, title="Analysis Results"
+                                )
+                                viz_elements.append(html_chart)
+                            except Exception:
+                                pass
+                # For single values, create a simple display
+                elif len(data_dict) == 1:
+                    key, value = next(iter(data_dict.items()))
+                    if isinstance(value, (int, float)):
+                        import panel as pn
+
+                        html = f"""
+                        <div style='display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;padding:20px;'>
+                            <span style='font-size:48px;font-weight:bold;color:#2c3e50'>{value}</span>
+                            <span style='font-size:16px;color:#7f8c8d'>{key.replace('_', ' ').title()}</span>
+                        </div>
+                        """
+                        viz_elements.append(pn.pane.HTML(html))
+            # Handle DataFrame results
+            elif hasattr(results, "to_dict") and hasattr(results, "columns"):
+                try:
+                    numeric_cols = results.select_dtypes(include=["number"]).columns
+                    if len(numeric_cols) > 0 and len(results) > 1:
+                        first_numeric = numeric_cols[0]
+                        chart = bar_chart(
+                            results.reset_index(),
+                            x=(
+                                "index"
+                                if "index" in results.columns
+                                else results.index.name or "Category"
+                            ),
+                            y=first_numeric,
+                            title=f'{first_numeric.replace("_", " ").title()} by Category',
+                            height=300,
+                            width=500,
+                        )
+                        viz_elements.append(chart)
+                except Exception:
+                    pass
+            if viz_elements:
+                self.visualization_pane.objects = viz_elements
+            else:
+                import panel as pn
+
+                self.visualization_pane.objects = [
+                    pn.pane.Markdown(
+                        "*No visualization available for this analysis type*"
+                    )
+                ]
+        except Exception:
+            import panel as pn
+
+            self.visualization_pane.objects = [
+                pn.pane.Markdown("*Visualization could not be generated*")
+            ]
 
 
 def get_stage_emoji(stage):
