@@ -7,6 +7,7 @@ and run against a real (but small) test database.
 import unittest
 from datetime import date, datetime
 from app.data_assistant import DataAnalysisAssistant
+import os
 
 # Import both ai and get_data_schema
 from app.utils.schema import get_data_schema
@@ -20,6 +21,8 @@ class TestQueries(unittest.TestCase):
 
     def setUp(self):
         """Set up a DataAnalysisAssistant for testing."""
+        # Force offline mode for LLM calls to avoid real API usage during tests
+        os.environ["OFFLINE_MODE"] = "1"
         # Using a temporary settings dictionary to avoid affecting real storage
         self.assistant = DataAnalysisAssistant()
 
