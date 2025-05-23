@@ -26,7 +26,7 @@ Pattern: When a new default or fallback is required, add the constant and a help
 function if logic is needed. Document the new assumption both in this reference and
 in its docstring.
 """
-from app.utils.query_intent import QueryIntent
+from app.utils.query_intent import QueryIntent, DateRange
 
 NO_DATA_MESSAGE = (
     "No data available for the selected criteria."  # Centralized missing data message
