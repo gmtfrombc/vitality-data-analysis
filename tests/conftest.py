@@ -1,10 +1,11 @@
-import app.utils.ai.llm_interface
-import pytest
-import pandas as _pd
-import os
-from pathlib import Path
 import sys
+from pathlib import Path
+import pandas as _pd
+import pytest
 import types
+import os
+
+os.environ.setdefault("OPENAI_API_KEY", "dummy-test-key")
 
 # ------------------------------------------------------------------
 # Speed-hack: avoid importing the full plotting stack (holoviews/bokeh)
@@ -189,11 +190,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 # Force offline mode for ai_helper by removing OPENAI_API_KEY before modules import
-os.environ.pop("OPENAI_API_KEY", None)
+# os.environ.pop("OPENAI_API_KEY", None)
 
 # You can add shared fixtures here later if needed
 
-os.environ.setdefault("OPENAI_API_KEY", "dummy-test-key")
+# os.environ.setdefault("OPENAI_API_KEY", "dummy-test-key")
 
 try:
     from app import ai_helper as _ai_helper
@@ -526,27 +527,28 @@ results = {'2025-01': 180.5, '2025-02': 179.3}
 # ------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def patch_llm(monkeypatch):
-    def dummy_ask_llm(prompt, query, model="gpt-4", temperature=0.3, max_tokens=500):
-        # Simulate LLM returning invalid JSON for tests that expect failure
-        if "fail" in str(prompt).lower() or "fail" in str(query).lower():
-            return ""
-        import json
-
-        dummy_intent = {
-            "analysis_type": "count",
-            "target_field": "patients",
-            "filters": [],
-            "conditions": [],
-            "parameters": {},
-            "additional_fields": [],
-            "group_by": [],
-            "time_range": {"start_date": "2025-01-01", "end_date": "2025-03-31"},
-        }
-        return json.dumps(dummy_intent)
-
-    monkeypatch.setattr(app.utils.ai.llm_interface, "ask_llm", dummy_ask_llm)
+# Comment out the global patch_llm fixture to allow test-specific stubs
+# @pytest.fixture(autouse=True)
+# def patch_llm(monkeypatch):
+#     def dummy_ask_llm(prompt, query, model="gpt-4", temperature=0.3, max_tokens=500):
+#         # Simulate LLM returning invalid JSON for tests that expect failure
+#         if "fail" in str(prompt).lower() or "fail" in str(query).lower():
+#             return ""
+#         import json
+#
+#         dummy_intent = {
+#             "analysis_type": "count",
+#             "target_field": "patients",
+#             "filters": [],
+#             "conditions": [],
+#             "parameters": {},
+#             "additional_fields": [],
+#             "group_by": [],
+#             "time_range": {"start_date": "2025-01-01", "end_date": "2025-03-31"},
+#         }
+#         return json.dumps(dummy_intent)
+#
+#     monkeypatch.setattr(app.utils.ai.llm_interface, "ask_llm", dummy_ask_llm)
 
 
 @pytest.fixture
