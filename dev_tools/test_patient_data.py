@@ -35,6 +35,26 @@ cursor.execute(
 )
 conn.commit()
 
+# Seed tables if empty for patient ID 2
+test_id = "2"
+# Patients
+cursor.execute("SELECT COUNT(*) FROM patients WHERE id = ?", (test_id,))
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO patients (id) VALUES (?)", (test_id,))
+# Vitals
+cursor.execute("SELECT COUNT(*) FROM vitals WHERE patient_id = ?", (test_id,))
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO vitals (patient_id) VALUES (?)", (test_id,))
+# Mental health
+cursor.execute("SELECT COUNT(*) FROM mental_health WHERE patient_id = ?", (test_id,))
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO mental_health (patient_id) VALUES (?)", (test_id,))
+# Lab results
+cursor.execute("SELECT COUNT(*) FROM lab_results WHERE patient_id = ?", (test_id,))
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO lab_results (patient_id) VALUES (?)", (test_id,))
+conn.commit()
+
 # Test for patient with ID 2 (from sample data)
 test_id = "2"
 print(f"Testing data for patient ID: {test_id}")
