@@ -8,7 +8,9 @@ cursor = conn.cursor()
 cursor.execute(
     """
     CREATE TABLE IF NOT EXISTS patients (
-        id INTEGER PRIMARY KEY
+        id INTEGER PRIMARY KEY,
+        first_name TEXT,
+        last_name TEXT
     )
 """
 )
@@ -40,7 +42,10 @@ test_id = "2"
 # Patients
 cursor.execute("SELECT COUNT(*) FROM patients WHERE id = ?", (test_id,))
 if cursor.fetchone()[0] == 0:
-    cursor.execute("INSERT INTO patients (id) VALUES (?)", (test_id,))
+    cursor.execute(
+        "INSERT INTO patients (id, first_name, last_name) VALUES (?, ?, ?)",
+        (test_id, "Test", "Patient"),
+    )
 # Vitals
 cursor.execute("SELECT COUNT(*) FROM vitals WHERE patient_id = ?", (test_id,))
 if cursor.fetchone()[0] == 0:
