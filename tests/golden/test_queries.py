@@ -2,6 +2,7 @@ from app.utils.ai_helper import AIHelper
 from app.utils.schema import get_data_schema
 from app.data_assistant import DataAnalysisAssistant
 from datetime import date, datetime
+from unittest.mock import patch
 import unittest
 import os
 
@@ -28,7 +29,8 @@ class TestQueries(unittest.TestCase):
         # Using a temporary settings dictionary to avoid affecting real storage
         self.assistant = DataAnalysisAssistant()
 
-    def test_weight_trend_with_date_range(self):
+    @patch("app.utils.ai.llm_interface.is_offline_mode", return_value=True)
+    def test_weight_trend_with_date_range(self, mock_offline_mode):
         """Test querying weight trend within a specific date range."""
         # Note: This test is using a specific date range pattern that should be recognized
         query = "Show me patient weight trends from January to March 2025"
