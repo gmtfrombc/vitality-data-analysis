@@ -37,15 +37,28 @@ Below is a snapshot of the current work streams:
 
 ### Project Structure (TL;DR)
 ```
-app/            # UI & pages (Panel)
-  └── pages/
-       ├── data_assistant.py  # main assistant
-       └── patient_view.py    # patient view page
-app/ai_helper.py             # GPT-4 integration helper
- data/                       # local assets & saved_questions.json
- tests/                      # pytest suite (WIP)
-run.py                       # Panel server entry-point
+app/                # All core application code (UI, logic, helpers)
+  ├── pages/        # Panel pages (dashboard, patient view, etc.)
+  ├── utils/        # AI, codegen, validation, helpers
+  ├── components/   # UI components
+  ├── assets/       # Static assets (if any)
+  └── ...           # Other app modules (engine.py, ui.py, etc.)
+data/               # Local assets, reference data, and saved_questions.json
+archive/            # Legacy, abandoned, or experimental files (for audit/history)
+docs/               # Technical documentation, design, and summaries
+  └── README_SELF_TEST.md  # Self-test system documentation
+logs/               # Test and run logs (auto-rotated)
+migrations/         # DB migration scripts (if any)
+tests/              # All test code (mirrors app/ structure)
+requirements.txt    # Main dependencies
+run.py              # Main entry point (Panel server)
+pyproject.toml      # Project metadata/config
+.venv/              # Virtual environment (not versioned)
+.env                # Environment variables (not versioned)
+.gitignore          # Git ignore rules
 ```
+
+> **Note:** All legacy, abandoned, or experimental files are now in the `archive/` folder at the project root. See that folder for historical scripts, prototypes, and compatibility shims.
 
 ### Commit & Branching
 * **main** = deployable head. Feature work: `feat/<topic>`; experiments: `exp/<topic>`.
@@ -59,6 +72,28 @@ run.py                       # Panel server entry-point
 * Hardened execution sandbox blocks unsafe imports & network access.
 * Persist user queries (minus PII) for audit.
 * Post-process model output with rule-based checks before execution.
+
+## AI Assistant Module Structure
+
+The AI Assistant is now fully modularized for clarity and maintainability. Key modules:
+
+- **UI Construction:** `app/pages/ai_assistant_ui.py` – All Panel layout, widgets, and user interaction logic.
+- **State Management & Persistence:** `app/utils/query_state.py` – Handles loading, saving, and updating saved queries (file-based, extensible).
+- **Prompt Engineering:** `app/utils/prompt_engineering.py` – Centralizes prompt construction, schema formatting, and example query logic for LLMs.
+- **Main Logic:** `app/pages/ai_assistant.py` – Orchestrates the assistant, connects UI, state, and prompt modules, and manages LLM client.
+
+### Where to Add/Change Logic
+- **UI changes:** Edit or extend `ai_assistant_ui.py`.
+- **Prompt templates/examples:** Update `prompt_engineering.py`.
+- **Saved query logic:** Update `query_state.py`.
+- **Business logic or LLM integration:** Update `ai_assistant.py`.
+
+### Example Usage
+To add a new prompt example or schema rule, edit `prompt_engineering.py` and use the helper functions in `ai_assistant.py`.
+
+To persist a new type of query state, extend the interface in `query_state.py`.
+
+All modules are documented with Google-style docstrings for onboarding and maintenance.
 
 ---
 ## ⏱️ Quick Start (Local)
@@ -121,6 +156,7 @@ Key project documents:
 - [ROADMAP_CANVAS.md](ROADMAP_CANVAS.md) - Project roadmap and milestones
 - [CHANGELOG.md](CHANGELOG.md) - History of changes and feature additions
 - [docs/](docs/) - Technical documentation and development summaries
+- [docs/README_SELF_TEST.md](docs/README_SELF_TEST.md) - Self-test system documentation
 
 ## Developer Workflow
 
@@ -221,4 +257,114 @@ When providing support or suggesting implementation approaches, please:
 1. Avoid overly technical jargon without explanation
 2. Break down complex tasks into smaller, manageable steps
 3. Explain the "why" behind technical decisions
-4. Provide concrete examples where possible 
+4. Provide concrete examples where possible
+
+## Post-Refactor Highlights
+
+- **Modular Architecture:** All core logic is now split into clear modules (see `app/utils/ai/`, `app/engine.py`, `app/ui.py`).
+- **Dependency Injection:** LLM, DB, and config are injected via constructors/parameters for testability and flexibility.
+- **Centralized Error Handling:** All errors are raised and handled via shared exception types in `app/errors.py`.
+- **Test Isolation:** All tests use fixtures/mocks; no monkeypatching of private helpers. LLM and DB calls are stubbed or injected for offline/CI runs.
+- **Legacy Code Quarantined:** All legacy/compatibility code is moved to `archive/`.
+
+## Architecture & API
+
+See [docs/design/ARCHITECTURE.md](docs/design/ARCHITECTURE.md) for a full architecture diagram, module map, and dependency flow.
+
+**Main Public APIs:**
+- `AIHelper` (`app/utils/ai_helper.py`): LLM orchestration, codegen, narrative.
+- `AnalysisEngine` (`app/engine.py`): Query → intent → code → results pipeline.
+- `UIComponents` (`app/ui.py`): All Panel widgets and UI state. 
+
+## Configuration & Environment Variables
+
+All configuration is centralized in `app/config.py` and can be set via environment variables or a `.env` file (loaded automatically).
+
+**Key Environment Variables:**
+
+| Variable                | Default                        | Purpose                                  |
+|-------------------------|--------------------------------|------------------------------------------|
+| `OPENAI_API_KEY`        | (none)                         | OpenAI API key for LLM features          |
+| `OPENAI_MODEL`          | `gpt-4`                        | LLM model name (override if needed)      |
+| `OFFLINE_MODE`          | `0`                            | Set to `1` to disable LLM calls          |
+| `LOG_LEVEL`             | `INFO`                         | Logging verbosity                        |
+| `DATABASE_URL`          | `sqlite:///patient_data.db`    | Main DB URL (SQLAlchemy, future use)     |
+| `MH_DB_PATH`            | `patient_data.db`              | SQLite DB path for legacy helpers        |
+| `VP_DATA_DB`            | `../patient_data.db`           | Shared DB for saved questions/logs       |
+| `SMTP_SERVER`           | (none)                         | Email/notification server (optional)     |
+| `SMTP_PORT`             | `587`                          | Email server port                        |
+| `SMTP_USER`             | (none)                         | Email username                           |
+| `SMTP_PASSWORD`         | (none)                         | Email password                           |
+| `NOTIFICATION_SENDER`   | `no-reply@example.com`         | Sender address for notifications         |
+| `ONLINE_LLM_TESTS`      | `0`                            | Enable online LLM tests in CI            |
+| `HAPPY_PATH_TEST`       | `false`                        | Enable happy-path test mode              |
+| `WEIGHT_CHANGE_SANDBOX_TEST` | `false`                   | Enable weight change sandbox test        |
+| `DEBUG`                 | `0`                            | Set to `1` or `true` for debug logging   |
+
+**How to set environment variables:**
+- Create a `.env` file in the project root (see `.env.example` for template)
+- Or set variables in your shell before running the app:
+  ```bash
+  export OPENAI_API_KEY="sk-..."
+  export OFFLINE_MODE=1
+  ```
+
+**Overriding in Production/Test:**
+- All config can be overridden by setting environment variables at runtime (e.g., via Docker, CI, or cloud deployment).
+- For test isolation, use `OFFLINE_MODE=1` to disable LLM calls and run with deterministic templates/mocks.
+
+See `app/config.py` for the full list and logic. 
+
+## Testing Strategy & Dependency Injection
+
+All tests use **pytest** and are located in the `tests/` directory, mirroring the main module structure. Coverage is tracked and must remain ≥ 60% on `main`.
+
+**Key Testing Practices:**
+- **Fixtures & Mocks:** All external dependencies (LLM, DB) are injected or mocked using pytest fixtures (see `tests/conftest.py`).
+- **No Monkeypatching of Private Helpers:** Only public interfaces are patched or injected; private helpers are not monkeypatched.
+- **Offline/Online Modes:**
+  - By default, tests run in **offline mode** (`OFFLINE_MODE=1`), stubbing all LLM calls and DB access for deterministic, fast tests.
+  - To run integration tests with real LLM calls, set `ONLINE_LLM_TESTS=1` and provide a valid `OPENAI_API_KEY`.
+- **Dependency Injection:**
+  - All major classes (e.g., `AIHelper`, `AnalysisEngine`) accept dependencies (LLM, DB, config) via constructor or parameters, enabling easy test injection.
+  - Example: `AIHelper(ask_llm_func=my_stub_llm)`
+- **Test Coverage:**
+  - Run `pytest --cov --cov-branch` to check coverage. CI will fail if coverage drops below the threshold.
+- **Test Isolation:**
+  - Each test is isolated and does not depend on global state. Temporary DBs and mock clients are used as needed.
+
+**How to Run Tests:**
+```bash
+# Fast smoke tests (offline, < 5s)
+pytest -m smoke
+
+# Full suite with coverage (offline)
+pytest --cov --cov-branch
+
+# Run integration tests with real LLM (requires API key)
+export ONLINE_LLM_TESTS=1
+export OPENAI_API_KEY=sk-...
+pytest -m integration
+```
+
+See `tests/conftest.py` for fixture details and `tests/` for example usage of dependency injection in tests. 
+
+## Migration & Legacy Code
+
+- All legacy and compatibility code has been moved to the `archive/` directory (see `archive/ai_helper_old.py`, etc.).
+- No active code paths reference legacy modules; all imports and usage have been updated to canonical modules.
+- Migration was performed in parallel with a feature branch and/or feature flags, with all tests passing before removal of legacy code.
+- See `docs/refactoring/ai_helper_refactor/ai_helper_sprint_checklist.md` for the full migration checklist and audit trail.
+- Project is now ready for handoff, onboarding, or further migration. 
+
+## Final Status & Known Risks
+
+- **All tests are green** (see `docs/refactoring/ai_helper_refactor/final_test_results.txt` for full results).
+- **Test coverage:** 63% (above the 60% threshold).
+- **No active legacy code**; all legacy/compatibility code is quarantined in `archive/`.
+- **No known critical risks.**
+- **TODOs:**
+  - Some modules (e.g., advanced correlation, fallback codegen, narrative builder) have low coverage and could be further tested.
+  - Continue to monitor for edge cases in LLM intent parsing and code generation.
+
+**Project is ready for handoff, onboarding, or migration.** 

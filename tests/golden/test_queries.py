@@ -1,15 +1,24 @@
+from app.utils.ai_helper import AIHelper
+from app.utils.schema import get_data_schema
+from app.data_assistant import DataAnalysisAssistant
+from datetime import date, datetime
+from unittest.mock import patch
+import unittest
+import os
+
+# Set OFFLINE_MODE before any imports to guarantee LLM calls are skipped in all test environments
+os.environ["OFFLINE_MODE"] = "1"
+
 """Test natural language queries with a focus on functionality.
 
 Unlike the golden query harness, these tests use a real DataAnalysisAssistant
 and run against a real (but small) test database.
 """
 
-import unittest
-from datetime import date, datetime
-from app.pages.data_assistant import DataAnalysisAssistant
 
 # Import both ai and get_data_schema
-from app.ai_helper import ai, get_data_schema
+
+ai = AIHelper()
 
 
 class TestQueries(unittest.TestCase):
@@ -20,7 +29,8 @@ class TestQueries(unittest.TestCase):
         # Using a temporary settings dictionary to avoid affecting real storage
         self.assistant = DataAnalysisAssistant()
 
-    def test_weight_trend_with_date_range(self):
+    @patch("app.utils.ai.intent_parser.is_offline_mode", return_value=True)
+    def test_weight_trend_with_date_range(self, mock_offline_mode):
         """Test querying weight trend within a specific date range."""
         # Note: This test is using a specific date range pattern that should be recognized
         query = "Show me patient weight trends from January to March 2025"
@@ -41,10 +51,16 @@ class TestQueries(unittest.TestCase):
             self.assertEqual(intent.target_field, "weight")
             self.assertIsNotNone(intent.time_range)
             if intent.time_range:
-                # Start with January 2025
-                self.assertEqual(intent.time_range.start_date[:7], "2025-01")
-                # End with March 2025
-                self.assertEqual(intent.time_range.end_date[:7], "2025-03")
+                start = intent.time_range.start_date
+                end = intent.time_range.end_date
+                if isinstance(start, str):
+                    self.assertEqual(start[:7], "2025-01")
+                else:
+                    self.assertEqual(start.strftime("%Y-%m"), "2025-01")
+                if isinstance(end, str):
+                    self.assertEqual(end[:7], "2025-03")
+                else:
+                    self.assertEqual(end.strftime("%Y-%m"), "2025-03")
 
         # Check that the date range is correctly interpreted
         if isinstance(intent, dict):

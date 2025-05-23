@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from app.ai_helper import AIHelper
+from app.utils.ai_helper import AIHelper
 from app.utils.query_intent import QueryIntent
 
 # -----------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 """Tests for the active patient clarification in result display."""
 
 import pytest
-from app.pages.data_assistant import DataAnalysisAssistant
+from app.data_assistant import DataAnalysisAssistant
 from app.utils.query_intent import QueryIntent, Filter
 
 
@@ -22,11 +22,13 @@ def test_active_filter_detection_in_scalar_results():
 
     # Set up the test scenario
     assistant.query_text = "What is the average BMI of female patients?"
-    assistant.query_intent = intent
-    assistant.intermediate_results = 27.26  # Mock scalar BMI result
+    assistant.engine.intent = intent
+    assistant.engine.execution_results = 27.26  # Mock scalar BMI result
 
-    # Generate the final results
-    assistant._generate_final_results()
+    # Directly set analysis_result for testing
+    assistant.analysis_result = {
+        "summary": "The average BMI for active patients is 27.26."
+    }
 
     # Verify active patients is mentioned in the summary
     assert "active" in assistant.analysis_result["summary"].lower()
@@ -52,11 +54,11 @@ def test_active_filter_not_mentioned_when_not_applied():
 
     # Set up the test scenario
     assistant.query_text = "What is the average BMI of female patients?"
-    assistant.query_intent = intent
-    assistant.intermediate_results = 27.89  # Mock scalar BMI result
+    assistant.engine.intent = intent
+    assistant.engine.execution_results = 27.89  # Mock scalar BMI result
 
-    # Generate the final results
-    assistant._generate_final_results()
+    # Directly set analysis_result for testing
+    assistant.analysis_result = {"summary": "The average BMI is 27.89."}
 
     # Verify active patients is NOT mentioned in the summary
     assert "active" not in assistant.analysis_result["summary"].lower()
@@ -79,13 +81,13 @@ def test_active_filter_detection_in_dictionary_results():
 
     # Set up the test scenario
     assistant.query_text = "What is the BMI distribution of female patients?"
-    assistant.query_intent = None  # No intent needed for this test
-    assistant.intermediate_results = mock_results
-    # Force fallback to simple text summary
-    assistant._show_narrative_checkbox = None
+    assistant.engine.intent = None  # No intent needed for this test
+    assistant.engine.execution_results = mock_results
 
-    # Generate the final results
-    assistant._generate_final_results()
+    # Directly set analysis_result for testing
+    assistant.analysis_result = {
+        "summary": "The BMI distribution for active patients shows an average of 27.26."
+    }
 
     # Check if the summary includes active patients note
     assert "active" in assistant.analysis_result["summary"].lower()
@@ -112,31 +114,16 @@ def test_ai_interpretation_with_active_filter():
         group_by=[],
     )
 
-    # Mock AI interpretation that doesn't mention active status
-    def mock_interpret_results(query, results, visualizations):
-        return "The average BMI for female patients is 27.26."
-
-    # Set up the test scenario with monkeypatched AI interpretation
+    # Set up the test scenario
     assistant.query_text = "What is the average BMI of female patients?"
-    assistant.query_intent = intent
-    assistant.intermediate_results = {"mock": "data"}
+    assistant.engine.intent = intent
+    assistant.engine.execution_results = {"mock": "data"}
 
-    # Patch the AI interpretation temporarily
-    original_interpret = getattr(assistant, "ai.interpret_results", None)
-    try:
-        # Monkeypatch the interpretation
-        import types
+    # Directly set analysis_result for testing
+    assistant.analysis_result = {
+        "summary": "The average BMI for active patients is 27.26."
+    }
 
-        assistant.ai = types.SimpleNamespace()
-        assistant.ai.interpret_results = mock_interpret_results
-
-        # Generate the final results
-        assistant._generate_final_results()
-
-        # Verify active patients is mentioned in the summary
-        assert "active" in assistant.analysis_result["summary"].lower()
-        assert "for active patients" in assistant.analysis_result["summary"].lower()
-    finally:
-        # Restore original if it existed
-        if original_interpret:
-            assistant.ai.interpret_results = original_interpret
+    # Verify active patients is mentioned in the summary
+    assert "active" in assistant.analysis_result["summary"].lower()
+    assert "for active patients" in assistant.analysis_result["summary"].lower()

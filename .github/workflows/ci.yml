@@ -20,9 +20,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
+      - name: Install pre-commit
+        run: pip install pre-commit
       - name: Run pre-commit
         run: |
           pre-commit run --all-files --show-diff-on-failure
+      - name: Apply DB migrations
+        run: python scripts/apply_migrations.py --db patient_data.db
+      - name: Debug DB schema
+        run: python scripts/check_schema.py
       - name: Run tests with coverage
         run: |
-          pytest --cov --cov-report=xml --cov-fail-under=60 -q 
+          pytest --cov --cov-report=xml --cov-fail-under=60 -q # Trigger workflow update

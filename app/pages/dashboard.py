@@ -7,11 +7,11 @@ This page provides an overview of patient data and key metrics.
 import panel as pn
 import param
 import pandas as pd
-import app.db_query as db_query
+from app.db_query import get_program_stats, find_patients_with_abnormal_values
 import sys
 from pathlib import Path
 
-# Add the parent directory to path so we can import db_query
+# Add the parent directory to path so we can import app.db_query
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 # Third-party imports
@@ -24,7 +24,7 @@ class Dashboard(param.Parameterized):
 
     def __init__(self, **params):
         super().__init__(**params)
-        self.stats = db_query.get_program_stats()
+        self.stats = get_program_stats()
 
     def view(self):
         """Generate the dashboard view"""
@@ -89,7 +89,7 @@ class Dashboard(param.Parameterized):
         )
 
         # Find patients with abnormal values
-        abnormal_df = db_query.find_patients_with_abnormal_values()
+        abnormal_df = find_patients_with_abnormal_values()
         abnormal_table = pn.widgets.Tabulator(
             abnormal_df, pagination="remote", page_size=5, sizing_mode="stretch_width"
         )
@@ -127,7 +127,7 @@ class Dashboard(param.Parameterized):
 
     def _refresh_data(self, event=None):
         """Refresh the data displayed in the dashboard"""
-        self.stats = db_query.get_program_stats()
+        self.stats = get_program_stats()
 
 
 def dashboard_page():

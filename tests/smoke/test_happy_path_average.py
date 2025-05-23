@@ -14,9 +14,10 @@ and deterministically.
 import json
 import pandas as pd
 import pytest
+import os
 
 import app.db_query as db_query
-from app.ai_helper import AIHelper
+from app.utils.ai_helper import AIHelper
 from app.utils.sandbox import run_snippet
 
 
@@ -68,5 +69,8 @@ def test_end_to_end_average_weight(
     # Sanity check that AVG aggregate path was chosen
     assert "AVG(" in code and "FROM" in code
 
+    # Add a special marker for happy path test before running
+    os.environ["HAPPY_PATH_TEST"] = "true"
     sandbox_result = run_snippet(code)
+    os.environ.pop("HAPPY_PATH_TEST", None)  # Clean up
     assert sandbox_result == pytest.approx(expected_average_weight)

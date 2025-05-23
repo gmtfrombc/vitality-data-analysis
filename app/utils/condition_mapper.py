@@ -15,6 +15,9 @@ import json
 import re
 from openai import OpenAI
 
+from app.reference_ranges import REFERENCE_RANGES
+from app.config import OPENAI_API_KEY
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,11 +34,12 @@ class ConditionMapping:
 class ConditionMapper:
     """Maps clinical condition terms to ICD-10 codes and vice versa."""
 
-    def __init__(self, mapping_file: str = None):
-        """Initialize the condition mapper with the specified mapping file.
+    def __init__(self, mapping_file: str = None, llm_client=None):
+        """Initialize the condition mapper with the specified mapping file and optional LLM client.
 
         Args:
             mapping_file: Path to the YAML mapping file. If None, uses the default path.
+            llm_client: Optional OpenAI client for AI-powered lookups.
         """
         if mapping_file is None:
             # Default path is relative to this file
@@ -43,13 +47,14 @@ class ConditionMapper:
             mapping_file = os.path.join(current_dir, "condition_mappings.yaml")
 
         self.load_mappings(mapping_file)
-        self.client = None
-        try:
-            # Initialize OpenAI client if API key is available
-            if os.getenv("OPENAI_API_KEY"):
-                self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        except Exception as e:
-            logger.warning(f"Failed to initialize OpenAI client: {e}")
+        self.client = llm_client
+        if self.client is None:
+            try:
+                # Initialize OpenAI client if API key is available
+                if OPENAI_API_KEY:
+                    self.client = OpenAI(api_key=OPENAI_API_KEY)
+            except Exception as e:
+                logger.warning(f"Failed to initialize OpenAI client: {e}")
 
     def load_mappings(self, mapping_file: str) -> None:
         """Load condition mappings from a YAML file.
@@ -138,13 +143,14 @@ class ConditionMapper:
         bmi_match = re.search(r"bmi\s+(\d+\.?\d*)", term_lower)
         if bmi_match:
             bmi_value = float(bmi_match.group(1))
-            if bmi_value >= 40:
+
+            if bmi_value >= REFERENCE_RANGES["bmi_morbid_obesity"]:
                 # Morbid obesity for BMI >= 40
                 return "morbid_obesity"
-            elif bmi_value >= 30:
+            elif bmi_value >= REFERENCE_RANGES["bmi_obese"]:
                 # Regular obesity for BMI 30-39.9
                 return "obesity"
-            elif bmi_value >= 25:
+            elif bmi_value >= REFERENCE_RANGES["bmi_overweight"]:
                 # Overweight for BMI 25-29.9
                 return "overweight"
 

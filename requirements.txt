@@ -7,8 +7,9 @@ matplotlib>=3.7.0
 hvplot>=0.8.0
 holoviews>=1.17.0
 pyarrow>=14.0.0
-sqlite3>=0.0.0
 openai>=0.27.0
 python-dotenv>=1.0.0
 sqlalchemy==2.0.25
-tqdm==4.66.1 
+tqdm==4.66.1
+sqlite3_api==2.0.4
+scipy 

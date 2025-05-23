@@ -157,12 +157,10 @@ class TestDerivedAttributes:
         assert get_patient_status(Active.INACTIVE.value, 7) == "Program Completer"
         assert get_patient_status(Active.INACTIVE.value, 10) == "Program Completer"
 
-        # Discontinued
-        assert get_patient_status(Active.INACTIVE.value, 5) == "Inactive (Discontinued)"
-        assert get_patient_status(Active.INACTIVE.value, 0) == "Inactive (Discontinued)"
-        assert (
-            get_patient_status(Active.INACTIVE.value, None) == "Inactive (Discontinued)"
-        )
+        # Program dropout
+        assert get_patient_status(Active.INACTIVE.value, 5) == "Program Dropout"
+        assert get_patient_status(Active.INACTIVE.value, 0) == "Program Dropout"
+        assert get_patient_status(Active.INACTIVE.value, None) == "Program Dropout"
 
 
 class TestHelperFunctions:

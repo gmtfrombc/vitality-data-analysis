@@ -4,6 +4,34 @@ import sqlite3
 conn = sqlite3.connect("patient_data.db")
 cursor = conn.cursor()
 
+# Ensure 'scores' table exists with correct schema
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS scores (
+        score_id INTEGER PRIMARY KEY,
+        patient_id TEXT NOT NULL,
+        date TEXT,
+        score_type TEXT,
+        score_value INTEGER
+    )
+"""
+)
+conn.commit()
+
+# Seed scores table if empty
+cursor.execute("SELECT COUNT(*) FROM scores")
+if cursor.fetchone()[0] == 0:
+    cursor.execute(
+        "INSERT INTO scores (patient_id, date, score_type, score_value) VALUES ('1', '2024-01-01', 'PHQ', 10)"
+    )
+    cursor.execute(
+        "INSERT INTO scores (patient_id, date, score_type, score_value) VALUES ('2', '2024-01-02', 'GAD', 8)"
+    )
+    cursor.execute(
+        "INSERT INTO scores (patient_id, date, score_type, score_value) VALUES ('2', '2024-01-03', 'PHQ', 12)"
+    )
+    conn.commit()
+
 # Get sample score data
 print("Sample data from scores table:")
 cursor.execute("SELECT * FROM scores LIMIT 10")

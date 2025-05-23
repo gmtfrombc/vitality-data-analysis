@@ -17,7 +17,8 @@ import os
 from app.utils.plots import scatter_plot
 from app.utils.metrics import correlation_coefficient
 from app.utils.query_intent import QueryIntent
-from app.ai_helper import _build_code_from_intent
+from app.utils.ai.code_generator import generate_code
+from app.utils.db_migrations import apply_pending_migrations
 
 # Create a fixture for a temporary SQLite database with test data
 
@@ -31,61 +32,31 @@ def temp_db():
 
     # Connect to the database
     conn = sqlite3.connect(db_path)
+    apply_pending_migrations(db_path)
 
-    # Create tables and insert test data
-    conn.execute(
-        """
-    CREATE TABLE patients (
-        id TEXT PRIMARY KEY,
-        gender TEXT,
-        age INTEGER,
-        ethnicity TEXT,
-        active INTEGER
-    )
-    """
-    )
-
-    conn.execute(
-        """
-    CREATE TABLE vitals (
-        vital_id INTEGER PRIMARY KEY,
-        patient_id TEXT,
-        date TEXT,
-        weight REAL,
-        height REAL,
-        bmi REAL,
-        sbp INTEGER,
-        dbp INTEGER,
-        FOREIGN KEY (patient_id) REFERENCES patients (id)
-    )
-    """
-    )
-
-    # Insert test patients
+    # Insert test patients (all required columns)
     patients = [
-        ("p1", "M", 45, "Caucasian", 1),
-        ("p2", "F", 38, "Hispanic", 1),
-        ("p3", "M", 52, "Asian", 1),
-        ("p4", "F", 29, "Caucasian", 1),
-        ("p5", "M", 61, "Hispanic", 0),
+        ("p1", "Alice", "Smith", "F", "Caucasian", 1),
+        ("p2", "Bob", "Jones", "M", "Hispanic", 1),
+        ("p3", "Charlie", "Lee", "M", "Asian", 1),
+        ("p4", "Diana", "Brown", "F", "Caucasian", 1),
+        ("p5", "Evan", "Martinez", "M", "Hispanic", 0),
     ]
-
     conn.executemany(
-        "INSERT INTO patients (id, gender, age, ethnicity, active) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO patients (id, first_name, last_name, gender, ethnicity, active) VALUES (?, ?, ?, ?, ?, ?)",
         patients,
     )
 
     # Insert vitals with strong BMI-weight correlation
     vitals = [
-        (1, "p1", "2025-01-01", 90.7, 175, 29.6, 120, 80),
-        (2, "p2", "2025-01-02", 65.3, 160, 25.5, 118, 75),
-        (3, "p3", "2025-01-03", 88.0, 172, 29.7, 135, 85),
-        (4, "p4", "2025-01-04", 58.1, 158, 23.3, 110, 70),
-        (5, "p5", "2025-01-05", 97.5, 168, 34.5, 145, 90),
+        ("p1", "2025-01-01", 90.7, 175, 29.6, 120, 80),
+        ("p2", "2025-01-02", 65.3, 160, 25.5, 118, 75),
+        ("p3", "2025-01-03", 88.0, 172, 29.7, 135, 85),
+        ("p4", "2025-01-04", 58.1, 158, 23.3, 110, 70),
+        ("p5", "2025-01-05", 97.5, 168, 34.5, 145, 90),
     ]
-
     conn.executemany(
-        "INSERT INTO vitals (vital_id, patient_id, date, weight, height, bmi, sbp, dbp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO vitals (patient_id, date, weight, height, bmi, sbp, dbp) VALUES (?, ?, ?, ?, ?, ?, ?)",
         vitals,
     )
 
@@ -160,7 +131,7 @@ def test_build_code_from_intent_correlation():
     )
 
     # Generate code
-    code = _build_code_from_intent(intent)
+    code = generate_code(intent)
 
     # Check code components
     assert code is not None
@@ -214,14 +185,16 @@ def test_cross_table_correlation(temp_db):
 
     conn = sqlite3.connect(temp_db)
 
-    # Execute SQL query to get weight and age data
+    # Execute SQL query to get weight and patient_id data
     sql = """
-    SELECT v.weight AS metric_x, p.age AS metric_y
+    SELECT v.weight AS metric_x, p.id AS patient_id
     FROM vitals v
     JOIN patients p ON v.patient_id = p.id
     """
-
     df = pd.read_sql_query(sql, conn)
+    # Add synthetic age column for test purposes
+    age_map = {"p1": 45, "p2": 38, "p3": 52, "p4": 29, "p5": 61}
+    df["metric_y"] = df["patient_id"].map(age_map)
     conn.close()
 
     # Calculate correlation

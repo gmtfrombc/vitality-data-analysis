@@ -1,11 +1,21 @@
 import sqlite3
+import sys
 
 # Connect to the database
 conn = sqlite3.connect("patient_data.db")
+cursor = conn.cursor()
+
+# Pre-check: Ensure 'patients' table exists
+cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='patients'")
+if not cursor.fetchone():
+    print(
+        "ERROR: 'patients' table does not exist. Did you run migrations?\nRun 'python scripts/apply_migrations.py --db patient_data.db' before this script."
+    )
+    conn.close()
+    sys.exit(1)
 
 # Check patients table schema
 print("Patients Table Schema:")
-cursor = conn.cursor()
 cursor.execute("PRAGMA table_info(patients)")
 patients_columns = cursor.fetchall()
 for col in patients_columns:
@@ -13,7 +23,6 @@ for col in patients_columns:
 
 # Check vitals table schema
 print("\nVitals Table Schema:")
-cursor = conn.cursor()
 cursor.execute("PRAGMA table_info(vitals)")
 vitals_columns = cursor.fetchall()
 for col in vitals_columns:

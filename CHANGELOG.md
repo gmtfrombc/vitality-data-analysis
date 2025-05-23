@@ -1,3 +1,78 @@
+## 2025-05-20 (Latest)
+### Fixed
+- **DataAssistant Module Consolidation**: Completed the consolidation of the DataAssistant implementation by removing the legacy `app/pages/data_assistant.py` file. All code now uses the refactored modular architecture, eliminating duplication and potential inconsistencies. Test suite (350+ tests) fully migrated to use the new module structure.
+
+## 2025-05-30
+### Added
+- **HTML-Based Visualizations**: Implemented fallback visualization system using HTML/CSS for the Data Analysis Assistant that works within sandbox security restrictions. Created HTML-based implementations for histograms, bar charts, and line charts.
+- **Graceful Visualization Fallbacks**: Added multi-level fallback system in visualization components to ensure charts display under various conditions, with HTML/CSS alternatives when standard plotting libraries are unavailable.
+- **Enhanced Result Formatting**: Updated analysis_helpers.py to better handle different result types and automatically generate appropriate visualizations with improved error handling.
+- **Visualization Testing Framework**: Created comprehensive test suite and testing guide to verify HTML-based visualization functionality.
+
+### Known Issues
+- **Visualization Tab Integration**: HTML-based visualizations not yet appearing in the Data Assistant tab's "Visualization" section; further UI integration work needed.
+
+## 2025-05-29
+### Enhanced
+- **Gap Report Toggle UI**: Improved user experience by replacing Toggle widget with Switch widget in the Gap Report interface, providing a more intuitive control element that follows modern UI design patterns.
+- **UI Component Optimization**: Adjusted sizing and styles of the Switch component to enhance visual clarity and reduce UI clutter.
+- **Test Suite Adaptation**: Updated test_integrated_gap_report.py to check for Switch components rather than Toggle components, maintaining test coverage.
+
+## 2025-05-28
+### Fixed
+- **Gap Report UI Enhancement**: Fixed UI issues with the integrated Gap Report by replacing the large radio button group with a compact toggle switch. Improved styling of toggle container with proper background, padding, and colored text indicators for selected report type.
+- **Test Compatibility**: Updated test_view_layout to correctly identify toggle component instead of radio button groups.
+- **Documentation**: Created comprehensive summary in docs/refactoring/summary_gap_analysis_001.md documenting UI improvements and next steps.
+
+## 2025-05-26
+### Added
+- **Silent Dropout Detection**: Implemented feature to identify patients who are marked as active but show no clinical activity (lab tests, vitals, mental health screenings) within a configurable time period.
+- **Clinical Inactivity Reporting**: Created utility functions in `app/utils/silent_dropout.py` to identify potentially inactive patients based on real clinical data points.
+- **Interactive Management UI**: Built Panel-based page with configurable parameters (inactivity threshold, minimum activity count) and patient management tools including CSV export and bulk status updates.
+- **Enhanced Activity Metrics**: Added activity count tracking and color-coded indicators to visualize dropout severity.
+
+## 2025-05-15
+### Refactored
+- **Completed AI Helper Modularization**: Refactored the monolithic ai_helper.py into six specialized modules: llm_interface.py, prompt_templates.py, intent_parser.py, code_generator.py, clarifier.py, and narrative_builder.py. Improved code organization, testability, and maintainability while preserving all functionality.
+- **Modular AI Helper Architecture**: Completed modular refactoring of the AI helper system into specialized utility modules with improved test coverage. Fixed import errors in sandbox environment for relative change analysis and fallback intent handling.
+- **Results Formatter**: Added new utility for properly formatting test results and handling visualization errors gracefully. Ensures compatibility between scalar and dictionary return types.
+- **Sandbox Test Enhancements**: Improved sandbox testing infrastructure with better detection of test cases and proper handling of visualization libraries.
+
+## 2025-05-25
+### Added
+- **Program Dropout Definition**: Implemented formal definition of program dropouts (inactive patients with <7 provider visits) to complement existing program completers definition in `app/utils/patient_attributes.py`.
+- **Enhanced Patient Status**: Updated `get_patient_status()` to explicitly identify program dropouts for improved reporting and data analysis.
+- **Natural Language Support**: Added "program_dropout" to canonical fields and various synonym aliases (e.g., "dropped out", "didn't finish") to `query_intent.py`.
+- **Data Assistant Integration**: Enhanced `data_assistant.py` with dropout detection to support natural language queries about patients who discontinued the program.
+- **Analysis Tools**: Created standalone analysis script (`analyze_program_completion.py`) for comprehensive comparison between completers and dropouts.
+- **Test Coverage**: Added tests to verify dropout functionality and ensure consistent patient status classification.
+
+## 2025-05-24
+### Refactored
+- **Modular Data Assistant Architecture**: Split monolithic data_assistant.py into five specialized modules (data_assistant.py, ui.py, engine.py, analysis_helpers.py, state.py) for improved maintainability and testability while preserving all functionality.
+
+## 2025-05-23
+### Enhanced
+- **Added weight change unit conversion**: Modified `_generate_relative_change_analysis_code` to convert weight change values from kilograms to pounds (lbs) and explicitly specify the unit in results. This makes the weight change analysis consistent with the rest of the application which uses imperial units.
+
+## 2025-05-22
+### Fixed
+- **Removed `copy` dependency from weight-change analysis**: Refactored `_generate_relative_change_analysis_code` to use Pydantic's `model_copy(deep=True)` instead of `copy.deepcopy`, resolving the sandbox import block issue that previously caused runtime failures when executing weight-change queries.
+
+### Added
+- **Sandbox regression test for weight-change analysis**: Added `tests/sandbox/test_weight_change_sandbox.py` with integration tests that verify generated weight-change code can run successfully in the sandbox environment without blocked imports.
+
+## 2025-05-22 (Earlier)
+### Fixed
+- **Sandbox import block for `copy` module**: Discovered that recently-added weight-change analysis code (`_generate_relative_change_analysis_code`) imports the standard‐library `copy` module, which is disallowed inside the sandbox execution environment. Although the unit-test suite passes, live queries fall back to the rule-engine with a warning (`Import of 'copy' is blocked in sandbox`).
+
+### Added
+- **Weight-change intent & analysis improvements**: Heuristic in `query_intent.py` now forces `analysis_type="change"` when weight-loss terminology is detected, and `_generate_relative_change_analysis_code` supplies default baseline (±30 days) and follow-up (5–7 months) windows when the user omits explicit ranges.
+
+### Next Steps
+- Refactor weight-change code to avoid `copy` import (use `model_copy(deep=True)` or manual dict duplication), **or** whitelist `copy` in sandbox guard.
+- Extend integration tests to execute generated code inside the sandbox stub to catch blocked imports early.
+
 ## 2025-05-20
 ### Fixed
 - **DateRange attribute access fix**: Resolved an issue in `data_assistant.py` where the system was attempting to access `.start` and `.end` attributes on DateRange objects, but the actual attribute names are `.start_date` and `.end_date`. This fix ensures correct time range display in the assumptions section of query results.
@@ -14,6 +89,8 @@
 ## 2025-05-15
 ### Fixed
 - **Identified condition mapping issue**: Discovered SQL generation issue for obesity-related conditions where the system attempts to use BMI filtering instead of proper ICD-10 code mapping. See docs/summary_testing_015.md for detailed analysis and recommendations.
+- **AI Helper SQL for BMI/Joins**: Corrected SQL generation in `app/ai_helper.py` for queries involving BMI to use the `vitals` table and appropriate joins, resolving "no such column: bmi" errors.
+- **AI Helper Patient Counting**: Ensured `COUNT(DISTINCT patients.id)` is used in `app/ai_helper.py` for patient count queries, especially when joins are involved or `target_field` is `patient_id`, preventing inflated counts and resolving incorrect answers (e.g., for "How many active female patients have a BMI under 30?").
 
 ### Known Issues
 - AI-generated SQL for obesity-related queries fails with "no such column: score_type" error due to improper condition handling in code generation.
@@ -217,3 +294,12 @@ Use reverse-chronological order (latest on top).
 ✨ Feature: Support for "program completer / finisher" attribute recognised across query intent, code-gen, and offline rule-engine (#WS-1)
 🧪 Test: Added `test_query_intent_program_completer.py` ensuring synonym mapping to canonical `program_completer`
 🧩 Refactor: DataAnalysisAssistant offline path now counts and analyses program completers (BMI, cohort size)
+🧪 Test: Added unit tests for Data-Quality Gaps feature (`app/utils/gap_report.py`) covering various conditions, aliases, and SQL generation logic.
+✨ Feature: Added program dropout definition and analysis capabilities for better program outcome tracking
+✅ Add: Implemented `is_program_dropout()` function to complement existing `is_program_completer()`
+⚡️ Enhancement: Updated `get_patient_status()` to explicitly identify program dropouts in patient data
+✅ Add: Added canonical field and synonym mapping for "program_dropout" in query intent system
+⚡️ Enhancement: Implemented natural language query support for dropout-related questions
+🧪 Test: Added tests to verify dropout functionality and patient status classification
+📚 Docs: Added summary_testing_031.md documenting program completer vs dropout analysis implementation
+📚 Docs: Added summary_testing_013.md with step-by-step plan to resume patient-attribute enum refactor (Session 013)

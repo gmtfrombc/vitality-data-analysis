@@ -4,6 +4,62 @@ import sqlite3
 conn = sqlite3.connect("patient_data.db")
 cursor = conn.cursor()
 
+# Ensure required tables exist with minimal schema
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS patients (
+        id INTEGER PRIMARY KEY,
+        first_name TEXT,
+        last_name TEXT
+    )
+"""
+)
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS vitals (
+        patient_id INTEGER
+    )
+"""
+)
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS mental_health (
+        patient_id INTEGER
+    )
+"""
+)
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS lab_results (
+        patient_id INTEGER
+    )
+"""
+)
+conn.commit()
+
+# Seed tables if empty for patient ID 2
+test_id = "2"
+# Patients
+cursor.execute("SELECT COUNT(*) FROM patients WHERE id = ?", (test_id,))
+if cursor.fetchone()[0] == 0:
+    cursor.execute(
+        "INSERT INTO patients (id, first_name, last_name) VALUES (?, ?, ?)",
+        (test_id, "Test", "Patient"),
+    )
+# Vitals
+cursor.execute("SELECT COUNT(*) FROM vitals WHERE patient_id = ?", (test_id,))
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO vitals (patient_id) VALUES (?)", (test_id,))
+# Mental health
+cursor.execute("SELECT COUNT(*) FROM mental_health WHERE patient_id = ?", (test_id,))
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO mental_health (patient_id) VALUES (?)", (test_id,))
+# Lab results
+cursor.execute("SELECT COUNT(*) FROM lab_results WHERE patient_id = ?", (test_id,))
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO lab_results (patient_id) VALUES (?)", (test_id,))
+conn.commit()
+
 # Test for patient with ID 2 (from sample data)
 test_id = "2"
 print(f"Testing data for patient ID: {test_id}")

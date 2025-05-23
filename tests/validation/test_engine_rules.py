@@ -6,6 +6,7 @@ import pytest
 
 from app.utils.validation_engine import ValidationEngine
 from app.utils.rule_loader import initialize_validation_rules
+from app.utils.db_migrations import apply_pending_migrations
 
 
 @pytest.fixture(scope="module")
@@ -14,59 +15,19 @@ def mock_validation_db(tmp_path_factory):
     db_path = tmp_path_factory.mktemp("mock_db") / "validation_test.db"
 
     conn = sqlite3.connect(db_path)
+    apply_pending_migrations(str(db_path))
     cursor = conn.cursor()
 
-    # --------------------------------------------------
-    # Minimal schema (subset of production)
-    # --------------------------------------------------
-    cursor.executescript(
+    # Add provider and health_coach columns to patients table for test
+    cursor.execute(
         """
-        CREATE TABLE patients (
-            id INTEGER PRIMARY KEY,
-            first_name TEXT,
-            last_name TEXT,
-            program_start_date TEXT,
-            program_end_date TEXT,
-            active INTEGER,
-            provider_visit_count INTEGER,
-            bmi REAL,
-            weight REAL,
-            provider TEXT,
-            health_coach TEXT
-        );
-
-        CREATE TABLE vitals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id INTEGER,
-            date TEXT,
-            weight REAL,
-            bmi REAL,
-            systolic_pressure REAL,
-            diastolic_pressure REAL
-        );
-
-        /* Validation-system tables */
-        CREATE TABLE validation_rules (
-            rule_id TEXT PRIMARY KEY,
-            description TEXT,
-            rule_type TEXT,
-            validation_logic TEXT,
-            parameters TEXT,
-            severity TEXT,
-            is_active INTEGER DEFAULT 1,
-            updated_at TEXT
-        );
-
-        CREATE TABLE validation_results (
-            result_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            rule_id TEXT,
-            patient_id TEXT,
-            field_name TEXT,
-            issue_description TEXT,
-            status TEXT,
-            detected_at TEXT
-        );
+        ALTER TABLE patients ADD COLUMN provider TEXT;
+    """
+    )
+    cursor.execute(
         """
+        ALTER TABLE patients ADD COLUMN health_coach TEXT;
+    """
     )
 
     # --------------------------------------------------
@@ -81,11 +42,10 @@ def mock_validation_db(tmp_path_factory):
             "program_start_date": "2025-01-01",
             "program_end_date": "2025-04-01",
             "active": 1,
-            "provider_visit_count": 3,
-            "bmi": 24.0,
-            "weight": 160.0,
-            "provider": "Dr. Clean",
-            "health_coach": "Coach Clean",
+            "provider_visits": 3,
+            "health_coach_visits": 2,
+            "provider": "Dr. Good",
+            "health_coach": "Coach Well",
         },
         # Patient 2 – missing program_start_date (triggers not_null_check)
         {
@@ -95,11 +55,10 @@ def mock_validation_db(tmp_path_factory):
             "program_start_date": None,
             "program_end_date": "2025-04-01",
             "active": 1,
-            "provider_visit_count": 3,
-            "bmi": 25.0,
-            "weight": 170.0,
-            "provider": "Dr. Missing",
-            "health_coach": "Coach Missing",
+            "provider_visits": 3,
+            "health_coach_visits": 2,
+            "provider": None,
+            "health_coach": None,
         },
         # Patient 3 – extreme BMI (triggers BMI_RANGE_CHECK)
         {
@@ -109,11 +68,10 @@ def mock_validation_db(tmp_path_factory):
             "program_start_date": "2025-01-01",
             "program_end_date": None,
             "active": 0,
-            "provider_visit_count": 3,
-            "bmi": 85.0,  # way above 70
-            "weight": 400.0,
-            "provider": "Dr. High",
-            "health_coach": "Coach High",
+            "provider_visits": 3,
+            "health_coach_visits": 2,
+            "provider": None,
+            "health_coach": None,
         },
         # Patient 4 – extreme weight (triggers WEIGHT_RANGE_CHECK)
         {
@@ -123,18 +81,17 @@ def mock_validation_db(tmp_path_factory):
             "program_start_date": "2025-01-01",
             "program_end_date": None,
             "active": 1,
-            "provider_visit_count": 7,
-            "bmi": 35.0,
-            "weight": 600.0,  # above 500
-            "provider": "Dr. Heavy",
-            "health_coach": "Coach Heavy",
+            "provider_visits": 7,
+            "health_coach_visits": 2,
+            "provider": None,
+            "health_coach": None,
         },
     ]
 
     cursor.executemany(
         """
-        INSERT INTO patients (id, first_name, last_name, program_start_date, program_end_date, active, provider_visit_count, bmi, weight, provider, health_coach)
-        VALUES (:id, :first_name, :last_name, :program_start_date, :program_end_date, :active, :provider_visit_count, :bmi, :weight, :provider, :health_coach)
+        INSERT INTO patients (id, first_name, last_name, program_start_date, program_end_date, active, provider_visits, health_coach_visits, provider, health_coach)
+        VALUES (:id, :first_name, :last_name, :program_start_date, :program_end_date, :active, :provider_visits, :health_coach_visits, :provider, :health_coach)
         """,
         patients,
     )
@@ -143,15 +100,15 @@ def mock_validation_db(tmp_path_factory):
     # Minimal vitals rows (only needed for BMI/weight checks)
     # --------------------------------------------------
     vitals_rows = [
-        (1, 1, "2025-04-15", 160.0, 24.0, 120, 80),
-        (2, 2, "2025-04-15", 170.0, 25.0, 118, 78),
-        (3, 3, "2025-04-15", 400.0, 85.0, 130, 88),
-        (4, 4, "2025-04-15", 600.0, 35.0, 140, 90),
+        (1, "2025-04-15", 160.0, 24.0, 120, 80),
+        (2, "2025-04-15", 170.0, 25.0, 118, 78),
+        (3, "2025-04-15", 400.0, 85.0, 130, 88),
+        (4, "2025-04-15", 600.0, 35.0, 140, 90),
     ]
     cursor.executemany(
         """
-        INSERT INTO vitals (id, patient_id, date, weight, bmi, systolic_pressure, diastolic_pressure)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO vitals (patient_id, date, weight, bmi, sbp, dbp)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         vitals_rows,
     )
