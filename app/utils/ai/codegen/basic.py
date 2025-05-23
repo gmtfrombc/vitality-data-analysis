@@ -166,10 +166,31 @@ def generate_basic_code(intent, parameters=None):
         select_fields = [f"v.{m}" for m in metrics]
         if group_by:
             select_fields += [f"v.{g}" for g in group_by]
-        code += f'sql = """SELECT {", ".join(select_fields)} FROM vitals v'
-        if sql_where_clause:
-            code += f" WHERE {sql_where_clause}"
-        code += '"""\n'
+
+        # Check if we need a JOIN for patient filters (same logic as above)
+        needs_patient_join = False
+        patient_fields = {"active", "gender", "ethnicity", "age"}
+        if hasattr(intent, "filters") and intent.filters:
+            for f in intent.filters:
+                if f.field.lower() in patient_fields:
+                    needs_patient_join = True
+                    break
+
+        if needs_patient_join:
+            # Use JOIN when we need patient filters with vitals data
+            code += f'sql = """SELECT {", ".join(select_fields)} FROM vitals v JOIN patients p ON v.patient_id = p.id'
+            if sql_where_clause:
+                # Fix table prefixes in WHERE clause
+                fixed_where_clause = sql_where_clause.replace("patients.", "p.")
+                code += f" WHERE {fixed_where_clause}"
+            code += '"""\n'
+        else:
+            # Use simple vitals query when no patient filters
+            code += f'sql = """SELECT {", ".join(select_fields)} FROM vitals v'
+            if sql_where_clause:
+                code += f" WHERE {sql_where_clause}"
+            code += '"""\n'
+
         code += "df = query_dataframe(sql)\n"
         if group_by:
             code += f"# Group by: {group_by}\n"

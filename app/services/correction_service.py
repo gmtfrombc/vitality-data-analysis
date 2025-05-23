@@ -417,34 +417,52 @@ class CorrectionService:
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
-            # Simple similarity based on string containment
-            # In practice, this could use more sophisticated similarity measures
+            # Get all patterns for similarity comparison
             cursor.execute(
                 """
                 SELECT id, query_pattern, canonical_intent_json, confidence_boost,
                        usage_count, success_rate
                 FROM intent_patterns
-                WHERE query_pattern LIKE ? OR ? LIKE '%' || query_pattern || '%'
                 ORDER BY usage_count DESC, success_rate DESC
-                LIMIT ?
-            """,
-                (f"%{normalized_query}%", normalized_query, limit),
+            """
             )
 
             patterns = []
-            for row in cursor.fetchall():
-                patterns.append(
-                    IntentPattern(
-                        id=row["id"],
-                        query_pattern=row["query_pattern"],
-                        canonical_intent_json=row["canonical_intent_json"],
-                        confidence_boost=row["confidence_boost"],
-                        usage_count=row["usage_count"],
-                        success_rate=row["success_rate"],
-                    )
-                )
+            query_words = set(normalized_query.split())
 
-            return patterns
+            for row in cursor.fetchall():
+                pattern_words = set(row["query_pattern"].split())
+
+                # Calculate similarity based on word overlap
+                common_words = query_words.intersection(pattern_words)
+                total_unique_words = len(query_words.union(pattern_words))
+
+                if total_unique_words > 0:
+                    similarity = len(common_words) / total_unique_words
+
+                    # Only include patterns with significant word overlap
+                    if similarity >= 0.5:  # At least 50% word overlap
+                        patterns.append(
+                            (
+                                similarity,
+                                IntentPattern(
+                                    id=row["id"],
+                                    query_pattern=row["query_pattern"],
+                                    canonical_intent_json=row["canonical_intent_json"],
+                                    confidence_boost=row["confidence_boost"],
+                                    usage_count=row["usage_count"],
+                                    success_rate=row["success_rate"],
+                                ),
+                            )
+                        )
+
+            # Sort by similarity first, then usage_count
+            patterns.sort(
+                key=lambda x: (x[0], x[1].usage_count, x[1].success_rate), reverse=True
+            )
+
+            # Return just the patterns (without similarity scores), limited by the limit
+            return [pattern for _, pattern in patterns[:limit]]
 
     def get_correction_session(self, session_id: int) -> Optional[CorrectionSession]:
         """Get a correction session by ID."""
