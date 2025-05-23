@@ -26,6 +26,8 @@ Pattern: When a new default or fallback is required, add the constant and a help
 function if logic is needed. Document the new assumption both in this reference and
 in its docstring.
 """
+from app.utils.query_intent import QueryIntent
+
 NO_DATA_MESSAGE = (
     "No data available for the selected criteria."  # Centralized missing data message
 )
@@ -37,7 +39,6 @@ Assumptions and Default Policy Helpers
 This module centralizes all defaults, fallback logic, and assumption documentation
 for data analysis, intent parsing, and user query processing.
 """
-from app.utils.query_intent import QueryIntent
 
 # Minimum intent confidence to skip clarification prompt
 CLARIFICATION_CONFIDENCE_THRESHOLD = 0.7
@@ -113,6 +114,18 @@ def get_fallback_intent(raw_query: str) -> QueryIntent:
     Returns a safe fallback QueryIntent for completely unparseable or ambiguous queries.
     Fallback intent policy is defined here.
     """
+    q = raw_query.lower()
+    if any(kw in q for kw in ["trend", "change", "over time"]):
+        return QueryIntent(
+            analysis_type="trend",
+            target_field="unknown",
+            filters=[],
+            conditions=[],
+            parameters={"original_query": raw_query, "is_fallback": True},
+            additional_fields=[],
+            group_by=[],
+            time_range=None,
+        )
     return QueryIntent(
         analysis_type="count",
         target_field="unknown",
