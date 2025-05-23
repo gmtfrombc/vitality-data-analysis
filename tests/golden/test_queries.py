@@ -1,18 +1,18 @@
+from app.utils.ai_helper import AIHelper
+from app.utils.schema import get_data_schema
+from app.data_assistant import DataAnalysisAssistant
+from datetime import date, datetime
+import unittest
+import os
+
+# Set OFFLINE_MODE before any imports to guarantee LLM calls are skipped in all test environments
+os.environ["OFFLINE_MODE"] = "1"
+
 """Test natural language queries with a focus on functionality.
 
 Unlike the golden query harness, these tests use a real DataAnalysisAssistant
 and run against a real (but small) test database.
 """
-
-import unittest
-from datetime import date, datetime
-from app.data_assistant import DataAnalysisAssistant
-from app.utils.schema import get_data_schema
-from app.utils.ai_helper import AIHelper
-import os
-
-# Set OFFLINE_MODE before any imports to guarantee LLM calls are skipped in all test environments
-os.environ["OFFLINE_MODE"] = "1"
 
 
 # Import both ai and get_data_schema
