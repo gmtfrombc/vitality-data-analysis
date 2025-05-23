@@ -115,7 +115,43 @@ def get_fallback_intent(raw_query: str) -> QueryIntent:
     Fallback intent policy is defined here.
     """
     q = raw_query.lower()
-    # Special case: trend queries about weight
+    import re
+
+    match = re.search(r"from ([a-z]+) to ([a-z]+) (\d{4})", q)
+    if match:
+        month_map = {
+            "january": 1,
+            "february": 2,
+            "march": 3,
+            "april": 4,
+            "may": 5,
+            "june": 6,
+            "july": 7,
+            "august": 8,
+            "september": 9,
+            "october": 10,
+            "november": 11,
+            "december": 12,
+        }
+        start_month = month_map.get(match.group(1))
+        end_month = month_map.get(match.group(2))
+        year = int(match.group(3))
+        if start_month and end_month:
+            from calendar import monthrange
+
+            start_date = f"{year}-{start_month:02d}-01"
+            end_day = monthrange(year, end_month)[1]
+            end_date = f"{year}-{end_month:02d}-{end_day:02d}"
+            return QueryIntent(
+                analysis_type="trend",
+                target_field="weight",
+                filters=[],
+                conditions=[],
+                parameters={"original_query": raw_query, "is_fallback": True},
+                additional_fields=[],
+                group_by=[],
+                time_range=DateRange(start_date=start_date, end_date=end_date),
+            )
     if any(kw in q for kw in ["weight trend", "weight trends", "trend of weight"]):
         return QueryIntent(
             analysis_type="trend",
