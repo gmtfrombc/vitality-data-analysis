@@ -1,3 +1,15 @@
+"""
+conftest.py – Test environment setup and patching for the Vitality Data Analysis project.
+
+This file configures the test environment for all pytest runs. It:
+- Ensures OPENAI_API_KEY is set before any app imports, so offline mode is disabled and intent parsing tests use stubs.
+- Provides lightweight stubs for holoviews/hvplot/panel to speed up test startup and avoid heavy plotting dependencies.
+- Patches AIHelper and other helpers for deterministic, fast, and isolated tests.
+- Allows test-specific monkeypatching for LLM and code generation logic.
+
+All fixtures and helpers are documented with Google-style docstrings.
+"""
+
 import sys
 from pathlib import Path
 import pandas as _pd
@@ -33,15 +45,24 @@ class _HVMeta(type):  # noqa: D401 – custom meta to allow monkey-patching
 
 
 class Element(metaclass=_HVMeta):  # noqa: D401 – placeholder hv.Element
+    """Placeholder for holoviews.Element used in test stubs."""
+
     pass
 
 
 class Overlay(Element):  # noqa: D401 – placeholder hv.Overlay
+    """Placeholder for holoviews.Overlay used in test stubs."""
+
     pass
 
 
 @pytest.fixture(autouse=True)
 def patch_query_dataframe(monkeypatch):
+    """Monkeypatch app.db_query.query_dataframe to return a dummy DataFrame for tests.
+
+    Returns a DataFrame with a count of 5 for queries containing 'count' or 'active',
+    otherwise returns an empty DataFrame. This speeds up tests and avoids DB dependencies.
+    """
     import app.db_query  # <-- Add this INSIDE the fixture, not at top level
 
     # <-- Add this INSIDE the fixture, not at top level
