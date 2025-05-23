@@ -60,8 +60,10 @@ def test_apply_pending_migrations_adds_columns(tmp_db):
         cols_pmh = {r[1] for r in conn.execute("PRAGMA table_info(pmh)")}
         assert "code" in cols_pmh
 
-        # Ensure version recorded
-        versions = {r[0] for r in conn.execute("SELECT version FROM schema_migrations")}
-        assert 2 in versions
+        # Ensure migration filename recorded
+        filenames = {
+            r[0] for r in conn.execute("SELECT filename FROM schema_migrations")
+        }
+        assert any(f.startswith("002_add_etl_columns") for f in filenames)
     finally:
         conn.close()
