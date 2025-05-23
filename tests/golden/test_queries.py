@@ -4,14 +4,17 @@ Unlike the golden query harness, these tests use a real DataAnalysisAssistant
 and run against a real (but small) test database.
 """
 
-import unittest
-from datetime import date, datetime
+from app.utils.ai_helper import AIHelper
+from app.utils.schema import get_data_schema
 from app.data_assistant import DataAnalysisAssistant
+from datetime import date, datetime
+import unittest
 import os
 
+# Set OFFLINE_MODE before any app imports to ensure LLM calls are skipped in tests
+os.environ["OFFLINE_MODE"] = "1"
+
 # Import both ai and get_data_schema
-from app.utils.schema import get_data_schema
-from app.utils.ai_helper import AIHelper
 
 ai = AIHelper()
 
@@ -21,8 +24,6 @@ class TestQueries(unittest.TestCase):
 
     def setUp(self):
         """Set up a DataAnalysisAssistant for testing."""
-        # Force offline mode for LLM calls to avoid real API usage during tests
-        os.environ["OFFLINE_MODE"] = "1"
         # Using a temporary settings dictionary to avoid affecting real storage
         self.assistant = DataAnalysisAssistant()
 
