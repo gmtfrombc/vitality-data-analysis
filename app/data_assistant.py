@@ -129,9 +129,11 @@ class DataAnalysisAssistant(param.Parameterized):
         file_input.param.watch(self._toggle_import_button, "value")
         import_button.on_click(self._on_import_click)
 
-        # Set up delete mock panel
-        delete_button = self.ui.delete_mock_panel[1]
-        delete_button.on_click(self._delete_mock)
+        # Set up delete mock panel (DISABLED)
+        # delete_button = self.ui.delete_mock_panel[1]
+        # delete_button.on_click(self._delete_mock)
+        # Optionally, hide the panel in the sidebar
+        self.ui.delete_mock_panel.visible = False
 
     def _update_query_text(self, event):
         """Update query text when input changes"""
@@ -214,54 +216,6 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Update status
         self.ui.update_status("Importing data...")
-
-    def _delete_mock(self, event):
-        """Handle delete mock button click"""
-        # Update status
-        self.ui.update_status("Regenerating mock data...")
-
-        # Process in a separate thread
-        import threading
-
-        def _worker():
-            try:
-                # Delete existing database
-                db_path = Path("patient_data.db")
-                mock_path = Path("mock_patient_data.db")
-
-                if db_path.exists():
-                    db_path.unlink()
-
-                if mock_path.exists():
-                    mock_path.unlink()
-
-                # Regenerate mock data
-                import sys
-                import subprocess
-
-                # Get Python executable
-                python_exe = sys.executable
-                # NOTE: This subprocess call is strictly for internal/mock data regeneration.
-                # No user input is used—arguments are hardcoded, and only trusted scripts are executed.
-                # If ever expanded or changed, ensure NO user input can reach subprocess.run().
-                # Run the generate_test_database.py script
-                cmd = [python_exe, "scripts/dev/generate_test_database.py"]
-                process = subprocess.run(cmd, capture_output=True, text=True)
-
-                if process.returncode == 0:
-                    self.ui.update_status("Mock data regenerated successfully")
-                else:
-                    error = process.stderr or "Unknown error"
-                    self.ui.update_status(f"Error regenerating mock data: {error}")
-
-            except Exception as e:
-                logger.error(f"Error regenerating mock data: {e}", exc_info=True)
-                self.ui.update_status(f"Error regenerating mock data: {str(e)}")
-
-        # Start thread
-        thread = threading.Thread(target=_worker)
-        thread.daemon = True
-        thread.start()
 
     def _update_display_after_toggle(self, *_):
         """Update display when results view toggle changes"""
