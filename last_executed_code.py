@@ -17,14 +17,14 @@ signal.alarm(30)
 start_time = time.time()
 
 try:
-    # Generated code for BMI analysis
-    # SQL equivalent: SELECT AVG(bmi) FROM vitals
-    # Using avg() function to calculate mean BMI
-    import app.db_query as db_query
-
-    df = db_query.query_dataframe()
-    # Calculate AVG(bmi) across all records
-    results = df["bmi"].mean()
+    # SQL equivalent: SELECT AVG(bmi) FROM vitals v
+    # Query data
+    sql = """SELECT v.bmi FROM vitals v JOIN patients p ON v.patient_id = p.id WHERE p.active = 1"""
+    df = query_dataframe(sql)
+    # Aggregate metrics
+    metric_value = df["bmi"].mean()
+    results = {"bmi_mean": metric_value}
+    # Output is a dictionary of computed metrics
 
 
 except TimeoutException:

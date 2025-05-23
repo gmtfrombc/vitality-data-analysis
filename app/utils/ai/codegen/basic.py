@@ -40,27 +40,81 @@ def generate_basic_code(intent, parameters=None):
         }
         agg_func = pandas_agg_map[analysis_type]
         sql_agg_func = agg_map[analysis_type]
+
+        # Special case for count: determine which table to query
+        if analysis_type == "count" and not group_by:
+            # Determine the appropriate table based on target field and filters
+            base_table = "vitals"
+            table_alias = "v"
+
+            # If counting patients or patient_id, use patients table
+            if target_field in ["patient_id", "patients", "patient"]:
+                base_table = "patients"
+                table_alias = "p"
+
+            # If filters reference patient fields, use patients table
+            patient_fields = {"active", "gender", "ethnicity", "age"}
+            if hasattr(intent, "filters") and intent.filters:
+                for f in intent.filters:
+                    if f.field.lower() in patient_fields:
+                        base_table = "patients"
+                        table_alias = "p"
+                        break
+
+            # Generate the corrected SQL
+            code = (
+                f"# SQL equivalent: SELECT COUNT(*) FROM {base_table} {table_alias}\n"
+            )
+            code += "# Query data\n"
+
+            if sql_where_clause:
+                # Fix table prefixes in WHERE clause if needed
+                fixed_where_clause = sql_where_clause
+                if base_table == "patients":
+                    # Replace vitals.field with p.field and patients.field with p.field
+                    fixed_where_clause = fixed_where_clause.replace("vitals.", "p.")
+                    fixed_where_clause = fixed_where_clause.replace("patients.", "p.")
+
+                code += f'sql = """SELECT COUNT(*) as count FROM {base_table} {table_alias} WHERE {fixed_where_clause}"""\n'
+                code += f"# SQL equivalent: SELECT COUNT(*) FROM {base_table} {table_alias} WHERE {fixed_where_clause}\n"
+            else:
+                code += f'sql = """SELECT COUNT(*) as count FROM {base_table} {table_alias}"""\n'
+                code += f"# SQL equivalent: SELECT COUNT(*) FROM {base_table} {table_alias}\n"
+
+            code += "df = query_dataframe(sql)\n"
+            code += "if not df.empty and 'count' in df.columns:\n    results = int(df['count'].iloc[0])\nelse:\n    results = 0\n"
+            return code
+
         code = f"# SQL equivalent: SELECT {sql_agg_func}({metrics[0]}) FROM vitals v\n"
         code += "# Query data\n"
         select_fields = metrics.copy()
         if group_by:
             select_fields += group_by
-        # Special case for count: use COUNT(*) in SQL
-        if analysis_type == "count" and not group_by:
+
+        # Check if we need a JOIN for patient filters
+        needs_patient_join = False
+        patient_fields = {"active", "gender", "ethnicity", "age"}
+        if hasattr(intent, "filters") and intent.filters:
+            for f in intent.filters:
+                if f.field.lower() in patient_fields:
+                    needs_patient_join = True
+                    break
+
+        if needs_patient_join:
+            # Use JOIN when we need patient filters with vitals data
+            code += f'sql = """SELECT {sql_select(select_fields)} FROM vitals v JOIN patients p ON v.patient_id = p.id'
             if sql_where_clause:
-                code += f'sql = """SELECT COUNT(*) as count FROM vitals v WHERE {sql_where_clause}"""\n'
-            else:
-                code += 'sql = """SELECT COUNT(*) as count FROM vitals v"""\n'
-            code += "# SQL equivalent: SELECT COUNT(*) FROM vitals v"
+                # Fix table prefixes in WHERE clause
+                fixed_where_clause = sql_where_clause.replace("patients.", "p.")
+                code += f" WHERE {fixed_where_clause}"
+            code += '"""\n'
+        else:
+            # Use simple vitals query when no patient filters
+            code += f'sql = """SELECT {sql_select(select_fields)} FROM vitals v'
             if sql_where_clause:
                 code += f" WHERE {sql_where_clause}"
-            code += "\ndf = query_dataframe(sql)\n"
-            code += "if not df.empty and 'count' in df.columns:\n    results = int(df['count'].iloc[0])\nelse:\n    results = 0\n"
-            return code
-        code += f'sql = """SELECT {sql_select(select_fields)} FROM vitals v'
-        if sql_where_clause:
-            code += f" WHERE {sql_where_clause}"
-        code += '"""\n'
+            code += '"""\n'
+
         code += "df = query_dataframe(sql)\n"
         if group_by:
             code += f"# Group by: {group_by}\n"
@@ -78,7 +132,8 @@ def generate_basic_code(intent, parameters=None):
             code += (
                 f"# SQL equivalent:\n"
                 f"# SELECT {', '.join([f'v.{g}' for g in group_by])}, "
-                f"{', '.join([f'{sql_agg_func}(v.{m})' for m in metrics])} FROM vitals v"
+                f"{', '.join([f'{sql_agg_func}(v.{m})' for m in metrics])
+                   } FROM vitals v"
             )
             if sql_where_clause:
                 code += f" WHERE {sql_where_clause}"
@@ -132,7 +187,8 @@ def generate_basic_code(intent, parameters=None):
             code += (
                 f"# SQL equivalent:\n"
                 f"# SELECT {', '.join([f'v.{g}' for g in group_by])}, "
-                f"{', '.join([f'{agg_func.upper()}(v.{m})' for m in metrics])} FROM vitals v"
+                f"{', '.join([f'{agg_func.upper()}(v.{m})' for m in metrics])
+                   } FROM vitals v"
             )
             if sql_where_clause:
                 code += f" WHERE {sql_where_clause}"
