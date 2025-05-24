@@ -17,14 +17,15 @@ signal.alarm(30)
 start_time = time.time()
 
 try:
-    # Generated code for BMI analysis
-    # SQL equivalent: SELECT AVG(bmi) FROM vitals
-    # Using avg() function to calculate mean BMI
-    import app.db_query as db_query
-
-    df = db_query.query_dataframe()
-    # Calculate AVG(bmi) across all records
-    results = df["bmi"].mean()
+    # SQL equivalent: SELECT COUNT(*) FROM patients p
+    # Query data
+    sql = """SELECT COUNT(*) as count FROM patients p WHERE p.active = 1"""
+    # SQL equivalent: SELECT COUNT(*) FROM patients p WHERE p.active = 1
+    df = query_dataframe(sql)
+    if not df.empty and "count" in df.columns:
+        results = int(df["count"].iloc[0])
+    else:
+        results = 0
 
 
 except TimeoutException:

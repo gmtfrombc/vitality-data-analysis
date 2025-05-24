@@ -25,7 +25,6 @@ from app.analysis_helpers import (
     format_results,
 )
 from app.state import WorkflowState, WorkflowStages
-from app.utils.feedback_db import insert_feedback
 from app.utils.saved_questions_db import (
     load_saved_questions as _load_saved_questions_db,
     upsert_question,
@@ -223,7 +222,10 @@ class DataAnalysisAssistant(param.Parameterized):
             "Narrative" if self.ui.results_view_toggle.value else "Tabular"
         )
         print(f"[DEBUG] Results view toggled to: {self.show_narrative}")
-        self._display_final_results()
+
+        # Only refresh if we have results to display
+        if self.engine.execution_results is not None:
+            self._display_final_results()
 
     def _process_query(self):
         """Process the natural language query in a background thread unless test_mode is True"""
@@ -485,6 +487,17 @@ class DataAnalysisAssistant(param.Parameterized):
             self.engine.execution_results, self.engine.visualizations
         )
 
+        # Ensure the visualization pane is properly updated
+        if self.engine.visualizations:
+            from app.analysis_helpers import combine_visualizations
+
+            combined_viz = combine_visualizations(self.engine.visualizations)
+            if combined_viz:
+                self.ui.visualization_pane.objects = [combined_viz]
+        else:
+            # Try to create visualization from results if none exist
+            self.ui._create_visualization_from_results(self.engine.execution_results)
+
         # Update status
         self.ui.update_status("Analysis executed successfully")
 
@@ -493,12 +506,32 @@ class DataAnalysisAssistant(param.Parameterized):
 
     def _display_final_results(self):
         """Display final formatted results with visualizations"""
-        # Format results
-        formatted_results = format_results(
-            self.engine.execution_results,
-            self.engine.intent,
-            self.show_narrative == "Narrative",
-        )
+        # Check if we should show narrative
+        show_narrative = self.show_narrative == "Narrative"
+
+        # Generate narrative if needed and not already available
+        narrative_text = None
+        if show_narrative:
+            try:
+                # Use the engine's interpret_results method to generate narrative
+                narrative_text = self.engine.interpret_results()
+            except Exception as e:
+                logger.error(f"Error generating narrative: {e}")
+                narrative_text = None
+
+        # Format results based on narrative preference
+        if show_narrative and narrative_text:
+            # Show narrative view
+            formatted_results = [
+                pn.pane.Markdown(f"### Analysis Results\n\n{narrative_text}")
+            ]
+        else:
+            # Show tabular/simple results view
+            formatted_results = format_results(
+                self.engine.execution_results,
+                self.engine.intent,
+                False,  # Force tabular view
+            )
 
         # Add refine option
         formatted_results = self.ui.add_refine_option(
@@ -508,21 +541,9 @@ class DataAnalysisAssistant(param.Parameterized):
         # Update result container
         self.ui.result_container.objects = formatted_results
 
-        # Create feedback widget if not exists
+        # Create enhanced feedback widget if not exists
         if self.feedback_widget is None:
-            self.feedback_widget = self.ui.create_feedback_widget()
-            self._feedback_up = self.ui._feedback_up
-            self._feedback_down = self.ui._feedback_down
-            self._feedback_thanks = self.ui._feedback_thanks
-
-            # Connect feedback handlers
-            self._feedback_up.on_click(self._on_feedback_up)
-            self._feedback_down.on_click(self._on_feedback_down)
-
-        # Make feedback buttons visible
-        self._feedback_up.visible = True
-        self._feedback_down.visible = True
-        self._feedback_thanks.visible = False
+            self.feedback_widget = self._create_enhanced_feedback_widget()
 
         # Add feedback widget to results
         if self.feedback_widget not in self.ui.result_container.objects:
@@ -749,17 +770,101 @@ class DataAnalysisAssistant(param.Parameterized):
         """Handle thumbs-down click"""
         self._record_feedback("down")
 
-    def _record_feedback(self, rating):
+    def _record_feedback(self, rating, comment=""):
         """Record feedback in the database"""
         try:
-            insert_feedback(question=self.query_text, rating=rating)
+            from app.utils.feedback_db import insert_feedback
+
+            insert_feedback(question=self.query_text, rating=rating, comment=comment)
+            logger.info(f"Recorded feedback: {rating} for query: {self.query_text}")
         except Exception as exc:
             logger.error(f"Feedback insert failed: {exc}")
 
         # Hide thumbs buttons and show thank-you note
-        self._feedback_up.visible = False
-        self._feedback_down.visible = False
-        self._feedback_thanks.visible = True
+        if hasattr(self, "_feedback_up") and self._feedback_up:
+            self._feedback_up.visible = False
+        if hasattr(self, "_feedback_down") and self._feedback_down:
+            self._feedback_down.visible = False
+        if hasattr(self, "_feedback_thanks") and self._feedback_thanks:
+            self._feedback_thanks.visible = True
+
+    def _create_enhanced_feedback_widget(self):
+        """Create an enhanced feedback widget with comment input and save functionality"""
+        import panel as pn
+
+        # Create feedback components
+        feedback_up = pn.widgets.Button(
+            name="👍", width=50, button_type="success", margin=(5, 5)
+        )
+        feedback_down = pn.widgets.Button(
+            name="👎", width=50, button_type="danger", margin=(5, 5)
+        )
+        feedback_comment = pn.widgets.TextAreaInput(
+            placeholder="Optional: Add comments about this analysis...",
+            rows=2,
+            sizing_mode="stretch_width",
+            margin=(5, 0),
+        )
+        feedback_save = pn.widgets.Button(
+            name="Save Feedback", button_type="primary", width=120, margin=(5, 5)
+        )
+        feedback_thanks = pn.pane.Markdown(
+            "✅ **Thank you for your feedback!**", visible=False, margin=(5, 0)
+        )
+
+        # Store references for later use
+        self._feedback_up = feedback_up
+        self._feedback_down = feedback_down
+        self._feedback_comment = feedback_comment
+        self._feedback_save = feedback_save
+        self._feedback_thanks = feedback_thanks
+
+        # Define handlers
+        def on_feedback_up(event):
+            comment = feedback_comment.value if feedback_comment.value else ""
+            self._record_feedback("up", comment)
+            feedback_save.visible = False
+
+        def on_feedback_down(event):
+            comment = feedback_comment.value if feedback_comment.value else ""
+            self._record_feedback("down", comment)
+            feedback_save.visible = False
+
+        def on_save_feedback(event):
+            # Get the last selected rating (default to up if neither was clicked)
+            rating = "up"  # Default
+            comment = feedback_comment.value if feedback_comment.value else ""
+            self._record_feedback(rating, comment)
+
+        # Connect handlers
+        feedback_up.on_click(on_feedback_up)
+        feedback_down.on_click(on_feedback_down)
+        feedback_save.on_click(on_save_feedback)
+
+        # Create the feedback widget layout
+        feedback_row = pn.Row(
+            pn.pane.Markdown("**Was this analysis helpful?**", margin=(5, 10, 5, 0)),
+            feedback_up,
+            feedback_down,
+            sizing_mode="stretch_width",
+            align="center",
+        )
+
+        comment_row = pn.Row(
+            feedback_comment, feedback_save, sizing_mode="stretch_width", align="center"
+        )
+
+        feedback_widget = pn.Column(
+            pn.layout.Divider(),
+            feedback_row,
+            comment_row,
+            feedback_thanks,
+            styles={"background": "#f8f9fa", "border-radius": "5px", "padding": "10px"},
+            margin=(10, 0),
+            sizing_mode="stretch_width",
+        )
+
+        return feedback_widget
 
     def view(self):
         """Generate the complete view for the data analysis assistant"""
