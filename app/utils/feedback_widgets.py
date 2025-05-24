@@ -51,27 +51,37 @@ class FeedbackWidget(param.Parameterized):
         """Create all the UI components for the feedback widget."""
         # Rating buttons
         self.thumbs_up = pn.widgets.Button(
-            name="👍 Helpful", button_type="success", width=110
+            name="👍 Helpful",
+            button_type="success",
+            width=110,
+            visible=True,  # Ensure visible
         )
         self.thumbs_down = pn.widgets.Button(
-            name="👎 Not Helpful", button_type="danger", width=110
+            name="👎 Not Helpful",
+            button_type="danger",
+            width=110,
+            visible=True,  # Ensure visible
         )
 
-        # Comment box – initially hidden, shown when user selects thumbs down
+        # Comment box – initially visible
         self.comment_input = pn.widgets.TextAreaInput(
             name="Tell us more (optional):",
             placeholder="What could be improved?",
             rows=3,
-            visible=False,
+            visible=True,
             sizing_mode="stretch_width",
         )
 
-        # Submit button
+        # Submit button - initially visible but disabled
         self.submit_button = pn.widgets.Button(
-            name="Submit Feedback", button_type="primary", disabled=True, width=150
+            name="Submit Feedback",
+            button_type="primary",
+            disabled=True,
+            width=150,
+            visible=True,  # Ensure visible
         )
 
-        # Thank you message - more prominent with styling
+        # Thank you message - hidden initially
         self.thank_you = pn.pane.Markdown(
             "### Thank you for your feedback! \n\nYour input helps us improve the assistant.",
             visible=False,

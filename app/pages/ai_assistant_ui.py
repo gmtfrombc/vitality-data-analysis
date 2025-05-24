@@ -473,16 +473,34 @@ def build_assistant_view(ai_assistant):
     # --- End Analyze Button ---
 
     # --- Feedback Widget ---
-    feedback_panel = pn.Column()
+    feedback_panel = pn.Column(sizing_mode="stretch_width")
 
     def update_feedback_panel():
         stage = ai_assistant.workflow_state.current_stage
+        print(
+            f"[DEBUG] update_feedback_panel called. Stage: {stage}, Query: '{ai_assistant.query_text}'"
+        )
+        logger.info(
+            f"[DEBUG] update_feedback_panel called. Stage: {stage}, Query: '{ai_assistant.query_text}'"
+        )
         if stage == WorkflowStages.RESULTS and ai_assistant.query_text.strip():
-            print("[UI] Displaying feedback widget.")
-            logger.info("Displaying feedback widget.")
-            feedback_panel.objects = [create_feedback_widget(ai_assistant.query_text)]
+            print("[DEBUG] Displaying feedback widget.")
+            logger.info("[DEBUG] Displaying feedback widget.")
+            feedback_widget = create_feedback_widget(ai_assistant.query_text)
+            print(f"[DEBUG] Feedback widget created: {feedback_widget}")
+            feedback_widget.visible = True  # Ensure widget is visible
+            feedback_panel.objects = [feedback_widget]
+            feedback_panel.visible = True  # Make the panel itself visible
+            print(
+                f"[DEBUG] feedback_panel.objects: {feedback_panel.objects}, feedback_panel.visible: {feedback_panel.visible}"
+            )
         else:
+            print("[DEBUG] Hiding feedback widget.")
             feedback_panel.objects = []
+            feedback_panel.visible = False
+            print(
+                f"[DEBUG] feedback_panel.objects cleared, feedback_panel.visible: {feedback_panel.visible}"
+            )
 
     ai_assistant.workflow_state.param.watch(
         lambda event: update_feedback_panel(), "current_stage"
@@ -518,6 +536,7 @@ def build_assistant_view(ai_assistant):
         pn.layout.Divider(),
         schema_accordion,
         min_width=800,
+        sizing_mode="stretch_width",
     )
 
     # --- Main Content (AI SQL Assistant) ---

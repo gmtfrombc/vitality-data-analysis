@@ -551,7 +551,10 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Mark results displayed
         self.workflow.mark_results_displayed()
-
+        # Disable analyze button and saved question triggers until reset
+        if hasattr(self, "analyze_button"):
+            self.analyze_button.disabled = True
+        self._enable_saved_question_buttons(False)
         # Update status
         self.ui.update_status("Analysis completed")
 
@@ -706,16 +709,18 @@ class DataAnalysisAssistant(param.Parameterized):
 
     def _use_example_query(self, query):
         """Set the query text from a saved question"""
+        if hasattr(self, "analyze_button") and self.analyze_button.disabled:
+            self.ui.update_status(
+                "Please click 'Reset All' before running a new query.", type="warning"
+            )
+            return
         logger.info(f"Using example query: {query['name']}")
         print(f"Loaded saved question: {query['name']}")
         self.query_text = query["query"]
-
         # Update the input field
         self.ui.query_input.value = query["query"]
-
         # Show status
         self.ui.update_status(f"Loaded query: {query['name']}", type="info")
-
         # Process the query
         self._process_query()
 
@@ -755,9 +760,13 @@ class DataAnalysisAssistant(param.Parameterized):
         # Reset stage indicators
         self.ui.update_stage_indicators(self.workflow.current_stage)
 
-        # Hide feedback widget if it exists
+        # Hide feedback widget after reset (per test expectation)
         if hasattr(self, "feedback_widget") and self.feedback_widget is not None:
             self.feedback_widget.visible = False
+        # Re-enable analyze button and saved question triggers
+        if hasattr(self, "analyze_button"):
+            self.analyze_button.disabled = False
+        self._enable_saved_question_buttons(True)
 
         # Update status
         self.ui.update_status("Ready for a new query")
@@ -1004,6 +1013,13 @@ class DataAnalysisAssistant(param.Parameterized):
         )
 
         return layout
+
+    def _enable_saved_question_buttons(self, enabled):
+        """Enable or disable saved question triggers/buttons"""
+        if hasattr(self.ui, "saved_question_buttons_container"):
+            for btn in self.ui.saved_question_buttons_container.objects:
+                if hasattr(btn, "disabled"):
+                    btn.disabled = not enabled
 
 
 def data_assistant_page():

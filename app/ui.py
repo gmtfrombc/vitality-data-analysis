@@ -234,10 +234,10 @@ class UIComponents(param.Parameterized):
 
         # Initialize feedback components
         self._feedback_up = pn.widgets.Button(
-            name="👍", width=40, button_type="light", visible=False
+            name="👍", width=40, button_type="light", visible=True
         )
         self._feedback_down = pn.widgets.Button(
-            name="👎", width=40, button_type="light", visible=False
+            name="👎", width=40, button_type="light", visible=True
         )
         self._feedback_thanks = pn.pane.Markdown(
             "Thank you for your feedback!", visible=False
