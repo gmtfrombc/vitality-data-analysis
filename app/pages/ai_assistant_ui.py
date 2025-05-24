@@ -8,7 +8,6 @@ Business logic and state management remain in ai_assistant.py.
 import panel as pn
 import logging
 from app.state import WorkflowStages
-from app.utils.feedback_widgets import create_feedback_widget
 
 # If needed, import other UI dependencies (e.g., pn.widgets, pn.pane, etc.)
 
@@ -25,7 +24,7 @@ def build_assistant_view(ai_assistant):
     Returns:
         A Panel layout (pn.Column or pn.Row) representing the full assistant UI.
     """
-    print("[build_assistant_view] called")
+    print("[DEBUG] build_assistant_view called")
     logger = logging.getLogger("ai_assistant_ui")
 
     # Create title and description
@@ -473,39 +472,43 @@ def build_assistant_view(ai_assistant):
     # --- End Analyze Button ---
 
     # --- Feedback Widget ---
-    feedback_panel = pn.Column(sizing_mode="stretch_width")
+    persistent_feedback_widget = FeedbackWidget(query=ai_assistant.query_text)
+    feedback_panel = pn.Column(
+        persistent_feedback_widget.view(), sizing_mode="stretch_width"
+    )
 
     def update_feedback_panel():
-        stage = ai_assistant.workflow_state.current_stage
         print(
-            f"[DEBUG] update_feedback_panel called. Stage: {stage}, Query: '{ai_assistant.query_text}'"
+            f"[DEBUG] update_feedback_panel called. Query: '{ai_assistant.query_text}'"
         )
-        logger.info(
-            f"[DEBUG] update_feedback_panel called. Stage: {stage}, Query: '{ai_assistant.query_text}'"
-        )
-        if stage == WorkflowStages.RESULTS and ai_assistant.query_text.strip():
-            print("[DEBUG] Displaying feedback widget.")
-            logger.info("[DEBUG] Displaying feedback widget.")
-            feedback_widget = create_feedback_widget(ai_assistant.query_text)
-            print(f"[DEBUG] Feedback widget created: {feedback_widget}")
-            feedback_widget.visible = True  # Ensure widget is visible
-            feedback_panel.objects = [feedback_widget]
-            feedback_panel.visible = True  # Make the panel itself visible
-            print(
-                f"[DEBUG] feedback_panel.objects: {feedback_panel.objects}, feedback_panel.visible: {feedback_panel.visible}"
-            )
-        else:
-            print("[DEBUG] Hiding feedback widget.")
-            feedback_panel.objects = []
-            feedback_panel.visible = False
-            print(
-                f"[DEBUG] feedback_panel.objects cleared, feedback_panel.visible: {feedback_panel.visible}"
-            )
+        persistent_feedback_widget.query = ai_assistant.query_text
+        persistent_feedback_widget.comment = ""
+        persistent_feedback_widget.rating = ""
+        persistent_feedback_widget.submitted = False
+        persistent_feedback_widget.thumbs_up.visible = True
+        persistent_feedback_widget.thumbs_down.visible = True
+        persistent_feedback_widget.comment_input.visible = True
+        persistent_feedback_widget.submit_button.visible = True
+        persistent_feedback_widget.thank_you.visible = False
+        feedback_panel.visible = bool(ai_assistant.query_text.strip())
+        print(f"[DEBUG] feedback_panel.visible: {feedback_panel.visible}")
 
+    print("[DEBUG] Registering workflow_state watcher for update_feedback_panel")
     ai_assistant.workflow_state.param.watch(
-        lambda event: update_feedback_panel(), "current_stage"
+        lambda event: (
+            print("[DEBUG] workflow_state watcher fired"),
+            update_feedback_panel(),
+        ),
+        "current_stage",
     )
-    ai_assistant.param.watch(lambda event: update_feedback_panel(), "query_text")
+    print("[DEBUG] Registering query_text watcher for update_feedback_panel")
+    ai_assistant.param.watch(
+        lambda event: (
+            print("[DEBUG] query_text watcher fired"),
+            update_feedback_panel(),
+        ),
+        "query_text",
+    )
     # --- End Feedback Widget ---
 
     main_content = pn.Column(
@@ -554,4 +557,5 @@ def build_assistant_view(ai_assistant):
         width_policy="max",
         height_policy="max",
     )
+    update_feedback_panel()  # Force feedback widget to initialize after UI build
     return layout

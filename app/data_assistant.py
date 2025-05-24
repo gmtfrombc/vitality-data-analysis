@@ -543,11 +543,50 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Create enhanced feedback widget if not exists
         if self.feedback_widget is None:
+            print("[DEBUG] Creating feedback widget")
             self.feedback_widget = self._create_enhanced_feedback_widget()
+        else:
+            print("[DEBUG] Feedback widget already exists")
 
         # Add feedback widget to results
         if self.feedback_widget not in self.ui.result_container.objects:
+            print("[DEBUG] Adding feedback widget to result container")
             self.ui.result_container.objects.append(self.feedback_widget)
+        else:
+            print("[DEBUG] Feedback widget already in result container")
+
+        # Make feedback widget visible
+        print(
+            f"[DEBUG] Setting feedback widget visible=True, current visible={self.feedback_widget.visible}"
+        )
+        self.feedback_widget.visible = True
+        print(
+            f"[DEBUG] Feedback widget visible after setting={self.feedback_widget.visible}"
+        )
+
+        # Ensure all child components are visible
+        if hasattr(self, "_feedback_up") and self._feedback_up:
+            self._feedback_up.visible = True
+        if hasattr(self, "_feedback_down") and self._feedback_down:
+            self._feedback_down.visible = True
+        if hasattr(self, "_feedback_comment") and self._feedback_comment:
+            self._feedback_comment.visible = True
+        if hasattr(self, "_feedback_save") and self._feedback_save:
+            self._feedback_save.visible = True
+        print("[DEBUG] Set all feedback child components to visible=True")
+
+        # Force Panel to refresh the result container by reassigning objects list
+        current_objects = list(self.ui.result_container.objects)
+        self.ui.result_container.objects = []
+        self.ui.result_container.objects = current_objects
+        print("[DEBUG] Forced result container refresh")
+
+        print(
+            f"[DEBUG] Result container objects count: {len(self.ui.result_container.objects)}"
+        )
+        print(
+            f"[DEBUG] Result container objects: {[type(obj).__name__ for obj in self.ui.result_container.objects]}"
+        )
 
         # Mark results displayed
         self.workflow.mark_results_displayed()
