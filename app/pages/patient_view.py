@@ -304,17 +304,6 @@ class PatientView(param.Parameterized):
         logger.debug("Getting scores for patient ID: %s", patient_id)
         scores_df = get_patient_scores(patient_id)
         logger.debug("Scores data rows: %s", len(scores_df))
-        logger.info(f"Scores data for patient {patient_id}: {len(scores_df)} rows")
-
-        if not scores_df.empty:
-            logger.info(f"Scores columns: {scores_df.columns.tolist()}")
-            logger.info(f"Sample scores data: {scores_df.head(1).to_dict('records')}")
-
-        # Get patient data for program start date
-        patient_data = get_patient_overview(patient_id)
-        program_start_date = patient_data.get("demographics", {}).get(
-            "program_start_date", None
-        )
 
         if scores_df.empty:
             return pn.pane.Markdown("No metabolic health scores available")
@@ -336,27 +325,27 @@ class PatientView(param.Parameterized):
             plot_df = plot_df.dropna(subset=["date"])
             # Sort by date for proper line plotting
             plot_df = plot_df.sort_values("date")
-            logger.info(f"Plot data prepared with {len(plot_df)} rows")
 
         # Original table view (always show this)
         scores_table = pn.widgets.Tabulator(
             scores_df_display, sizing_mode="stretch_width", show_index=False
         )
-        logger.info("Created scores table")
 
         # Direct plotting approach
         plots = []
         try:
+            # Get patient data for program start date
+            patient_data = get_patient_overview(patient_id)
+            program_start_date = patient_data.get("demographics", {}).get(
+                "program_start_date", None
+            )
+
             # Group by date and score_type for plotting
             for score_type in plot_df["score_type"].unique():
                 # Filter data for this score type
                 score_data = plot_df[plot_df["score_type"] == score_type]
 
                 if not score_data.empty and len(score_data) > 0:
-                    logger.info(
-                        f"Creating plot for score type: {score_type} with {len(score_data)} points"
-                    )
-
                     # Create plot using shared helper
                     score_plot = line_plot(
                         score_data,
@@ -373,13 +362,11 @@ class PatientView(param.Parameterized):
                     plots.append(
                         pn.pane.HoloViews(score_plot, sizing_mode="stretch_width")
                     )
-                    logger.info(f"Added plot for {score_type}")
         except Exception as e:
-            logger.error(f"Error creating score plots: {e}", exc_info=True)
-            print(f"Error creating score plots: {e}")
+            # Continue execution even if plot creation fails
+            pass
 
         # Create layout
-        logger.info(f"Total plots created: {len(plots)}")
         components = [pn.pane.Markdown("### Scores Data"), scores_table]
 
         if plots:
@@ -393,7 +380,6 @@ class PatientView(param.Parameterized):
                     *plots,  # Display plots vertically for better visibility
                 ]
             )
-            logger.info("Added plots to layout")
 
         return pn.Column(*components, sizing_mode="stretch_width")
 
@@ -403,21 +389,14 @@ class PatientView(param.Parameterized):
         current_id = patient_id
         vitals_df = get_patient_vitals(current_id)
         logger.debug("Vitals data rows: %s", len(vitals_df))
-        logger.info(f"Vitals data for patient {patient_id}: {len(vitals_df)} rows")
-
-        if not vitals_df.empty:
-            logger.info(f"Vitals columns: {vitals_df.columns.tolist()}")
-            logger.info(f"Sample vitals data: {vitals_df.head(1).to_dict('records')}")
 
         # Get patient data for program start date
         patient_data = get_patient_overview(patient_id)
         program_start_date = patient_data.get("demographics", {}).get(
             "program_start_date", None
         )
-        logger.info(f"Program start date: {program_start_date}")
 
         if vitals_df.empty:
-            logger.warning("No vitals data available for plotting")
             return pn.pane.Markdown("No vitals data available")
 
         # Format dates for display in tables
@@ -437,7 +416,6 @@ class PatientView(param.Parameterized):
             plot_df = plot_df.dropna(subset=["date"])
             # Sort by date for proper line plotting
             plot_df = plot_df.sort_values("date")
-            logger.info(f"Plot data prepared with {len(plot_df)} rows")
 
         # Only create plots if we have data with dates
         plots = []
@@ -532,11 +510,9 @@ class PatientView(param.Parameterized):
                     )
                     logger.info("Single BP plot added to plots list")
 
-            logger.info(f"Total plots created: {len(plots)}")
         except Exception as e:
-            logger.error(f"Error creating vitals plots: {e}", exc_info=True)
-            print(f"Error creating vitals plots: {e}")
             # Continue execution even if plot creation fails
+            pass
 
         # Create table view of data
         vitals_table = pn.widgets.Tabulator(
@@ -544,11 +520,9 @@ class PatientView(param.Parameterized):
             sizing_mode="stretch_width",
             show_index=False,  # Hide index column for cleaner display
         )
-        logger.info("Vitals table created")
 
         # Create layout with plots if available
         if plots:
-            logger.info("Returning layout with plots")
             layout = pn.Column(
                 pn.pane.Markdown("### Vitals Data"),
                 vitals_table,
@@ -560,10 +534,8 @@ class PatientView(param.Parameterized):
                 *plots,  # Display plots vertically for better visibility
                 sizing_mode="stretch_width",
             )
-            logger.info("Vitals layout created with plots")
             return layout
         else:
-            logger.info("Returning layout without plots")
             return pn.Column(
                 pn.pane.Markdown("### Vitals Data"),
                 vitals_table,
@@ -692,11 +664,9 @@ class PatientView(param.Parameterized):
             )
 
     def create_labs_tab(self, patient_id):
-        print(f"Debug: Getting lab data for patient ID: '{patient_id}'")
         # Always get the current ID, not a cached version
         current_id = patient_id
         labs_df = get_patient_labs(current_id)
-        print(f"Debug: Lab data rows: {len(labs_df)}")
 
         # Get patient data for program start date
         patient_data = get_patient_overview(patient_id)
@@ -791,7 +761,6 @@ class PatientView(param.Parameterized):
                     plots.append(
                         pn.pane.HoloViews(lab_plot, sizing_mode="stretch_width")
                     )
-                    print(f"Added plot for {lab_test}")
         except Exception as e:
             print(f"Error creating lab plots: {e}")
 
@@ -818,7 +787,6 @@ class PatientView(param.Parameterized):
 
     def create_pmh_tab(self, patient_id):
         """Create tab for Past Medical History data"""
-        print(f"Debug: Getting PMH for patient ID: '{patient_id}'")
         current_id = str(patient_id)
         pmh_df = get_patient_pmh(current_id)
 
@@ -850,7 +818,6 @@ class PatientView(param.Parameterized):
 
     def create_visit_metrics_tab(self, patient_id):
         """Create tab for Visit Metrics data"""
-        print(f"Debug: Getting Visit Metrics for patient ID: '{patient_id}'")
         current_id = str(patient_id)
         visit_df = get_patient_visit_metrics(current_id)
 
@@ -935,12 +902,10 @@ class PatientView(param.Parameterized):
         )
 
     def patient_info_card(self, patient_id):
-        print(f"Debug: Creating patient info card for patient ID: '{patient_id}'")
         # Always get fresh data
         patient_data = get_patient_overview(patient_id)
         demographics = patient_data.get("demographics", {})
         formatted_bools = patient_data.get("formatted_bools", {})
-        print(f"Debug: Patient info card data: {demographics}")
 
         if not demographics:
             return pn.pane.Markdown("No patient data available")
@@ -986,7 +951,8 @@ class PatientView(param.Parameterized):
 
                 months_in_program = f" (Active {months_text})"
             except Exception as e:
-                print(f"Error calculating months in program: {e}")
+                # print(f"Error calculating months in program: {e}")
+                pass
 
         info_text = f"""
         ### {demographics.get('first_name', '')} {demographics.get('last_name', '')}

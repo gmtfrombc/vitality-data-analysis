@@ -36,6 +36,12 @@ _server = None
 # Load environment variables from .env file
 load_dotenv()
 
+logging.getLogger("bokeh.server").setLevel(logging.WARNING)
+logging.getLogger("bokeh.server.views.ws").setLevel(logging.WARNING)
+logging.getLogger("bokeh.server.tornado").setLevel(logging.WARNING)
+logging.getLogger("tornado.access").setLevel(logging.WARNING)
+logging.getLogger("bokeh.core.validation.check").setLevel(logging.ERROR)
+
 
 def cleanup_resources():
     """Cleanup function to ensure resources are properly released."""
@@ -65,7 +71,7 @@ def cleanup_resources():
 
 def signal_handler(sig, frame):
     """Handle termination signals by cleaning up and exiting."""
-    logger.info(f"Received signal {sig}, shutting down...")
+    # logger.info(f"Received signal {sig}, shutting down...")
     cleanup_resources()
     sys.exit(0)
 
@@ -85,7 +91,7 @@ def safe_import(module_path, fallback_message=None):
         # Try to import the module
         __import__(module_path)
         module = sys.modules[module_path]
-        logger.info(f"Successfully imported {module_path}")
+        # logger.info(f"Successfully imported {module_path}")
         return module
     except Exception as e:
         error_details = traceback.format_exc()
@@ -126,9 +132,9 @@ def safe_apply_migrations(db_path):
         from app.utils.db_migrations import apply_pending_migrations
 
         # Apply migrations
-        logger.info("Checking for database migrations...")
+        # logger.info("Checking for database migrations...")
         apply_pending_migrations(db_path)
-        logger.info("Database is up to date")
+        # logger.info("Database is up to date")
         return True
     except Exception as e:
         error_details = traceback.format_exc()
@@ -148,13 +154,14 @@ def safe_initialize_validation_system():
         from app.utils.validation_startup import initialize_validation_system
 
         # Initialize the validation system
-        logger.info("Initializing validation system...")
+        # logger.info("Initializing validation system...")
         result = initialize_validation_system()
         if result:
-            logger.info("Validation system initialized successfully")
+            # logger.info("Validation system initialized successfully")
+            return result
         else:
-            logger.warning("Validation system initialization returned False")
-        return result
+            # logger.warning("Validation system initialization returned False")
+            return False
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"Error initializing validation system: {e}\n{error_details}")
@@ -166,6 +173,10 @@ def create_app():
 
     # Configure Panel settings
     pn.extension(notifications=True, sizing_mode="stretch_width")
+    pn.config.layout_compatibility = "warn"  # Set to warn instead of error
+
+    # Suppress Panel parameter warnings about sizing_mode
+    logging.getLogger("param").setLevel(logging.ERROR)
 
     # Apply database migrations
     db_path = os.path.join(Path(__file__).parent, "patient_data.db")
@@ -206,7 +217,6 @@ def create_app():
     )
 
     # Create the main application layout with combined Data Quality & Engagement tab
-    print("Registering Data Assistant tab with data_assistant_page")
     tabs = pn.Tabs(
         ("Dashboard", dashboard.dashboard_page()),
         ("Data Assistant", data_assistant_page()),
@@ -236,23 +246,23 @@ if __name__ == "__main__":
 
     # Get the application template
     try:
-        logger.info("Creating application...")
+        # logger.info("Creating application...")
         app = create_app()
-        logger.info("Application created successfully")
+        # logger.info("Application created successfully")
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"Error creating application: {e}\n{error_details}")
         sys.exit(1)
 
     # Start the Panel server
-    logger.info("Starting VP Analytics Platform")
+    # logger.info("Starting VP Analytics Platform")
 
     try:
         # Store server reference for cleanup
         _server = app.show(threaded=True)
 
         # Log process info for debugging
-        logger.info(f"Server running with PID: {os.getpid()}")
+        # logger.info(f"Server running with PID: {os.getpid()}")
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"Error starting server: {e}\n{error_details}")
