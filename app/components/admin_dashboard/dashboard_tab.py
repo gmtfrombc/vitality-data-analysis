@@ -25,6 +25,7 @@ from typing import Dict, Any
 from app.services.dashboard_service import DashboardService
 from app.components.admin_dashboard.charts import PerformanceChartsPanel
 from app.components.admin_dashboard.learning_charts import LearningChartsPanel
+from app.components.admin_dashboard.export_panel import ExportPanel
 from app.services.metrics_collector import MetricsCollector
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,9 @@ class AdminDashboardTab(param.Parameterized):
     # Sprint 2.2 parameters
     show_learning_analytics = param.Boolean(default=False)
 
+    # Sprint 2.3 parameters
+    show_export_panel = param.Boolean(default=False)
+
     def __init__(self, **params):
         super().__init__(**params)
         self.dashboard_service = DashboardService()
@@ -61,6 +65,9 @@ class AdminDashboardTab(param.Parameterized):
 
         # Initialize learning charts panel (Sprint 2.2)
         self.learning_charts_panel = LearningChartsPanel()
+
+        # Initialize export panel (Sprint 2.3)
+        self.export_panel = ExportPanel()
 
         # Start metrics collection
         self.metrics_collector.start_collection()
@@ -149,6 +156,15 @@ class AdminDashboardTab(param.Parameterized):
         )
         self.learning_toggle.link(self, value="show_learning_analytics")
 
+        # Export panel toggle button (Sprint 2.3)
+        self.export_toggle = pn.widgets.Toggle(
+            name="📊 Show Export & Reports",
+            value=self.show_export_panel,
+            sizing_mode="fixed",
+            width=200,
+        )
+        self.export_toggle.link(self, value="show_export_panel")
+
         # Charts section (initially hidden)
         self.charts_section = pn.Column(
             self.charts_panel.get_panel(),
@@ -163,11 +179,21 @@ class AdminDashboardTab(param.Parameterized):
             sizing_mode="stretch_width",
         )
 
+        # Export panel section (initially hidden)
+        self.export_section = pn.Column(
+            self.export_panel.get_panel(),
+            visible=self.show_export_panel,
+            sizing_mode="stretch_width",
+        )
+
         # Watch for charts toggle
         self.param.watch(self._toggle_charts, "show_charts")
 
         # Watch for learning analytics toggle
         self.param.watch(self._toggle_learning_analytics, "show_learning_analytics")
+
+        # Watch for export panel toggle
+        self.param.watch(self._toggle_export_panel, "show_export_panel")
 
         # Enhanced controls
         self.enhanced_controls = pn.Row(
@@ -177,6 +203,7 @@ class AdminDashboardTab(param.Parameterized):
             self.auto_refresh_interval_select,
             self.charts_toggle,
             self.learning_toggle,
+            self.export_toggle,
             sizing_mode="stretch_width",
         )
 
@@ -374,6 +401,10 @@ class AdminDashboardTab(param.Parameterized):
         """Toggle learning analytics visibility."""
         self.learning_section.visible = self.show_learning_analytics
 
+    def _toggle_export_panel(self, event):
+        """Toggle export panel visibility."""
+        self.export_section.visible = self.show_export_panel
+
     def _start_auto_refresh(self):
         """Start auto-refresh mechanism."""
         if hasattr(self, "_auto_refresh_task"):
@@ -539,6 +570,7 @@ class AdminDashboardTab(param.Parameterized):
             self.enhanced_controls,
             self.charts_section,
             self.learning_section,
+            self.export_section,
             self.last_updated,
             sizing_mode="stretch_width",
         )

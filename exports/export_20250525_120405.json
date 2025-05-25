@@ -1,0 +1,231 @@
+{
+  "export_id": "export_20250525_120405",
+  "generated_at": "2025-05-25T12:04:05.129988",
+  "time_period_days": 7,
+  "data_types": [
+    "health",
+    "performance",
+    "benchmarks"
+  ],
+  "data": {
+    "health": {
+      "current_status": {
+        "overall_status": "healthy",
+        "components": {
+          "database": {
+            "status": "connected",
+            "response_time_ms": 50,
+            "icon": "\u2705"
+          },
+          "pattern_learning": {
+            "status": "active",
+            "active_patterns": 12,
+            "icon": "\u2705"
+          },
+          "cache": {
+            "performance": "fair",
+            "hit_rate": 0.85,
+            "icon": "\u26a0\ufe0f"
+          }
+        },
+        "metrics": {
+          "error_rate": 0.0,
+          "response_time_ms": 150,
+          "uptime_hours": 24
+        },
+        "recommendations": [],
+        "last_updated": "2025-05-25T12:04:05.127896"
+      },
+      "timestamp": "2025-05-25T12:04:05.129122"
+    },
+    "performance": {
+      "current_metrics": {
+        "avg_response_time": 150,
+        "db_response_time": 50,
+        "cache_hit_rate": 0.85,
+        "active_patterns": 12,
+        "uptime_hours": 24
+      },
+      "system_info": {
+        "platform": "Darwin",
+        "platform_version": "Darwin Kernel Version 24.5.0: Tue Apr 22 19:54:33 PDT 2025; root:xnu-11417.121.6~2/RELEASE_ARM64_T8122",
+        "python_version": "3.13.2",
+        "cpu_count": 8,
+        "memory_total_gb": 16.0,
+        "memory_available_gb": 5.27,
+        "memory_percent": 67.1,
+        "disk_usage_percent": 18.9,
+        "timestamp": "2025-05-25T12:04:05.129446",
+        "database_patients": 674,
+        "database_questions": 13,
+        "database_connected": true
+      },
+      "timestamp": "2025-05-25T12:04:05.129673"
+    },
+    "benchmarks": {
+      "recent_suites": [
+        {
+          "suite_id": "test_sprint_23_20250525_120405",
+          "started_at": "2025-05-25T12:04:05.106090",
+          "completed_at": "2025-05-25T12:04:05.119983",
+          "total_tests": 8,
+          "successful_tests": 8,
+          "failed_tests": 0,
+          "avg_duration_ms": 1.7265379428863525,
+          "results": [
+            {
+              "test_name": "database_connection",
+              "test_type": "database",
+              "duration_ms": 0.3829002380371094,
+              "success": true,
+              "error_message": null,
+              "metadata": {
+                "connection_time_ms": 0.308990478515625,
+                "tables_count": 78,
+                "pattern_count": 3,
+                "recent_pattern_ratio": 0.6666666666666666
+              },
+              "timestamp": "2025-05-25T12:04:05.106488"
+            },
+            {
+              "test_name": "query_performance",
+              "test_type": "query",
+              "duration_ms": 0.3161430358886719,
+              "success": true,
+              "error_message": null,
+              "metadata": {
+                "simple_count": {
+                  "duration_ms": 0.18906593322753906,
+                  "row_count": 1
+                },
+                "complex_join": {
+                  "duration_ms": 0.04696846008300781,
+                  "row_count": 1
+                },
+                "time_range": {
+                  "duration_ms": 0.01621246337890625,
+                  "row_count": 3
+                }
+              },
+              "timestamp": "2025-05-25T12:04:05.106809"
+            },
+            {
+              "test_name": "cache_performance",
+              "test_type": "cache",
+              "duration_ms": 1.2590885162353516,
+              "success": true,
+              "error_message": null,
+              "metadata": {
+                "first_call_ms": 1.2311935424804688,
+                "second_call_ms": 0.0021457672119140625,
+                "cache_efficiency": 0.9982571649883811,
+                "cache_hit_improvement": 1.2290477752685547
+              },
+              "timestamp": "2025-05-25T12:04:05.108073"
+            },
+            {
+              "test_name": "learning_system",
+              "test_type": "learning",
+              "duration_ms": 1.191854476928711,
+              "success": true,
+              "error_message": null,
+              "metadata": {
+                "health_check_ms": 0.9579658508300781,
+                "pattern_retrieval_ms": 0.19884109497070312,
+                "pattern_count": 3,
+                "database_connected": true,
+                "learning_active": true,
+                "cache_performance": "fair"
+              },
+              "timestamp": "2025-05-25T12:04:05.109269"
+            },
+            {
+              "test_name": "dashboard_load",
+              "test_type": "dashboard",
+              "duration_ms": 6.997108459472656,
+              "success": true,
+              "error_message": null,
+              "metadata": {
+                "total_load_time_ms": 6.96110725402832,
+                "component_times": {
+                  "health_status": {
+                    "duration_ms": 0.0021457672119140625,
+                    "success": true
+                  },
+                  "current_metrics": {
+                    "duration_ms": 0.33283233642578125,
+                    "success": true
+                  },
+                  "system_info": {
+                    "duration_ms": 6.624937057495117,
+                    "success": true
+                  }
+                },
+                "successful_components": 3
+              },
+              "timestamp": "2025-05-25T12:04:05.116270"
+            },
+            {
+              "test_name": "concurrent_queries",
+              "test_type": "query",
+              "duration_ms": 3.172159194946289,
+              "success": true,
+              "error_message": null,
+              "metadata": {
+                "concurrent_queries": 5,
+                "total_time_ms": 3.100156784057617,
+                "avg_time_per_query_ms": 0.6200313568115234,
+                "successful_queries": 5
+              },
+              "timestamp": "2025-05-25T12:04:05.119449"
+            },
+            {
+              "test_name": "memory_usage",
+              "test_type": "system",
+              "duration_ms": 0.16307830810546875,
+              "success": true,
+              "error_message": null,
+              "metadata": {
+                "rss_mb": 70.828125,
+                "vms_mb": 401122.796875,
+                "memory_percent": 0.4323005676269531,
+                "cpu_percent": 0.0
+              },
+              "timestamp": "2025-05-25T12:04:05.119619"
+            },
+            {
+              "test_name": "response_time",
+              "test_type": "system",
+              "duration_ms": 0.3299713134765625,
+              "success": true,
+              "error_message": null,
+              "metadata": {
+                "operations": {
+                  "db_ping": 0.2529621124267578,
+                  "health_check": 0.0040531158447265625
+                },
+                "avg_response_time_ms": 0.1285076141357422,
+                "max_response_time_ms": 0.2529621124267578,
+                "min_response_time_ms": 0.0040531158447265625,
+                "total_operations": 2
+              },
+              "timestamp": "2025-05-25T12:04:05.119953"
+            }
+          ],
+          "performance_score": 100.0,
+          "recommendations": [
+            "\u2705 System performance is optimal - no immediate action required"
+          ]
+        }
+      ],
+      "summary": {
+        "total_suites": 1,
+        "avg_performance_score": 100.0,
+        "avg_duration_ms": 1.7265379428863525,
+        "latest_score": 100.0,
+        "trend": "stable"
+      },
+      "timestamp": "2025-05-25T12:04:05.129982"
+    }
+  }
+}

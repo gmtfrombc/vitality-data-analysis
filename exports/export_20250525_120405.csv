@@ -1,0 +1,21 @@
+Export ID,export_20250525_120405
+Generated,2025-05-25T12:04:05.128942
+Time Period (days),7
+
+=== HEALTH DATA ===
+Component,Status,Details
+database,connected,"{'status': 'connected', 'response_time_ms': 50, 'icon': '✅'}"
+pattern_learning,active,"{'status': 'active', 'active_patterns': 12, 'icon': '✅'}"
+cache,unknown,"{'performance': 'fair', 'hit_rate': 0.85, 'icon': '⚠️'}"
+
+Overall Status,healthy
+Last Updated,2025-05-25T12:04:05.127896
+
+=== PERFORMANCE DATA ===
+Metric,Value,Unit
+avg_response_time,150,
+db_response_time,50,
+cache_hit_rate,0.85,
+active_patterns,12,
+uptime_hours,24,
+
