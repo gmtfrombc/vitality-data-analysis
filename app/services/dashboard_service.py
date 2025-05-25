@@ -14,10 +14,17 @@ Sprint 1.2 Features:
 - Performance metrics with historical data
 - Alert threshold checking and notifications
 - Maintenance operation logging
+
+Sprint 1.3 Features:
+- Performance optimizations with intelligent caching
+- Database optimization and cleanup utilities
+- Enhanced error handling and fallback mechanisms
+- User testing support and metrics collection
 """
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import sqlite3
@@ -32,6 +39,39 @@ from app.services.correction_service import CorrectionService
 from app.utils.db_migrations import apply_pending_migrations
 
 logger = logging.getLogger(__name__)
+
+
+class DashboardCache:
+    """Simple in-memory cache for dashboard data."""
+
+    def __init__(self, default_ttl: int = 300):  # 5 minutes default
+        self.cache = {}
+        self.timestamps = {}
+        self.default_ttl = default_ttl
+
+    def get(self, key: str, ttl: Optional[int] = None) -> Optional[Any]:
+        """Get cached value if still valid."""
+        if key not in self.cache:
+            return None
+
+        ttl = ttl or self.default_ttl
+        if time.time() - self.timestamps[key] > ttl:
+            # Cache expired
+            del self.cache[key]
+            del self.timestamps[key]
+            return None
+
+        return self.cache[key]
+
+    def set(self, key: str, value: Any):
+        """Set cached value with current timestamp."""
+        self.cache[key] = value
+        self.timestamps[key] = time.time()
+
+    def clear(self):
+        """Clear all cached data."""
+        self.cache.clear()
+        self.timestamps.clear()
 
 
 @dataclass
@@ -57,6 +97,7 @@ class DashboardService:
         self.db_path = db_path or DB_FILE
         self.monitor = LearningSystemMonitor(db_path)
         self.correction_service = CorrectionService(db_path)
+        self.cache = DashboardCache()
         self._ensure_tables_exist()
 
     def _ensure_tables_exist(self):
@@ -72,55 +113,69 @@ class DashboardService:
         conn.row_factory = sqlite3.Row
         return conn
 
+    @functools.lru_cache(maxsize=100)
+    def _get_cached_health_status(self, cache_key: str) -> DashboardHealthStatus:
+        """Get health status with caching."""
+        # Check in-memory cache first
+        cached = self.cache.get("health_status", ttl=60)  # 1 minute cache
+        if cached:
+            return cached
+
+        # Get fresh data
+        health_status = self._get_fresh_health_status()
+        self.cache.set("health_status", health_status)
+        return health_status
+
+    def _get_fresh_health_status(self) -> DashboardHealthStatus:
+        """Get fresh health status without caching."""
+        # Get health from existing monitor
+        health = self.monitor.get_system_health()
+
+        # Get current metrics
+        current_metrics = self._get_current_metrics()
+
+        # Build component status
+        components = {
+            "database": {
+                "status": (
+                    "connected" if health.database_connected else "disconnected"
+                ),
+                "response_time_ms": current_metrics.get("db_response_time", 0),
+                "icon": "✅" if health.database_connected else "❌",
+            },
+            "pattern_learning": {
+                "status": ("active" if health.pattern_learning_active else "inactive"),
+                "active_patterns": current_metrics.get("active_patterns", 0),
+                "icon": "✅" if health.pattern_learning_active else "❌",
+            },
+            "cache": {
+                "performance": health.cache_performance,
+                "hit_rate": current_metrics.get("cache_hit_rate", 0),
+                "icon": self._get_cache_icon(health.cache_performance),
+            },
+        }
+
+        # Build metrics summary
+        metrics = {
+            "error_rate": health.recent_error_rate,
+            "response_time_ms": current_metrics.get("avg_response_time", 0),
+            "uptime_hours": current_metrics.get("uptime_hours", 0),
+        }
+
+        return DashboardHealthStatus(
+            overall_status=health.overall_status,
+            components=components,
+            metrics=metrics,
+            recommendations=health.recommendations,
+            last_updated=datetime.now().isoformat(),
+        )
+
     def get_health_status(self) -> DashboardHealthStatus:
         """Get comprehensive health status for dashboard display."""
         try:
-            # Get health from existing monitor
-            health = self.monitor.get_system_health()
-
-            # Get current metrics
-            current_metrics = self._get_current_metrics()
-
-            # Build component status
-            components = {
-                "database": {
-                    "status": (
-                        "connected" if health.database_connected else "disconnected"
-                    ),
-                    "response_time_ms": current_metrics.get("db_response_time", 0),
-                    "icon": "✅" if health.database_connected else "❌",
-                },
-                "pattern_learning": {
-                    "status": (
-                        "active" if health.pattern_learning_active else "inactive"
-                    ),
-                    "active_patterns": current_metrics.get("active_patterns", 0),
-                    "icon": "✅" if health.pattern_learning_active else "❌",
-                },
-                "cache": {
-                    "performance": health.cache_performance,
-                    "hit_rate": current_metrics.get("cache_hit_rate", 0),
-                    "icon": self._get_cache_icon(health.cache_performance),
-                },
-            }
-
-            # Build metrics summary
-            metrics = {
-                "error_rate": health.recent_error_rate,
-                "response_time_ms": current_metrics.get("avg_response_time", 0),
-                "uptime_hours": current_metrics.get("uptime_hours", 0),
-            }
-
-            return DashboardHealthStatus(
-                overall_status=health.overall_status,
-                components=components,
-                metrics=metrics,
-                recommendations=health.recommendations,
-                last_updated=datetime.now().isoformat(),
-            )
-
+            return self._get_cached_health_status(f"health_{int(time.time() // 60)}")
         except Exception as e:
-            logger.error(f"Failed to get health status: {e}")
+            logger.error(f"Failed to get cached health status: {e}")
             return self._get_fallback_health_status()
 
     def execute_health_check(self) -> Dict[str, Any]:
@@ -442,3 +497,74 @@ class DashboardService:
 
         except Exception as e:
             logger.error(f"Failed to store metric {metric_name}: {e}")
+
+    def optimize_database_queries(self):
+        """Optimize database performance."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Analyze query performance
+                cursor.execute("ANALYZE")
+
+                # Vacuum if needed (compact database)
+                cursor.execute("PRAGMA integrity_check")
+                integrity_result = cursor.fetchone()
+
+                if integrity_result and integrity_result[0] == "ok":
+                    cursor.execute("VACUUM")
+                    logger.info("Database vacuum completed successfully")
+
+                # Update statistics
+                cursor.execute("PRAGMA optimize")
+
+                return True
+
+        except Exception as e:
+            logger.error(f"Database optimization failed: {e}")
+            return False
+
+    def cleanup_old_metrics(self, days_to_keep: int = 30):
+        """Clean up old metrics data to improve performance."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Calculate cutoff date
+                cutoff_date = datetime.now() - timedelta(days=days_to_keep)
+
+                # Delete old metrics
+                cursor.execute(
+                    """
+                    DELETE FROM dashboard_metrics_history 
+                    WHERE timestamp < ?
+                """,
+                    (cutoff_date.isoformat(),),
+                )
+
+                deleted_count = cursor.rowcount
+
+                # Delete old maintenance logs
+                cursor.execute(
+                    """
+                    DELETE FROM maintenance_logs 
+                    WHERE started_at < ?
+                """,
+                    (cutoff_date.isoformat(),),
+                )
+
+                deleted_logs = cursor.rowcount
+
+                logger.info(
+                    f"Cleaned up {deleted_count} old metrics and {deleted_logs} old logs"
+                )
+
+                return {
+                    "metrics_deleted": deleted_count,
+                    "logs_deleted": deleted_logs,
+                    "cutoff_date": cutoff_date.isoformat(),
+                }
+
+        except Exception as e:
+            logger.error(f"Metrics cleanup failed: {e}")
+            return None
