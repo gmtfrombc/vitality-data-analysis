@@ -43,7 +43,7 @@ def load_rules_from_json(json_path: str, db_path: str) -> bool:
             rules = json.load(f)
 
         if not rules:
-            logger.warning("No rules found in JSON file")
+            # logger.warning("No rules found in JSON file")
             return False
 
         # Connect to database
@@ -62,9 +62,9 @@ def load_rules_from_json(json_path: str, db_path: str) -> bool:
                 "severity",
             ]
             if not all(field in rule for field in required_fields):
-                logger.warning(
-                    f"Rule missing required fields: {rule.get('rule_id', 'unknown')}"
-                )
+                # logger.warning(
+                #     f"Rule missing required fields: {rule.get('rule_id', 'unknown')}"
+                # )
                 continue
 
             # Check if rule already exists
@@ -98,7 +98,7 @@ def load_rules_from_json(json_path: str, db_path: str) -> bool:
                         rule["rule_id"],
                     ),
                 )
-                logger.info(f"Updated rule: {rule['rule_id']}")
+                # logger.info(f"Updated rule: {rule['rule_id']}")
             else:
                 # Insert new rule with all columns for new schema
                 cursor.execute(
@@ -114,13 +114,13 @@ def load_rules_from_json(json_path: str, db_path: str) -> bool:
                         rule["severity"],
                     ),
                 )
-                logger.info(f"Inserted rule: {rule['rule_id']}")
+                # logger.info(f"Inserted rule: {rule['rule_id']}")
 
         # Commit changes and close connection
         conn.commit()
         conn.close()
 
-        logger.info(f"Successfully loaded {len(rules)} rules into database")
+        # logger.info(f"Successfully loaded {len(rules)} rules into database")
         return True
 
     except Exception as e:
@@ -169,7 +169,7 @@ def _load_rules_from_stream(rules: List[Dict[str, Any]], db_path: str) -> bool:
     """Helper shared by JSON/YAML loaders to persist rule list."""
     try:
         if not rules:
-            logger.warning("No rules provided to loader")
+            # logger.warning("No rules provided to loader")
             return False
 
         # Connect to database
@@ -186,9 +186,9 @@ def _load_rules_from_stream(rules: List[Dict[str, Any]], db_path: str) -> bool:
                 "severity",
             ]
             if not all(field in rule for field in required_fields):
-                logger.warning(
-                    f"Rule missing required fields: {rule.get('rule_id', 'unknown')}"
-                )
+                # logger.warning(
+                #     f"Rule missing required fields: {rule.get('rule_id', 'unknown')}"
+                # )
                 continue
 
             # Convert dict parameters to JSON str for DB storage
@@ -213,7 +213,7 @@ def _load_rules_from_stream(rules: List[Dict[str, Any]], db_path: str) -> bool:
                         rule["rule_id"],
                     ),
                 )
-                logger.info(f"Updated rule: {rule['rule_id']}")
+                # logger.info(f"Updated rule: {rule['rule_id']}")
             else:
                 cursor.execute(
                     """INSERT INTO validation_rules (rule_id, description, rule_type, validation_logic, parameters, severity, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)""",
@@ -226,11 +226,11 @@ def _load_rules_from_stream(rules: List[Dict[str, Any]], db_path: str) -> bool:
                         rule["severity"],
                     ),
                 )
-                logger.info(f"Inserted rule: {rule['rule_id']}")
+                # logger.info(f"Inserted rule: {rule['rule_id']}")
 
         conn.commit()
         conn.close()
-        logger.info(f"Successfully loaded {len(rules)} rules into database")
+        # logger.info(f"Successfully loaded {len(rules)} rules into database")
         return True
 
     except Exception as exc:

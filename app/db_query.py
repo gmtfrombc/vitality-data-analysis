@@ -90,7 +90,6 @@ def query_dataframe(query, params=None, db_path=None):
     conn = None
     try:
         conn = sqlite3.connect(db_path)
-        logger.debug("Executing query: %s | params=%s | db=%s", query, params, db_path)
         df = pd.read_sql_query(query, conn, params=params)
         return df
     except sqlite3.Error as exc:
@@ -130,8 +129,8 @@ def get_patient_by_id(patient_id, db_path=DB_PATH):
     patient_id = str(patient_id)
     query = "SELECT * FROM patients WHERE id = ?;"
     df = query_dataframe(query, params=(patient_id,), db_path=db_path)
-    if df.empty:
-        logger.warning(f"No patient found with ID: {patient_id}")
+    # if df.empty:
+    #     logger.warning(f"No patient found with ID: {patient_id}")
     return df
 
 
@@ -197,7 +196,6 @@ def create_patient(data, db_path=DB_PATH):
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
-        logger.debug(f"Executing insert: {query} with values: {values}")
         cur.execute(query, values)
         conn.commit()
 
@@ -246,6 +244,8 @@ def update_patient(patient_id, updates, db_path=DB_PATH):
 
     # First check if patient exists
     check_df = get_patient_by_id(patient_id, db_path)
+    # if check_df.empty:
+    #     logger.warning(f"Cannot update patient {patient_id} - patient does not exist")
     if check_df.empty:
         logger.error(f"Cannot update patient {patient_id} - patient does not exist")
         return False
@@ -258,7 +258,6 @@ def update_patient(patient_id, updates, db_path=DB_PATH):
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
-        logger.debug(f"Executing update: {query} with values: {values}")
         cur.execute(query, values)
         rows_affected = cur.rowcount
 
@@ -298,6 +297,8 @@ def delete_patient(patient_id, db_path=DB_PATH):
 
     # First check if patient exists
     check_df = get_patient_by_id(patient_id, db_path)
+    # if check_df.empty:
+    #     logger.warning(f"Cannot delete patient {patient_id} - patient does not exist")
     if check_df.empty:
         logger.error(f"Cannot delete patient {patient_id} - patient does not exist")
         return False
@@ -308,7 +309,6 @@ def delete_patient(patient_id, db_path=DB_PATH):
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
-        logger.debug(f"Executing delete: {query} with patient_id: {patient_id}")
         cur.execute(query, (patient_id,))
         rows_affected = cur.rowcount
 
@@ -527,8 +527,9 @@ def get_patient_overview(patient_id, db_path=DB_PATH):
     """
     # Get basic patient demographics
     patient_df = get_patient_by_id(patient_id, db_path)
+    # if patient_df.empty:
+    #     logger.warning(f"No patient found with ID: {patient_id}")
     if patient_df.empty:
-        logger.warning(f"No patient found with ID: {patient_id}")
         return {"demographics": {}}
 
     # Get latest vitals

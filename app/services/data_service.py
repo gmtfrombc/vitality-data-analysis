@@ -31,9 +31,7 @@ def ensure_rules_exist(db_path):
             )
             conn.close()
             initialize_validation_rules(db_path)
-        else:
-            logging.info(f"Found {count} validation rules in database.")
-            conn.close()
+        # logging.info(f"Found {count} validation rules in database.")
     except Exception as e:
         logging.error(f"Error checking for existing rules: {e}")
         raise

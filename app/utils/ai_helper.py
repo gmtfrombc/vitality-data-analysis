@@ -145,171 +145,6 @@ class AIHelper:
         finally:
             _intent_parser.ask_llm = _original_ask_llm
 
-    def _legacy_get_query_intent(self, query):
-        """
-        Analyze the query to determine the user's intent and required analysis
-        Returns a structured response with analysis type and parameters
-        """
-        logger.info(f"Getting intent for query: {query}")
-
-        _OFFLINE_MODE = is_offline_mode()
-        if _OFFLINE_MODE:
-            from app.utils.intent_clarification import clarifier as _clarifier
-
-            logger.info("Offline mode – returning fallback intent")
-            return _clarifier.create_fallback_intent(query)
-
-        # Prepare system prompt for intent classification
-        # (Prompt omitted for brevity; see ai_helper_old.py for full text)
-        system_prompt = "..."  # Replace with full prompt as needed
-
-        max_attempts = 2
-        stricter_suffix = (
-            "\nRespond with *only* valid JSON — no markdown, no explanations."
-        )
-
-        last_err = None
-        from app.utils.query_intent import (
-            parse_intent_json,
-            normalise_intent_fields,
-            DateRange,
-            inject_condition_filters_from_query,
-        )
-        import re
-
-        for attempt in range(max_attempts):
-            try:
-                prompt = (
-                    system_prompt if attempt == 0 else system_prompt + stricter_suffix
-                )
-                raw_reply = self._ask_llm(prompt, query)
-                # Remove any accidental markdown fences
-                if "```" in raw_reply:
-                    raw_reply = raw_reply.split("```", maxsplit=2)[1].strip()
-                # Validate & convert
-                intent = parse_intent_json(raw_reply)
-                normalise_intent_fields(intent)
-                q_lower = query.lower()
-                mentions_active_patients = (
-                    "active patient" in q_lower or "active patients" in q_lower
-                )
-                has_active_filter = any(
-                    getattr(f, "field", None)
-                    and f.field.lower() in {"active", "status", "activity_status"}
-                    for f in getattr(intent, "filters", []) or []
-                )
-                if (
-                    getattr(intent, "analysis_type", None) == "count"
-                    and mentions_active_patients
-                    and not has_active_filter
-                ):
-                    from app.utils.query_intent import Filter as _Filter
-
-                    logger.debug(
-                        "Injecting missing active=1 filter based on query text heuristic"
-                    )
-                    intent.filters.append(_Filter(field="active", value="active"))
-                # Heuristic 2 – map "total ..." phrasing to count
-                if "total" in q_lower and getattr(
-                    intent, "analysis_type", None
-                ) not in {"count", "sum"}:
-                    logger.debug(
-                        "Overriding analysis_type to 'count' based on 'total' keyword"
-                    )
-                    intent.analysis_type = "count"
-                # Heuristic 3 – map weight-loss phrasing to change analysis
-                if any(
-                    kw in q_lower
-                    for kw in [
-                        "weight loss",
-                        "lost weight",
-                        "weight change",
-                        "gain weight",
-                        "gained weight",
-                    ]
-                ) and getattr(intent, "analysis_type", None) in {
-                    "average",
-                    "unknown",
-                    "count",
-                }:
-                    logger.debug(
-                        "Overriding analysis_type to 'change' based on weight-loss wording"
-                    )
-                    intent.analysis_type = "change"
-                # NEW: Post-processing heuristics for date ranges
-                if not getattr(intent, "has_date_filter", lambda: False)():
-                    month_pattern = r"(?:in|during)\s+(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(\d{4}))?\.?"
-                    month_match = re.search(month_pattern, q_lower)
-                    if month_match:
-                        from datetime import datetime
-
-                        month_name = month_match.group(1)
-                        year = (
-                            int(month_match.group(2))
-                            if month_match.group(2)
-                            else datetime.now().year
-                        )
-                        month_map = {
-                            "january": 1,
-                            "february": 2,
-                            "march": 3,
-                            "april": 4,
-                            "may": 5,
-                            "june": 6,
-                            "july": 7,
-                            "august": 8,
-                            "september": 9,
-                            "october": 10,
-                            "november": 11,
-                            "december": 12,
-                        }
-                        month_num = month_map.get(month_name.lower())
-                        if month_num:
-                            import calendar
-
-                            _, last_day = calendar.monthrange(year, month_num)
-                            start_date = f"{year}-{month_num:02d}-01"
-                            end_date = f"{year}-{month_num:02d}-{last_day:02d}"
-                            intent.time_range = DateRange(
-                                start_date=start_date, end_date=end_date
-                            )
-                            logger.debug(
-                                f"Added implicit date range for month: {start_date} to {end_date}"
-                            )
-                logger.info("Intent analysis successful on attempt %s", attempt + 1)
-                inject_condition_filters_from_query(intent, query)
-                # Remove redundant non-clinical filters that duplicate condition terms
-                from app.utils.query_intent import get_canonical_condition
-
-                cleaned_filters = []
-                for _f in getattr(intent, "filters", []):
-                    if getattr(_f, "field", "").lower() in {
-                        "score_type",
-                        "assessment_type",
-                    } and isinstance(getattr(_f, "value", None), str):
-                        canon_cond = get_canonical_condition(_f.value)
-                        if canon_cond and canon_cond in {
-                            _f.value.lower(),
-                            _f.value.lower().replace(" ", "_"),
-                        }:
-                            continue
-                    cleaned_filters.append(_f)
-                intent.filters = cleaned_filters
-                return intent
-            except Exception as exc:
-                last_err = exc
-                logger.warning(
-                    "Intent parse failure on attempt %s – %s", attempt + 1, exc
-                )
-        logger.error("All intent parse attempts failed: %s", last_err)
-        return {
-            "analysis_type": "unknown",
-            "target_field": None,
-            "filters": [],
-            "conditions": [],
-            "parameters": {"error": str(last_err) if last_err else "unknown"},
-        }
-
     def generate_analysis_code(self, intent, data_schema, custom_prompt=None):
         """
         Generate Python code to perform the analysis based on the identified intent
@@ -322,7 +157,7 @@ class AIHelper:
         Returns:
             str: Generated Python code for the analysis
         """
-        logger.info(f"Generating analysis code for intent: {intent}")
+        # logger.info(f"Generating analysis code for intent: {intent}")
         _OFFLINE_MODE = is_offline_mode()
         _api_key = self.config.get("OPENAI_API_KEY", "") or ""
         if not _OFFLINE_MODE and (
@@ -388,7 +223,8 @@ class AIHelper:
         # --- END TEST STUB HOOK ---
 
         if _OFFLINE_MODE:
-            logger.info("Offline mode – using deterministic/template generator only")
+            # logger.info(
+            #     "Offline mode – using deterministic/template generator only")
             code = generate_code(intent)
             if code:
                 return code
@@ -416,11 +252,11 @@ class AIHelper:
             return """# Fallback due to invalid intent\nresults = {"error": "Could not parse query intent"}"""
         deterministic_code = generate_code(intent)
         if deterministic_code:
-            logger.info(
-                "Using deterministic template for %s analysis of %s",
-                intent.analysis_type,
-                intent.target_field,
-            )
+            # logger.info(
+            #     "Using deterministic template for %s analysis of %s",
+            #     intent.analysis_type,
+            #     intent.target_field,
+            # )
             return deterministic_code
         if (
             original_query
@@ -431,7 +267,7 @@ class AIHelper:
             return generate_fallback_code(original_query, intent)
         if custom_prompt:
             system_prompt = custom_prompt
-            logger.info("Using custom prompt for code generation")
+            # logger.info("Using custom prompt for code generation")
         else:
             system_prompt = f"""
             You are an expert Python developer specializing in data analysis. Generate executable Python code to analyze patient data based on the specified intent.
@@ -471,12 +307,13 @@ class AIHelper:
             )
             logger.debug("Code-gen raw response: %s", response)
             if hasattr(response, "usage") and response.usage:
-                logger.info(
-                    "Code-gen tokens -> prompt: %s, completion: %s, total: %s",
-                    response.usage.prompt_tokens,
-                    response.usage.completion_tokens,
-                    response.usage.total_tokens,
-                )
+                # logger.info(
+                #     "Code-gen tokens -> prompt: %s, completion: %s, total: %s",
+                #     response.usage.prompt_tokens,
+                #     response.usage.completion_tokens,
+                #     response.usage.total_tokens,
+                # )
+                pass
             code = response.choices[0].message.content
             if "```python" in code:
                 code = code.split("```python")[1].split("```")[0].strip()
@@ -492,7 +329,7 @@ class AIHelper:
                     "Generated code did not define `results`; appending placeholder assignment"
                 )
                 code += "\n\n# Auto-added safeguard – ensure variable exists\nresults = locals().get('results', None)"
-            logger.info("Successfully generated analysis code")
+            # logger.info("Successfully generated analysis code")
             return code
         except Exception as e:
             logger.error(f"Error generating analysis code: {str(e)}", exc_info=True)
@@ -509,14 +346,14 @@ class AIHelper:
         """
         Generate relevant clarifying questions based on the user's query
         """
-        logger.info(f"Generating clarifying questions for: {query}")
+        # logger.info(f"Generating clarifying questions for: {query}")
         return _generate_clarifying_questions(query, model=self.model)
 
     def interpret_results(self, query, results, visualizations=None):
         """
         Interpret analysis results and generate human-readable insights
         """
-        logger.info("Interpreting analysis results")
+        # logger.info("Interpreting analysis results")
         results = normalize_visualization_error(results)
         if isinstance(results, dict) and (
             results.get("visualization_disabled")

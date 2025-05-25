@@ -69,6 +69,13 @@ def build_filters_clause(intent_obj: QueryIntent) -> str:
                     if val.lower() == "active"
                     else 0 if val.lower() == "inactive" else val
                 )
+            elif canonical == "gender" and isinstance(val, str):
+                # Map gender values to database format
+                val = (
+                    "F"
+                    if val.lower() == "female"
+                    else "M" if val.lower() == "male" else val
+                )
             where_clauses.append(f"{canonical_with_prefix} = {_quote(val)}")
         elif f.range is not None:
             start = f.range.get("start")

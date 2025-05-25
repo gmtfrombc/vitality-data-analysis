@@ -150,7 +150,7 @@ class DataValidationPage(param.Parameterized):
         self.db_path = get_db_path()
         try:
             self.validation_engine = ValidationEngine(self.db_path)
-            logger.info("Validation engine initialized successfully")
+            # logger.info("Validation engine initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize validation engine: {e}")
             self.validation_engine = None
@@ -1648,7 +1648,7 @@ class DataValidationPage(param.Parameterized):
 # Create instance with exception handling
 try:
     validation_page = DataValidationPage()
-    logger.info("DataValidationPage instance created successfully")
+    # logger.info("DataValidationPage instance created successfully")
 except Exception as e:
     logger.error(f"Error creating DataValidationPage instance: {e}")
     validation_page = None

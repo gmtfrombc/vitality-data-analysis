@@ -83,8 +83,27 @@ def generate_histogram(intent, parameters=None):
             code += f" WHERE {sql_where_clause}"
         code += '"""\n'
     code += "df = query_dataframe(sql)\n"
+    # Special handling for BMI: comprehensive data validation and filtering
+    if target_field == "bmi":
+        code += (
+            "# BMI data validation and filtering\n"
+            "if 'bmi' in df.columns and not df.empty:\n"
+            "    # Convert BMI to numeric and filter to clinical range (12-70)\n"
+            "    initial_count = len(df)\n"
+            "    df['bmi'] = pd.to_numeric(df['bmi'], errors='coerce')\n"
+            "    df = df.dropna(subset=['bmi'])\n"
+            "    df = df[(df['bmi'] >= 12) & (df['bmi'] <= 70)]\n"
+            "    if len(df) < initial_count:\n"
+            "        print(f'BMI filtering: {initial_count} → {len(df)} valid records')\n"
+            "    if df.empty:\n"
+            "        print('WARNING: No valid BMI data after filtering')\n"
+            "else:\n"
+            "    print('WARNING: No BMI data found')\n"
+            "\n"
+            "import pandas as pd\n"
+        )
     code += f"# Compute histogram with {bins} bins\n"
-    code += f"import numpy as np\ncounts, bin_edges = np.histogram(df['{target_field}'], bins={bins})\nresults = {{'histogram': counts.tolist(), 'bin_edges': bin_edges.tolist()}}\n"
+    code += f"import numpy as np\ncounts, bin_edges = np.histogram(df['{target_field}'], bins={bins})\nresults = {{'counts': counts.tolist(), 'bin_edges': bin_edges.tolist()}}\n"
     code += "# SQL equivalent:\n"
     code += f"# SELECT v.{target_field} FROM vitals v"
     if sql_where_clause:

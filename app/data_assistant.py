@@ -41,8 +41,6 @@ logger = logging.getLogger("data_assistant")
 pn.extension("tabulator")
 pn.extension("plotly")
 
-print("[DEBUG] app.data_assistant.py imported")
-
 
 class DataAnalysisAssistant(param.Parameterized):
     """Data Analysis Assistant with AI-powered data analysis capabilities
@@ -82,8 +80,7 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Load saved questions
         self.saved_questions = _load_saved_questions_db()
-        logger.info(f"[INIT] Loaded saved_questions: {self.saved_questions}")
-        print(f"[INIT] Loaded saved_questions: {self.saved_questions}")
+        # logger.info(f"[INIT] Loaded saved_questions: {self.saved_questions}")
 
         # Initialize UI components
         self._initialize_ui()
@@ -137,7 +134,6 @@ class DataAnalysisAssistant(param.Parameterized):
     def _update_query_text(self, event):
         """Update query text when input changes"""
         self.query_text = event.new
-        logger.info(f"Query text updated to: {self.query_text}")
 
     def _update_question_name(self, event):
         """Update question name when input changes"""
@@ -145,7 +141,6 @@ class DataAnalysisAssistant(param.Parameterized):
 
     def _on_analyze_click(self, event):
         """Handle analyze button click"""
-        logger.info(f"Analyze button clicked with query: {self.query_text}")
 
         # Reset workflow and start from the beginning
         self.workflow.reset()
@@ -221,7 +216,6 @@ class DataAnalysisAssistant(param.Parameterized):
         self.show_narrative = (
             "Narrative" if self.ui.results_view_toggle.value else "Tabular"
         )
-        print(f"[DEBUG] Results view toggled to: {self.show_narrative}")
 
         # Only refresh if we have results to display
         if self.engine.execution_results is not None:
@@ -234,7 +228,6 @@ class DataAnalysisAssistant(param.Parameterized):
         from functools import partial
 
         def _worker():
-            print("[THREAD] _process_query started")
             if not self.query_text:
                 if getattr(pn.state, "curdoc", None) is not None:
                     pn.state.curdoc.add_next_tick_callback(
@@ -242,7 +235,6 @@ class DataAnalysisAssistant(param.Parameterized):
                     )
                 else:
                     self.ui.update_status("Please enter a query")
-                print("[THREAD] _process_query: No query, exiting thread")
                 return
             if getattr(pn.state, "curdoc", None) is not None:
                 pn.state.curdoc.add_next_tick_callback(
@@ -268,19 +260,14 @@ class DataAnalysisAssistant(param.Parameterized):
             intent = self.engine.process_query(self.query_text)
             # Use real ambiguity/confidence logic
             needs_clarification = is_truly_ambiguous_query(intent)
-            print(
-                f"[DEBUG] Clarification triggered: {needs_clarification} (intent: {getattr(intent, 'analysis_type', None)}, confidence: {getattr(intent, 'parameters', {}).get('confidence', None)})"
-            )
             self.workflow.mark_intent_parsed(needs_clarification)
             if getattr(pn.state, "curdoc", None) is not None:
                 pn.state.curdoc.add_next_tick_callback(self._process_current_stage)
             else:
                 self._process_current_stage()
-            print("[THREAD] _process_query finished")
 
         if self.test_mode:
             # Run synchronously for tests
-            print("[TEST_MODE] _process_query running synchronously")
             if not self.query_text:
                 self.ui.update_status("Please enter a query")
                 return
@@ -302,9 +289,6 @@ class DataAnalysisAssistant(param.Parameterized):
             self.workflow.start_query(self.query_text)
             intent = self.engine.process_query(self.query_text)
             needs_clarification = is_truly_ambiguous_query(intent)
-            print(
-                f"[DEBUG] Clarification triggered: {needs_clarification} (intent: {getattr(intent, 'analysis_type', None)}, confidence: {getattr(intent, 'parameters', {}).get('confidence', None)})"
-            )
             self.workflow.mark_intent_parsed(needs_clarification)
             self._process_current_stage()
         else:
@@ -403,7 +387,6 @@ class DataAnalysisAssistant(param.Parameterized):
         from functools import partial
 
         def _worker():
-            print("[THREAD] _generate_analysis_code started")
             if getattr(pn.state, "curdoc", None) is not None:
                 pn.state.curdoc.add_next_tick_callback(
                     partial(self.ui.start_ai_indicator, "Generating analysis code...")
@@ -420,10 +403,8 @@ class DataAnalysisAssistant(param.Parameterized):
                 pn.state.curdoc.add_next_tick_callback(self._process_current_stage)
             else:
                 self._process_current_stage()
-            print("[THREAD] _generate_analysis_code finished")
 
         if self.test_mode:
-            print("[TEST_MODE] _generate_analysis_code running synchronously")
             self.ui.start_ai_indicator("Generating analysis code...")
             self.engine.generate_analysis_code()
             self._display_generated_code()
@@ -449,7 +430,6 @@ class DataAnalysisAssistant(param.Parameterized):
         from functools import partial
 
         def _worker():
-            print("[THREAD] _execute_analysis started")
             if getattr(pn.state, "curdoc", None) is not None:
                 pn.state.curdoc.add_next_tick_callback(
                     partial(self.ui.start_ai_indicator, "Executing analysis...")
@@ -466,10 +446,8 @@ class DataAnalysisAssistant(param.Parameterized):
                 pn.state.curdoc.add_next_tick_callback(self._process_current_stage)
             else:
                 self._process_current_stage()
-            print("[THREAD] _execute_analysis finished")
 
         if self.test_mode:
-            print("[TEST_MODE] _execute_analysis running synchronously")
             self.ui.start_ai_indicator("Executing analysis...")
             results = self.engine.execute_analysis()
             self._display_execution_results()
@@ -541,52 +519,11 @@ class DataAnalysisAssistant(param.Parameterized):
         # Update result container
         self.ui.result_container.objects = formatted_results
 
-        # Create enhanced feedback widget if not exists
-        if self.feedback_widget is None:
-            print("[DEBUG] Creating feedback widget")
-            self.feedback_widget = self._create_enhanced_feedback_widget()
-        else:
-            print("[DEBUG] Feedback widget already exists")
-
-        # Add feedback widget to results
-        if self.feedback_widget not in self.ui.result_container.objects:
-            print("[DEBUG] Adding feedback widget to result container")
-            self.ui.result_container.objects.append(self.feedback_widget)
-        else:
-            print("[DEBUG] Feedback widget already in result container")
-
-        # Make feedback widget visible
-        print(
-            f"[DEBUG] Setting feedback widget visible=True, current visible={self.feedback_widget.visible}"
-        )
-        self.feedback_widget.visible = True
-        print(
-            f"[DEBUG] Feedback widget visible after setting={self.feedback_widget.visible}"
-        )
-
-        # Ensure all child components are visible
-        if hasattr(self, "_feedback_up") and self._feedback_up:
-            self._feedback_up.visible = True
-        if hasattr(self, "_feedback_down") and self._feedback_down:
-            self._feedback_down.visible = True
-        if hasattr(self, "_feedback_comment") and self._feedback_comment:
-            self._feedback_comment.visible = True
-        if hasattr(self, "_feedback_save") and self._feedback_save:
-            self._feedback_save.visible = True
-        print("[DEBUG] Set all feedback child components to visible=True")
-
-        # Force Panel to refresh the result container by reassigning objects list
-        current_objects = list(self.ui.result_container.objects)
-        self.ui.result_container.objects = []
-        self.ui.result_container.objects = current_objects
-        print("[DEBUG] Forced result container refresh")
-
-        print(
-            f"[DEBUG] Result container objects count: {len(self.ui.result_container.objects)}"
-        )
-        print(
-            f"[DEBUG] Result container objects: {[type(obj).__name__ for obj in self.ui.result_container.objects]}"
-        )
+        # --- Hide feedback widget for transition to enhanced system ---
+        if self.feedback_widget is not None:
+            self.feedback_widget.visible = False
+        # Do not add feedback_widget to result_container
+        # (Deprecation: feedback widget hidden for enhanced system rollout)
 
         # Mark results displayed
         self.workflow.mark_results_displayed()
@@ -612,7 +549,8 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Reset workflow and start from the beginning
         self.workflow.reset()
-        self.ui.update_stage_indicators(self.workflow.current_stage)
+        self.workflow.current_stage = 0  # Explicitly set to initial stage
+        self.ui.update_stage_indicators(0)  # Ensure UI is reset
 
         # Process the query
         self._process_query()
@@ -635,10 +573,9 @@ class DataAnalysisAssistant(param.Parameterized):
 
     def _save_question(self, event=None):
         """Save the current question"""
-        print(f"[SAVE] Before save, saved_questions: {self.saved_questions}")
+        # print(f"[SAVE] Before save, saved_questions: {self.saved_questions}")
         if not self.query_text:
             self.ui.update_status("No query to save", type="warning")
-            print("No query to save")
             return
 
         # Use default name if not provided
@@ -654,18 +591,14 @@ class DataAnalysisAssistant(param.Parameterized):
         question = {"name": name, "query": self.query_text}
         try:
             upsert_question(name, self.query_text)
-            logger.info(f"Saved question: {name}")
-            print(f"Saved question: {name}")
             self.ui.update_status(f"Question saved: {name}", type="success")
         except Exception as e:
-            logger.error(f"Error saving question: {str(e)}", exc_info=True)
-            print(f"Error saving question: {str(e)}")
             self.ui.update_status(f"Error saving question: {str(e)}", type="error")
             return
 
         # Reload saved questions
         self.saved_questions = _load_saved_questions_db()
-        print(f"[SAVE] After save, saved_questions: {self.saved_questions}")
+        # print(f"[SAVE] After save, saved_questions: {self.saved_questions}")
         self._update_saved_question_buttons()
 
         # Clear question name
@@ -674,8 +607,7 @@ class DataAnalysisAssistant(param.Parameterized):
 
     def _update_saved_question_buttons(self):
         """Update saved question buttons with delete functionality and robust state management"""
-        print(f"[UI] Updating saved question buttons: {self.saved_questions}")
-        logger.info(f"[UI] Updating saved question buttons: {self.saved_questions}")
+        # print(f"[UI] Updating saved question buttons: {self.saved_questions}")
         buttons = []
         has_questions = len(self.saved_questions) > 0
 
@@ -711,8 +643,6 @@ class DataAnalysisAssistant(param.Parameterized):
                     del_btn.disabled = True  # Prevent double-clicks
                     try:
                         _delete_question_db(q["name"])
-                        logger.info(f"Deleted saved question: {q['name']}")
-                        print(f"Deleted saved question: {q['name']}")
                         self.ui.update_status(
                             f"Deleted question: {q['name']}", type="success"
                         )
@@ -720,7 +650,6 @@ class DataAnalysisAssistant(param.Parameterized):
                         logger.error(
                             f"Error deleting question: {str(e)}", exc_info=True
                         )
-                        print(f"Error deleting question: {str(e)}")
                         self.ui.update_status(
                             f"Error deleting question: {str(e)}", type="error"
                         )
@@ -753,8 +682,6 @@ class DataAnalysisAssistant(param.Parameterized):
                 "Please click 'Reset All' before running a new query.", type="warning"
             )
             return
-        logger.info(f"Using example query: {query['name']}")
-        print(f"Loaded saved question: {query['name']}")
         self.query_text = query["query"]
         # Update the input field
         self.ui.query_input.value = query["query"]
@@ -765,9 +692,11 @@ class DataAnalysisAssistant(param.Parameterized):
 
     def _reset_all(self, event=None):
         """Reset the analysis assistant to initial state"""
-        print(f"[RESET] Before reset, saved_questions: {self.saved_questions}")
+        # print(f"[RESET] Before reset, saved_questions: {self.saved_questions}")
         # Reset workflow
         self.workflow.reset()
+        self.workflow.current_stage = 0  # Explicitly set to initial stage
+        self.ui.update_stage_indicators(0)  # Ensure UI is reset
 
         # Clear query input
         self.query_text = ""
@@ -796,9 +725,6 @@ class DataAnalysisAssistant(param.Parameterized):
         # Reset engine
         self.engine = AnalysisEngine()
 
-        # Reset stage indicators
-        self.ui.update_stage_indicators(self.workflow.current_stage)
-
         # Hide feedback widget after reset (per test expectation)
         if hasattr(self, "feedback_widget") and self.feedback_widget is not None:
             self.feedback_widget.visible = False
@@ -824,7 +750,6 @@ class DataAnalysisAssistant(param.Parameterized):
             from app.utils.feedback_db import insert_feedback
 
             insert_feedback(question=self.query_text, rating=rating, comment=comment)
-            logger.info(f"Recorded feedback: {rating} for query: {self.query_text}")
         except Exception as exc:
             logger.error(f"Feedback insert failed: {exc}")
 
@@ -1063,6 +988,5 @@ class DataAnalysisAssistant(param.Parameterized):
 
 def data_assistant_page():
     """Create and return the data assistant page for the application."""
-    print("[DEBUG] data_assistant_page() called")
     assistant = DataAnalysisAssistant()
     return assistant.view()

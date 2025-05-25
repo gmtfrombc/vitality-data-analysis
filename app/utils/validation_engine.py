@@ -124,6 +124,8 @@ class ValidationEngine:
         """
         self.db_path = db_path
         self.rules = []
+        # logger.info(f"Found {result_count} existing validation results. Skipping initial validation.")
+        # logger.info("Validation engine initialized successfully")
 
     def load_rules_from_db(self) -> List[ValidationRule]:
         """

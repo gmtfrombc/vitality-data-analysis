@@ -48,11 +48,11 @@ def get_query_intent(query: str) -> QueryIntent:
     Raises:
         IntentParseError: If intent parsing or validation fails
     """
-    logger.info(f"Getting intent for query: {query}")
+    # logger.info(f"Getting intent for query: {query}")
 
     # Offline fast-path -------------------------------------------------
     if is_offline_mode():
-        logger.info("Offline mode – returning fallback intent")
+        # logger.info("Offline mode – returning fallback intent")
         return _clarifier.create_fallback_intent(query)
 
     max_attempts = 2
@@ -65,7 +65,7 @@ def get_query_intent(query: str) -> QueryIntent:
                 if attempt == 0
                 else INTENT_CLASSIFICATION_PROMPT + INTENT_STRICTER_SUFFIX
             )
-            logger.info(f"Intent parse attempt {attempt+1} for query: {query}")
+            # logger.info(f"Intent parse attempt {attempt+1} for query: {query}")
             raw_reply = ask_llm(prompt, query)
 
             # Remove any accidental markdown fences
@@ -112,7 +112,7 @@ def get_query_intent(query: str) -> QueryIntent:
 
             intent.filters = cleaned_filters
 
-            logger.info(f"Intent parse succeeded on attempt {attempt+1}")
+            # logger.info(f"Intent parse succeeded on attempt {attempt+1}")
             return intent
         except Exception as exc:
             last_err = exc

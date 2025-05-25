@@ -289,7 +289,8 @@ class UIComponents(param.Parameterized):
         """Update stage indicators based on current stage"""
         for stage, indicator in self.stage_indicators.items():
             if stage < current_stage:
-                indicator.styles = {"color": "green", "text-decoration": "line-through"}
+                # Only green, no line-through
+                indicator.styles = {"color": "green"}
             elif stage == current_stage:
                 indicator.styles = {"color": "blue", "font-weight": "bold"}
             else:
@@ -599,6 +600,23 @@ class UIComponents(param.Parameterized):
     def _create_visualization_from_results(self, results):
         """Create visualization from results if appropriate"""
         try:
+            # First, try to use the main visualization creation function
+            from app.analysis_helpers import create_visualization_for_result
+
+            # Check if this is histogram data
+            if (
+                isinstance(results, dict)
+                and "counts" in results
+                and "bin_edges" in results
+            ):
+                viz = create_visualization_for_result(
+                    results, analysis_type="distribution", target_field="bmi"
+                )
+                if viz is not None:
+                    self.visualization_pane.objects = [viz]
+                    return
+
+            # Fallback to existing logic for other types
             from app.utils.plots import (
                 bar_chart,
                 html_bar_chart,
@@ -608,7 +626,7 @@ class UIComponents(param.Parameterized):
             viz_elements = []
             # Handle dictionary results that might be suitable for visualization
             if isinstance(results, dict):
-                # Remove non-data fields
+                # Remove non-data fields but keep visualization-relevant keys
                 data_dict = {
                     k: v
                     for k, v in results.items()
@@ -619,6 +637,8 @@ class UIComponents(param.Parameterized):
                         "index",
                         "bmi_mean",
                         "error",
+                        "counts",  # Keep these for histogram detection above
+                        "bin_edges",
                     ]
                     and isinstance(v, (int, float, str))
                     and v is not None

@@ -106,7 +106,7 @@ class ConditionMapper:
                 for code in codes:
                     self.codes_to_canonical[code] = canonical
 
-            logger.info(f"Loaded {len(self.mappings)} condition mappings")
+            # logger.info(f"Loaded {len(self.mappings)} condition mappings")
 
         except Exception as e:
             logger.error(f"Error loading condition mappings: {e}")

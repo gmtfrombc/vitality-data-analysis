@@ -122,7 +122,7 @@ class WorkflowState(param.Parameterized):
         self.results_displayed = False
         self.needs_clarification = False
         self.query = ""
-        logger.info("Workflow state reset to initial values")
+        # logger.info("Workflow state reset to initial values")
 
     def start_query(self, query):
         """
@@ -187,7 +187,7 @@ class WorkflowState(param.Parameterized):
 
         self.clarification_complete = True
         self.transition_to(WorkflowStages.CODE_GENERATION)
-        logger.info("Clarification complete")
+        # logger.info("Clarification complete")
         return True
 
     def mark_code_generated(self):
@@ -209,7 +209,7 @@ class WorkflowState(param.Parameterized):
 
         self.code_generated = True
         self.transition_to(WorkflowStages.EXECUTION)
-        logger.info("Code generation complete")
+        # logger.info("Code generation complete")
         return True
 
     def mark_execution_complete(self):
@@ -228,7 +228,7 @@ class WorkflowState(param.Parameterized):
 
         self.execution_complete = True
         self.transition_to(WorkflowStages.RESULTS)
-        logger.info("Execution complete")
+        # logger.info("Execution complete")
         return True
 
     def mark_results_displayed(self):
@@ -246,7 +246,7 @@ class WorkflowState(param.Parameterized):
             return False
 
         self.results_displayed = True
-        logger.info("Results displayed")
+        # logger.info("Results displayed")
         return True
 
     def transition_to(self, target_stage):
@@ -294,7 +294,7 @@ class WorkflowState(param.Parameterized):
         # Track the transition
         prev_stage = self.current_stage
         self.current_stage = target_stage
-        logger.info(f"Transitioned from stage {prev_stage} to {target_stage}")
+        # logger.info(f"Transitioned from stage {prev_stage} to {target_stage}")
         return True
 
     def can_transition_to(self, target_stage):
@@ -398,3 +398,5 @@ class WorkflowState(param.Parameterized):
             return self.results_displayed
 
         return False
+
+    # logger.info(f"[INIT] Loaded saved_questions: {saved_questions}")

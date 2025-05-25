@@ -222,7 +222,7 @@ class AnalysisEngine:
             Exception: If there is an error during intent parsing
         """
 
-        logger.info(f"Getting intent for query: {self.query}")
+        # logger.info(f"Getting intent for query: {self.query}")
         try:
             self.intent = ai.get_query_intent(self.query)
 
@@ -382,7 +382,7 @@ class AnalysisEngine:
 
         # Combine original query with clarification
         combined_query = f"{self.query}\n\nAdditional info: {clarification_text}"
-        logger.info(f"Processing clarified query: {combined_query}")
+        # logger.info(f"Processing clarified query: {combined_query}")
 
         # Re-process with the clarified query
         self.query = combined_query
@@ -446,7 +446,7 @@ class AnalysisEngine:
         ):
             # Store threshold info in context for result formatting later
             custom_prompt = f"Generate code to find patients with {self.threshold_info['field']} {self.threshold_info['direction']} {self.threshold_info['value']}"
-            logger.info(f"Using threshold-specific prompt: {custom_prompt}")
+            # logger.info(f"Using threshold-specific prompt: {custom_prompt}")
 
         # Get data schema for code generation
         data_schema = get_data_schema()
@@ -632,7 +632,7 @@ except Exception as viz_error:
         with Path("last_executed_code.py").open("w") as f:
             f.write(safe_code)
 
-        logger.info("Executing analysis code in sandbox")
+        # Remove or comment out logger.info("Executing analysis code in sandbox")
 
         try:
             # TEMP: Debugging aid – dump code before execution

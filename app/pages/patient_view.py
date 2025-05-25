@@ -427,10 +427,8 @@ class PatientView(param.Parameterized):
             ):
                 # Filter out null values
                 weight_data = plot_df[plot_df["weight"].notnull()]
-                logger.info(f"Weight data points for plotting: {len(weight_data)}")
 
                 if not weight_data.empty:
-                    logger.info("Creating weight plot")
                     weight_plot = line_plot(
                         weight_data,
                         x="date",
@@ -446,7 +444,6 @@ class PatientView(param.Parameterized):
                     plots.append(
                         pn.pane.HoloViews(weight_plot, sizing_mode="stretch_width")
                     )
-                    logger.info("Weight plot created and added to plots list")
 
             if not plot_df.empty and "date" in plot_df.columns:
                 bp_plots = []
@@ -454,10 +451,8 @@ class PatientView(param.Parameterized):
                 # Create systolic plot if data exists
                 if "sbp" in plot_df.columns:
                     sbp_data = plot_df[plot_df["sbp"].notnull()]
-                    logger.info(f"SBP data points for plotting: {len(sbp_data)}")
 
                     if not sbp_data.empty:
-                        logger.info("Creating SBP plot")
                         sbp_plot = line_plot(
                             sbp_data,
                             x="date",
@@ -471,15 +466,12 @@ class PatientView(param.Parameterized):
                             sbp_plot, program_start_date, patient_data
                         )
                         bp_plots.append(sbp_plot)
-                        logger.info("SBP plot created")
 
                 # Create diastolic plot if data exists
                 if "dbp" in plot_df.columns:
                     dbp_data = plot_df[plot_df["dbp"].notnull()]
-                    logger.info(f"DBP data points for plotting: {len(dbp_data)}")
 
                     if not dbp_data.empty:
-                        logger.info("Creating DBP plot")
                         dbp_plot = line_plot(
                             dbp_data,
                             x="date",
@@ -493,22 +485,17 @@ class PatientView(param.Parameterized):
                             dbp_plot, program_start_date, patient_data
                         )
                         bp_plots.append(dbp_plot)
-                        logger.info("DBP plot created")
 
                 # Combine BP plots if both exist
                 if len(bp_plots) > 1:
-                    logger.info("Combining BP plots")
                     bp_plot = bp_plots[0] * bp_plots[1]
                     plots.append(
                         pn.pane.HoloViews(bp_plot, sizing_mode="stretch_width")
                     )
-                    logger.info("Combined BP plot added to plots list")
                 elif len(bp_plots) == 1:
-                    logger.info("Adding single BP plot")
                     plots.append(
                         pn.pane.HoloViews(bp_plots[0], sizing_mode="stretch_width")
                     )
-                    logger.info("Single BP plot added to plots list")
 
         except Exception as e:
             # Continue execution even if plot creation fails
@@ -993,7 +980,6 @@ class PatientView(param.Parameterized):
 
     def format_plot_time_axis(self, plot, program_start_date, patient_data):
         """Apply consistent time axis formatting to all plots"""
-        logger.info("Formatting plot time axis - using simple settings")
 
         try:
             # Only apply options if the object supports the callable ``.opts`` API
@@ -1007,7 +993,6 @@ class PatientView(param.Parameterized):
                     show_grid=True,
                 )
 
-            logger.info("Successfully applied basic plot formatting")
             return plot
         except Exception as e:
             logger.error(f"Error in format_plot_time_axis: {e}", exc_info=True)

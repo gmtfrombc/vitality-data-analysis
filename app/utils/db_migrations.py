@@ -45,7 +45,7 @@ def apply_pending_migrations(db_file: str) -> None:
             fname = path.name
             if fname in applied:
                 continue
-            logger.info(f"Applying DB migration {fname}")
+            # logger.info(f"Applying DB migration {fname}")
             if path.suffix == ".sql":
                 sql = path.read_text()
                 conn.executescript(sql)
@@ -56,13 +56,13 @@ def apply_pending_migrations(db_file: str) -> None:
                 result = subprocess.run(
                     [sys.executable, str(path), db_file], capture_output=True, text=True
                 )
-                logger.info(result.stdout)
+                # logger.info(result.stdout)
                 if result.returncode != 0:
                     logger.error(f"Migration {fname} failed: {result.stderr}")
                     raise RuntimeError(f"Migration {fname} failed")
                 conn = sqlite3.connect(db_file)  # Reopen connection
             else:
-                logger.warning(f"Skipping unknown migration type: {fname}")
+                # logger.warning(f"Skipping unknown migration type: {fname}")
                 continue
             conn.execute("INSERT INTO schema_migrations(filename) VALUES (?)", (fname,))
             conn.commit()

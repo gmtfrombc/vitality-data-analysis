@@ -145,8 +145,8 @@ def extract_sql_references(sql_query: str) -> Dict[str, Set[str]]:
             clause,
         )
         columns.update(unqualified_cols)
-    logger.info(f"Extracted tables: {tables}")
-    logger.info(f"Extracted columns: {columns}")
+    # logger.info(f"Extracted tables: {tables}")
+    # logger.info(f"Extracted columns: {columns}")
     return {"tables": tables, "columns": columns}
 
 

@@ -116,6 +116,25 @@ def generate_basic_code(intent, parameters=None):
             code += '"""\n'
 
         code += "df = query_dataframe(sql)\n"
+        # Special handling for BMI: comprehensive data validation and filtering
+        if any(m == "bmi" for m in metrics):
+            code += (
+                "# BMI data validation and filtering\n"
+                "if 'bmi' in df.columns and not df.empty:\n"
+                "    # Convert BMI to numeric and filter to clinical range (12-70)\n"
+                "    initial_count = len(df)\n"
+                "    df['bmi'] = pd.to_numeric(df['bmi'], errors='coerce')\n"
+                "    df = df.dropna(subset=['bmi'])\n"
+                "    df = df[(df['bmi'] >= 12) & (df['bmi'] <= 70)]\n"
+                "    if len(df) < initial_count:\n"
+                "        print(f'BMI filtering: {initial_count} → {len(df)} valid records')\n"
+                "    if df.empty:\n"
+                "        print('WARNING: No valid BMI data after filtering')\n"
+                "else:\n"
+                "    print('WARNING: No BMI data found')\n"
+                "\n"
+                "import pandas as pd\n"
+            )
         if group_by:
             code += f"# Group by: {group_by}\n"
             code += "results = {}\n"
@@ -140,13 +159,16 @@ def generate_basic_code(intent, parameters=None):
             code += f" GROUP BY {', '.join([f'v.{g}' for g in group_by])}\n"
         else:
             code += "# Aggregate metrics\n"
+            code += "if df.empty:\n"
+            code += "    results = None  # No data available after filtering\n"
+            code += "else:\n"
             if len(metrics) == 1:
-                code += f"metric_value = df['{metrics[0]}'].{agg_func}()\n"
-                code += f"results = {{'{metrics[0]}_{agg_func}': metric_value}}\n"
+                code += f"    metric_value = df['{metrics[0]}'].{agg_func}()\n"
+                code += "    results = metric_value\n"
             else:
-                code += "results = {}\n"
+                code += "    results = {}\n"
                 for m in metrics:
-                    code += f"results['{m}_{agg_func}'] = df['{m}'].{agg_func}()\n"
+                    code += f"    results['{m}_{agg_func}'] = df['{m}'].{agg_func}()\n"
         code += "# Output is a dictionary of computed metrics\n"
         return code
 
@@ -192,6 +214,25 @@ def generate_basic_code(intent, parameters=None):
             code += '"""\n'
 
         code += "df = query_dataframe(sql)\n"
+        # Special handling for BMI: comprehensive data validation and filtering
+        if any(m == "bmi" for m in metrics):
+            code += (
+                "# BMI data validation and filtering\n"
+                "if 'bmi' in df.columns and not df.empty:\n"
+                "    # Convert BMI to numeric and filter to clinical range (12-70)\n"
+                "    initial_count = len(df)\n"
+                "    df['bmi'] = pd.to_numeric(df['bmi'], errors='coerce')\n"
+                "    df = df.dropna(subset=['bmi'])\n"
+                "    df = df[(df['bmi'] >= 12) & (df['bmi'] <= 70)]\n"
+                "    if len(df) < initial_count:\n"
+                "        print(f'BMI filtering: {initial_count} → {len(df)} valid records')\n"
+                "    if df.empty:\n"
+                "        print('WARNING: No valid BMI data after filtering')\n"
+                "else:\n"
+                "    print('WARNING: No BMI data found')\n"
+                "\n"
+                "import pandas as pd\n"
+            )
         if group_by:
             code += f"# Group by: {group_by}\n"
             code += "results = {}\n"
@@ -216,15 +257,16 @@ def generate_basic_code(intent, parameters=None):
             code += f" GROUP BY {', '.join([f'v.{g}' for g in group_by])}\n"
         else:
             code += "# Aggregate metrics\n"
+            code += "if df.empty:\n"
+            code += "    results = None  # No data available after filtering\n"
+            code += "else:\n"
             if len(metrics) == 1:
-                code += (
-                    f"metric_value = df['{metrics[0]}'].{agg_func}()  # {agg_func}()\n"
-                )
-                code += "results = float(metric_value) if metric_value is not None else None\n"
+                code += f"    metric_value = df['{metrics[0]}'].{agg_func}()\n"
+                code += "    results = metric_value\n"
             else:
-                code += "results = {}\n"
+                code += "    results = {}\n"
                 for m in metrics:
-                    code += f"results['{m}_{agg_func}'] = df['{m}'].{agg_func}()  # {agg_func}()\n"
+                    code += f"    results['{m}_{agg_func}'] = df['{m}'].{agg_func}()\n"
         code += "# Output is a dictionary of computed metrics\n"
         return code
 

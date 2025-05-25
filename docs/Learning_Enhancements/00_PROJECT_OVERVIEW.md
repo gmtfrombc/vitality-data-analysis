@@ -12,6 +12,8 @@ This project enhances the Ask Anything AI Assistant (AAA) with an automated lear
 - **Query Processing**: `app/engine.py` - Natural language to SQL pipeline
 - **UI Framework**: Panel-based interface with workflow management
 - **Database**: SQLite with migration system
+- **Direct Manual Edits**: For simple issues (e.g., changing decimal places, minor code fixes), users can make direct, manual edits to the codebase using Cursor Assistant. This allows for immediate correction and rapid iteration for straightforward problems.
+- **Model Retraining Process**: For more complex or systematic improvements, the system supports a feedback-driven retraining workflow. Users provide feedback via the UI, which is logged and can be reviewed using `scripts/model_retraining.py`. This script presents feedback entries, allows users to accept, reject, or modify suggestions, and updates the intent classifier model (`intent_classifier.pkl`) and training data accordingly. This process enables the system to learn from user corrections and improve future responses.
 
 ### Problem Statement
 Currently, when users receive incorrect answers:
@@ -27,6 +29,7 @@ Currently, when users receive incorrect answers:
 - **Error Analysis**: Categorize mistakes and suggest specific fixes
 - **Pattern Matching**: Route similar queries to learned solutions
 - **Intelligent Suggestions**: Provide actionable correction options
+- **Integrate Existing Feedback Mechanisms**: Build on the current direct edit and model retraining workflows to create a seamless, automated learning loop.
 
 ### Success Metrics
 - **90%+ accuracy** on repeated query types
@@ -64,12 +67,14 @@ Currently, when users receive incorrect answers:
 - **AnalysisEngine**: Add pattern matching before LLM processing
 - **Database**: Extend with learning tables
 - **UI Components**: Enhanced feedback collection and suggestion display
+- **Feedback Mechanisms**: Continue supporting both direct manual edits (for simple fixes) and the model retraining process (for systematic improvements), while integrating them into the automated learning workflow.
 
 ## User Experience Transformation
 
 ### Before (Current)
 ```
 ❌ Wrong Answer → Copy Response → Paste to External Tool → Manual Fix
+❌ Wrong Answer → 👎 Thumbs Down → Feedback Saved → (Optional) Run model_retraining.py → Human reviews and updates model/training data
 ```
 
 ### After (Enhanced)
