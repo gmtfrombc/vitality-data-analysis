@@ -52,3 +52,5 @@ Thumbs.db
 patient_data.db
 *.log
 logs/ last_executed_code.py
+app/logs/
+logs/
