@@ -26,6 +26,7 @@ from app.services.dashboard_service import DashboardService
 from app.components.admin_dashboard.charts import PerformanceChartsPanel
 from app.components.admin_dashboard.learning_charts import LearningChartsPanel
 from app.components.admin_dashboard.export_panel import ExportPanel
+from app.components.admin_dashboard.maintenance_panel import MaintenancePanel
 from app.services.metrics_collector import MetricsCollector
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,9 @@ class AdminDashboardTab(param.Parameterized):
     # Sprint 2.3 parameters
     show_export_panel = param.Boolean(default=False)
 
+    # Sprint 3.1 parameters
+    show_maintenance_panel = param.Boolean(default=False)
+
     def __init__(self, **params):
         super().__init__(**params)
         self.dashboard_service = DashboardService()
@@ -68,6 +72,9 @@ class AdminDashboardTab(param.Parameterized):
 
         # Initialize export panel (Sprint 2.3)
         self.export_panel = ExportPanel()
+
+        # Initialize maintenance panel (Sprint 3.1)
+        self.maintenance_panel = MaintenancePanel()
 
         # Start metrics collection
         self.metrics_collector.start_collection()
@@ -165,6 +172,15 @@ class AdminDashboardTab(param.Parameterized):
         )
         self.export_toggle.link(self, value="show_export_panel")
 
+        # Maintenance panel toggle button (Sprint 3.1)
+        self.maintenance_toggle = pn.widgets.Toggle(
+            name="🔧 Show Maintenance & Config",
+            value=self.show_maintenance_panel,
+            sizing_mode="fixed",
+            width=200,
+        )
+        self.maintenance_toggle.link(self, value="show_maintenance_panel")
+
         # Charts section (initially hidden)
         self.charts_section = pn.Column(
             self.charts_panel.get_panel(),
@@ -186,6 +202,13 @@ class AdminDashboardTab(param.Parameterized):
             sizing_mode="stretch_width",
         )
 
+        # Maintenance panel section (initially hidden)
+        self.maintenance_section = pn.Column(
+            self.maintenance_panel.get_panel(),
+            visible=self.show_maintenance_panel,
+            sizing_mode="stretch_width",
+        )
+
         # Watch for charts toggle
         self.param.watch(self._toggle_charts, "show_charts")
 
@@ -194,6 +217,9 @@ class AdminDashboardTab(param.Parameterized):
 
         # Watch for export panel toggle
         self.param.watch(self._toggle_export_panel, "show_export_panel")
+
+        # Watch for maintenance panel toggle
+        self.param.watch(self._toggle_maintenance_panel, "show_maintenance_panel")
 
         # Enhanced controls
         self.enhanced_controls = pn.Row(
@@ -204,6 +230,7 @@ class AdminDashboardTab(param.Parameterized):
             self.charts_toggle,
             self.learning_toggle,
             self.export_toggle,
+            self.maintenance_toggle,
             sizing_mode="stretch_width",
         )
 
@@ -405,6 +432,10 @@ class AdminDashboardTab(param.Parameterized):
         """Toggle export panel visibility."""
         self.export_section.visible = self.show_export_panel
 
+    def _toggle_maintenance_panel(self, event):
+        """Toggle maintenance panel visibility."""
+        self.maintenance_section.visible = self.show_maintenance_panel
+
     def _start_auto_refresh(self):
         """Start auto-refresh mechanism."""
         if hasattr(self, "_auto_refresh_task"):
@@ -571,6 +602,7 @@ class AdminDashboardTab(param.Parameterized):
             self.charts_section,
             self.learning_section,
             self.export_section,
+            self.maintenance_section,
             self.last_updated,
             sizing_mode="stretch_width",
         )

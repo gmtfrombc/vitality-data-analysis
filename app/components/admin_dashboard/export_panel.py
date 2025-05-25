@@ -325,7 +325,7 @@ class ExportPanel:
                     width=350,
                 ),
             ),
-            pn.Divider(),
+            pn.pane.HTML("<hr style='margin: 20px 0;'>"),
             # Benchmark section
             pn.Row(
                 pn.Column(
@@ -349,7 +349,7 @@ class ExportPanel:
                     width=350,
                 ),
             ),
-            pn.Divider(),
+            pn.pane.HTML("<hr style='margin: 20px 0;'>"),
             # Status and downloads
             pn.pane.HTML("<h3>📥 Export Status & Downloads</h3>"),
             self.status_text,
