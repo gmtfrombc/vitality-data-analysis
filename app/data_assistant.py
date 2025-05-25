@@ -517,9 +517,6 @@ class DataAnalysisAssistant(param.Parameterized):
             formatted_results, self._process_refinement
         )
 
-        # Update result container
-        self.ui.result_container.objects = formatted_results
-
         # Add enhanced feedback widget
         if self.feedback_widget is None or not hasattr(self.feedback_widget, "visible"):
             from app.utils.enhanced_feedback_widget import (
@@ -557,6 +554,9 @@ class DataAnalysisAssistant(param.Parameterized):
 
         # Add feedback widget to results
         formatted_results.append(self.feedback_widget)
+
+        # Update result container with all results including feedback widget
+        self.ui.result_container.objects = formatted_results
 
         # Mark results displayed
         self.workflow.mark_results_displayed()
