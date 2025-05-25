@@ -146,9 +146,35 @@ Notes:
 
 - **Data Assistant**: Natural language interface for querying patient data
 - **Visualizations**: Automatic visualization generation based on query type
+- **Learning System**: Automated learning from user corrections and feedback
 - **Self-Test System**: Regression testing to ensure assistant reliability
 - **Evaluation Framework**: Metrics dashboard for measuring assistant performance
+- **Production Monitoring**: Comprehensive health checks and performance metrics
 - **Developer Tools**: Scripts for maintaining project quality
+
+### 🧠 Learning System (NEW)
+
+The AAA now includes an advanced learning system that continuously improves accuracy:
+
+- **Intelligent Feedback**: Enhanced thumbs up/down with detailed correction capture
+- **Error Analysis**: Automatic categorization and intelligent correction suggestions
+- **Pattern Learning**: System learns from corrections and applies to similar queries
+- **Performance Monitoring**: Real-time health checks and metrics dashboard
+
+#### Quick Start with Learning Features
+
+```bash
+# Check learning system health
+python scripts/learning_system_health_check.py --detailed
+
+# Run performance benchmarks
+python scripts/learning_system_health_check.py --benchmark
+
+# Monitor system metrics
+python -c "from app.utils.learning_metrics import create_monitoring_dashboard; print(create_monitoring_dashboard()['report'])"
+```
+
+See [docs/Learning_Enhancements/USER_GUIDE.md](docs/Learning_Enhancements/USER_GUIDE.md) for detailed usage instructions and [docs/Learning_Enhancements/DEPLOYMENT_GUIDE.md](docs/Learning_Enhancements/DEPLOYMENT_GUIDE.md) for production deployment.
 
 ## Documentation
 
