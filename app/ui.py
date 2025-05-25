@@ -101,6 +101,9 @@ class UIComponents(param.Parameterized):
     data_sample_pane = param.Parameter(
         default=None, doc="Pane showing sample data relevant to the query"
     )
+    model_selector = param.Parameter(
+        default=None, doc="Dropdown for selecting LLM model"
+    )
 
     # Feedback components
     _feedback_up = param.Parameter(default=None, doc="Positive feedback button")
@@ -231,6 +234,29 @@ class UIComponents(param.Parameterized):
             sizing_mode="stretch_width",
         )
         self._show_narrative_checkbox = self.results_view_toggle
+
+        # Initialize model selector
+        from app.utils.model_preferences import (
+            get_model_display_options,
+            load_model_preference,
+            get_available_models,
+        )
+
+        model_options = get_model_display_options()
+        current_model = load_model_preference()
+        current_display_name = None
+
+        # Find the display name for the current model
+        available_models = get_available_models()
+        if current_model in available_models:
+            current_display_name = available_models[current_model]["display_name"]
+
+        self.model_selector = pn.widgets.Select(
+            name="LLM Model:",
+            options=list(model_options.keys()),
+            value=current_display_name,
+            sizing_mode="stretch_width",
+        )
 
         # Initialize feedback components
         self._feedback_up = pn.widgets.Button(

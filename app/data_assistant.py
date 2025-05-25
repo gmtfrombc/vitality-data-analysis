@@ -117,6 +117,9 @@ class DataAnalysisAssistant(param.Parameterized):
             self._update_display_after_toggle, "value"
         )
 
+        # Set up model selector
+        self.ui.model_selector.param.watch(self._on_model_change, "value")
+
         # Set up saved questions buttons
         self._update_saved_question_buttons()
 
@@ -221,6 +224,40 @@ class DataAnalysisAssistant(param.Parameterized):
         # Only refresh if we have results to display
         if self.engine.execution_results is not None:
             self._display_final_results()
+
+    def _on_model_change(self, event):
+        """Handle model selection change"""
+        from app.utils.model_preferences import (
+            get_model_display_options,
+            save_model_preference,
+            get_model_api_name,
+        )
+
+        display_name = event.new
+        model_options = get_model_display_options()
+
+        if display_name in model_options:
+            model_key = model_options[display_name]
+
+            # Save the preference
+            if save_model_preference(model_key):
+                # Update the engine's AI helper to use the new model
+                api_name = get_model_api_name(model_key)
+                if hasattr(self.engine, "ai_helper") and hasattr(
+                    self.engine.ai_helper, "model"
+                ):
+                    self.engine.ai_helper.model = api_name
+                    logger.info(f"Updated model to: {api_name}")
+                    self.ui.update_status(
+                        f"Model changed to: {display_name}", type="success"
+                    )
+                else:
+                    logger.warning(
+                        "Could not update engine model - AI helper not found"
+                    )
+            else:
+                logger.error(f"Failed to save model preference: {model_key}")
+                self.ui.update_status("Failed to save model preference", type="error")
 
     def _process_query(self):
         """Process the natural language query in a background thread unless test_mode is True"""
@@ -964,11 +1001,13 @@ class DataAnalysisAssistant(param.Parameterized):
             dynamic=True,
         )
 
-        # Layout: sidebar – saved questions, narrative toggle, import widget
+        # Layout: sidebar – saved questions, model selector, narrative toggle, import widget
         sidebar = pn.Column(
             saved_questions_title,
             self.ui.saved_question_buttons_container,
             pn.Spacer(height=15),
+            pn.pane.Markdown("### Model Selection:"),
+            self.ui.model_selector,
             pn.Spacer(height=20),
             self.ui.import_panel,
             pn.Spacer(height=15),

@@ -30,7 +30,22 @@ from app.utils.assumptions import (
 )
 from app.utils.ai_helper import AIHelper
 
-ai = AIHelper()
+# Initialize AI helper with user's preferred model
+
+
+def _get_ai_helper():
+    """Get AI helper instance with user's preferred model"""
+    from app.utils.model_preferences import load_model_preference, get_model_api_name
+
+    preferred_model = load_model_preference()
+    api_name = get_model_api_name(preferred_model)
+
+    helper = AIHelper()
+    helper.model = api_name
+    return helper
+
+
+ai = _get_ai_helper()
 
 
 # Configure logging
@@ -74,6 +89,8 @@ class AnalysisEngine:
         self.end_time = None  # Timestamp when processing finished
         self.threshold_info = None  # Information about threshold queries
         self.parameters = {}  # Additional parameters for query handling
+        # Get fresh AI helper with current model preference
+        self.ai_helper = _get_ai_helper()
 
     def process_query(self, query):
         """
@@ -224,7 +241,7 @@ class AnalysisEngine:
 
         # logger.info(f"Getting intent for query: {self.query}")
         try:
-            self.intent = ai.get_query_intent(self.query)
+            self.intent = self.ai_helper.get_query_intent(self.query)
 
             # Store the original query in the intent for reference
             if isinstance(self.intent, QueryIntent):
@@ -345,7 +362,7 @@ class AnalysisEngine:
             list: A list of clarifying questions to ask the user
         """
         try:
-            return ai.generate_clarifying_questions(self.query)
+            return self.ai_helper.generate_clarifying_questions(self.query)
         except Exception as e:
             logger.error(f"Error generating clarifying questions: {e}", exc_info=True)
             return [
@@ -459,7 +476,7 @@ class AnalysisEngine:
 
         # Generate code from AI based on intent
         try:
-            self.generated_code = ai.generate_analysis_code(
+            self.generated_code = self.ai_helper.generate_analysis_code(
                 self.intent, data_schema, custom_prompt=custom_prompt
             )
 
@@ -714,7 +731,7 @@ except Exception as viz_error:
                     }
 
             # Use AI to interpret the results
-            interpretation = ai.interpret_results(
+            interpretation = self.ai_helper.interpret_results(
                 self.query, results_for_ai, self.visualizations
             )
 
