@@ -23,6 +23,8 @@ import logging
 from typing import Dict, Any
 
 from app.services.dashboard_service import DashboardService
+from app.components.admin_dashboard.charts import PerformanceChartsPanel
+from app.services.metrics_collector import MetricsCollector
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +42,22 @@ class AdminDashboardTab(param.Parameterized):
     auto_refresh_interval = param.Integer(default=5)  # minutes
     alerts = param.List(default=[])
 
+    # Sprint 2.1 parameters
+    show_charts = param.Boolean(default=False)
+
     def __init__(self, **params):
         super().__init__(**params)
         self.dashboard_service = DashboardService()
+
+        # Initialize metrics collector
+        self.metrics_collector = MetricsCollector()
+
+        # Initialize charts panel
+        self.charts_panel = PerformanceChartsPanel()
+
+        # Start metrics collection
+        self.metrics_collector.start_collection()
+
         self._setup_layout()
         self._refresh_data()
 
@@ -109,12 +124,32 @@ class AdminDashboardTab(param.Parameterized):
         # Last updated indicator
         self.last_updated = pn.pane.HTML("Last updated: Never", sizing_mode="fixed")
 
+        # Charts toggle button
+        self.charts_toggle = pn.widgets.Toggle(
+            name="📈 Show Historical Charts",
+            value=self.show_charts,
+            sizing_mode="fixed",
+            width=200,
+        )
+        self.charts_toggle.link(self, value="show_charts")
+
+        # Charts section (initially hidden)
+        self.charts_section = pn.Column(
+            self.charts_panel.get_panel(),
+            visible=self.show_charts,
+            sizing_mode="stretch_width",
+        )
+
+        # Watch for charts toggle
+        self.param.watch(self._toggle_charts, "show_charts")
+
         # Enhanced controls
         self.enhanced_controls = pn.Row(
             self.health_check_button,
             self.refresh_button,
             self.auto_refresh_toggle,
             self.auto_refresh_interval_select,
+            self.charts_toggle,
             sizing_mode="stretch_width",
         )
 
@@ -304,6 +339,10 @@ class AdminDashboardTab(param.Parameterized):
         except Exception as e:
             logger.error(f"Failed to check alerts: {e}")
 
+    def _toggle_charts(self, event):
+        """Toggle charts visibility."""
+        self.charts_section.visible = self.show_charts
+
     def _start_auto_refresh(self):
         """Start auto-refresh mechanism."""
         if hasattr(self, "_auto_refresh_task"):
@@ -457,7 +496,7 @@ class AdminDashboardTab(param.Parameterized):
         """
 
     def get_panel(self):
-        """Get enhanced Panel layout with Sprint 1.2 features."""
+        """Get enhanced Panel layout with Sprint 2.1 features."""
         return pn.Column(
             "# 🖥️ Admin Monitoring Dashboard",
             self.alerts_panel,
@@ -467,6 +506,7 @@ class AdminDashboardTab(param.Parameterized):
             self.metrics_summary,
             self.performance_metrics,
             self.enhanced_controls,
+            self.charts_section,
             self.last_updated,
             sizing_mode="stretch_width",
         )
