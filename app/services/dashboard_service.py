@@ -8,13 +8,21 @@ Sprint 1.1 Features:
 - Health status aggregation from multiple sources
 - Component status monitoring
 - Basic metrics collection and storage
+
+Sprint 1.2 Features:
+- Health check execution with progress tracking
+- Performance metrics with historical data
+- Alert threshold checking and notifications
+- Maintenance operation logging
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 
@@ -114,6 +122,265 @@ class DashboardService:
         except Exception as e:
             logger.error(f"Failed to get health status: {e}")
             return self._get_fallback_health_status()
+
+    def execute_health_check(self) -> Dict[str, Any]:
+        """Execute comprehensive health check and return detailed results."""
+        try:
+            start_time = time.time()
+
+            # Run the existing health check script functionality
+            from scripts.learning_system_health_check import run_health_check
+
+            # Execute health check with detailed output
+            health_results = run_health_check(detailed=True, json_output=True)
+
+            # Run performance benchmark
+            benchmark_results = self._run_performance_benchmark()
+
+            execution_time = (time.time() - start_time) * 1000  # Convert to ms
+
+            # Store the health check execution in maintenance logs
+            self._log_maintenance_operation(
+                operation_type="health_check",
+                operation_status="completed",
+                duration_ms=execution_time,
+                operation_details=json.dumps(
+                    {
+                        "health_status": health_results.get("health", {}),
+                        "benchmark_passed": benchmark_results.get(
+                            "benchmark_passed", False
+                        ),
+                    }
+                ),
+            )
+
+            return {
+                "success": True,
+                "execution_time_ms": execution_time,
+                "health_results": health_results,
+                "benchmark_results": benchmark_results,
+                "timestamp": datetime.now().isoformat(),
+            }
+
+        except Exception as e:
+            logger.error(f"Health check execution failed: {e}")
+            self._log_maintenance_operation(
+                operation_type="health_check",
+                operation_status="failed",
+                operation_details=json.dumps({"error": str(e)}),
+            )
+
+            return {
+                "success": False,
+                "error": str(e),
+                "timestamp": datetime.now().isoformat(),
+            }
+
+    def _run_performance_benchmark(self) -> Dict[str, Any]:
+        """Run performance benchmarks and return results."""
+        try:
+            from scripts.learning_system_health_check import run_performance_benchmark
+
+            return run_performance_benchmark()
+        except Exception as e:
+            logger.error(f"Performance benchmark failed: {e}")
+            return {
+                "benchmark_passed": False,
+                "error": str(e),
+                "average_lookup_time_ms": 0,
+                "max_lookup_time_ms": 0,
+            }
+
+    def get_performance_metrics(self, hours: int = 24) -> Dict[str, Any]:
+        """Get performance metrics for the specified time period."""
+        try:
+            # Get current performance from monitor
+            current_metrics = self.monitor.get_comprehensive_metrics()
+
+            # Get historical data from dashboard_metrics_history
+            historical_data = self._get_historical_performance_data(hours)
+
+            return {
+                "current": {
+                    "response_time_ms": current_metrics.performance_metrics.get(
+                        "average_response_time_ms", 0
+                    ),
+                    "pattern_lookup_ms": current_metrics.performance_metrics.get(
+                        "pattern_lookup_ms", 0
+                    ),
+                    "cache_hit_rate": current_metrics.performance_metrics.get(
+                        "cache_hit_rate", 0
+                    ),
+                    "error_rate": current_metrics.error_metrics.get(
+                        "recent_error_rate", 0
+                    ),
+                },
+                "historical": historical_data,
+                "time_range_hours": hours,
+                "last_updated": datetime.now().isoformat(),
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get performance metrics: {e}")
+            return {
+                "current": {},
+                "historical": {},
+                "error": str(e),
+                "last_updated": datetime.now().isoformat(),
+            }
+
+    def _get_historical_performance_data(self, hours: int) -> Dict[str, List]:
+        """Get historical performance data from database."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Get data from the last N hours
+                since_time = datetime.now() - timedelta(hours=hours)
+
+                cursor.execute(
+                    """
+                    SELECT timestamp, metric_name, metric_value 
+                    FROM dashboard_metrics_history 
+                    WHERE metric_type = 'performance' 
+                    AND timestamp > ? 
+                    ORDER BY timestamp ASC
+                """,
+                    (since_time.isoformat(),),
+                )
+
+                rows = cursor.fetchall()
+
+                # Organize data by metric name
+                metrics_data = {}
+                for row in rows:
+                    metric_name = row["metric_name"]
+                    if metric_name not in metrics_data:
+                        metrics_data[metric_name] = []
+
+                    metrics_data[metric_name].append(
+                        {"timestamp": row["timestamp"], "value": row["metric_value"]}
+                    )
+
+                return metrics_data
+
+        except Exception as e:
+            logger.error(f"Failed to get historical performance data: {e}")
+            return {}
+
+    def _log_maintenance_operation(
+        self,
+        operation_type: str,
+        operation_status: str,
+        duration_ms: int = None,
+        operation_details: str = None,
+    ):
+        """Log maintenance operation to database."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                if operation_status == "completed":
+                    cursor.execute(
+                        """
+                        INSERT INTO maintenance_logs 
+                        (operation_type, operation_status, duration_ms, operation_details, completed_at)
+                        VALUES (?, ?, ?, ?, ?)
+                    """,
+                        (
+                            operation_type,
+                            operation_status,
+                            duration_ms,
+                            operation_details,
+                            datetime.now().isoformat(),
+                        ),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        INSERT INTO maintenance_logs 
+                        (operation_type, operation_status, operation_details)
+                        VALUES (?, ?, ?)
+                    """,
+                        (operation_type, operation_status, operation_details),
+                    )
+
+        except Exception as e:
+            logger.error(f"Failed to log maintenance operation: {e}")
+
+    def check_alert_thresholds(
+        self, health_status: DashboardHealthStatus
+    ) -> List[Dict[str, Any]]:
+        """Check if any metrics exceed alert thresholds."""
+        alerts = []
+
+        try:
+            # Get configured alert thresholds
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM alert_configurations WHERE notification_enabled = 1"
+                )
+                alert_configs = cursor.fetchall()
+
+            # Check each threshold
+            for config in alert_configs:
+                metric_name = config["metric_name"]
+                threshold_value = config["threshold_value"]
+                comparison_op = config["comparison_operator"]
+                threshold_type = config["threshold_type"]
+
+                # Get current metric value
+                current_value = self._get_metric_value(health_status, metric_name)
+
+                if current_value is not None:
+                    # Check if threshold is exceeded
+                    if self._evaluate_threshold(
+                        current_value, comparison_op, threshold_value
+                    ):
+                        alerts.append(
+                            {
+                                "metric_name": metric_name,
+                                "current_value": current_value,
+                                "threshold_value": threshold_value,
+                                "threshold_type": threshold_type,
+                                "message": f"{metric_name} is {current_value} (threshold: {comparison_op} {threshold_value})",
+                                "timestamp": datetime.now().isoformat(),
+                            }
+                        )
+
+            return alerts
+
+        except Exception as e:
+            logger.error(f"Failed to check alert thresholds: {e}")
+            return []
+
+    def _get_metric_value(
+        self, health_status: DashboardHealthStatus, metric_name: str
+    ) -> float:
+        """Extract metric value from health status."""
+        if metric_name == "error_rate":
+            return health_status.metrics.get("error_rate", 0)
+        elif metric_name == "response_time_ms":
+            return health_status.metrics.get("response_time_ms", 0)
+        # Add more metric mappings as needed
+        return None
+
+    def _evaluate_threshold(
+        self, value: float, operator: str, threshold: float
+    ) -> bool:
+        """Evaluate if value meets threshold condition."""
+        if operator == ">":
+            return value > threshold
+        elif operator == ">=":
+            return value >= threshold
+        elif operator == "<":
+            return value < threshold
+        elif operator == "<=":
+            return value <= threshold
+        elif operator == "==":
+            return value == threshold
+        return False
 
     def _get_current_metrics(self) -> Dict[str, Any]:
         """Get current system metrics."""
