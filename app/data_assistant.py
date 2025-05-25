@@ -14,6 +14,7 @@ Coordinator module that uses the UI, Engine, Analysis, and State modules to prov
 a complete data analysis assistant experience.
 """
 
+import json
 import logging
 import panel as pn
 import param
@@ -519,11 +520,43 @@ class DataAnalysisAssistant(param.Parameterized):
         # Update result container
         self.ui.result_container.objects = formatted_results
 
-        # --- Hide feedback widget for transition to enhanced system ---
-        if self.feedback_widget is not None:
-            self.feedback_widget.visible = False
-        # Do not add feedback_widget to result_container
-        # (Deprecation: feedback widget hidden for enhanced system rollout)
+        # Add enhanced feedback widget
+        if self.feedback_widget is None or not hasattr(self.feedback_widget, "visible"):
+            from app.utils.enhanced_feedback_widget import (
+                create_enhanced_feedback_widget,
+            )
+
+            # Safely serialize intent to JSON
+            intent_json = None
+            if self.engine.intent and hasattr(self.engine.intent, "model_dump"):
+                try:
+                    intent_json = json.dumps(self.engine.intent.model_dump())
+                except (TypeError, AttributeError) as e:
+                    logger.warning(f"Could not serialize intent to JSON: {e}")
+                    intent_json = None
+
+            # Safely serialize results to JSON
+            results_json = None
+            if self.engine.execution_results:
+                try:
+                    results_json = json.dumps(self.engine.execution_results)
+                except (TypeError, AttributeError) as e:
+                    logger.warning(f"Could not serialize results to JSON: {e}")
+                    results_json = None
+
+            self.feedback_widget = create_enhanced_feedback_widget(
+                query=self.query_text,
+                original_intent_json=intent_json,
+                original_code=self.engine.generated_code,
+                original_results=results_json,
+                on_correction_applied=self._handle_correction_applied,
+            )
+        else:
+            # Re-show existing feedback widget
+            self.feedback_widget.visible = True
+
+        # Add feedback widget to results
+        formatted_results.append(self.feedback_widget)
 
         # Mark results displayed
         self.workflow.mark_results_displayed()
@@ -725,7 +758,7 @@ class DataAnalysisAssistant(param.Parameterized):
         # Reset engine
         self.engine = AnalysisEngine()
 
-        # Hide feedback widget after reset (per test expectation)
+        # Reset feedback widget after reset (per test expectation)
         if hasattr(self, "feedback_widget") and self.feedback_widget is not None:
             self.feedback_widget.visible = False
         # Re-enable analyze button and saved question triggers
@@ -760,6 +793,12 @@ class DataAnalysisAssistant(param.Parameterized):
             self._feedback_down.visible = False
         if hasattr(self, "_feedback_thanks") and self._feedback_thanks:
             self._feedback_thanks.visible = True
+
+    def _handle_correction_applied(self, session_id: int, suggestion: dict):
+        """Handle when a correction is applied."""
+        logger.info(f"Correction applied for session {session_id}: {suggestion}")
+        self.ui.update_status("Correction applied successfully", type="success")
+        # Future implementation for Sprint 3 - could trigger re-analysis or learning updates
 
     def _create_enhanced_feedback_widget(self):
         """Create an enhanced feedback widget with comment input and save functionality"""
