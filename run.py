@@ -216,6 +216,12 @@ def create_app():
         "Data Validation module could not be loaded. Check logs for details.",
     )
 
+    # Import admin dashboard
+    admin_dashboard_mod = safe_import(
+        "app.components.admin_dashboard",
+        "Admin Dashboard module could not be loaded. Check logs for details.",
+    )
+
     # Create the main application layout with combined Data Quality & Engagement tab
     tabs = pn.Tabs(
         ("Dashboard", dashboard.dashboard_page()),
@@ -224,6 +230,7 @@ def create_app():
         ("Data Validation", data_validation.get_page()),
         ("Data Quality & Engagement", gap_report_page_mod.gap_report_page()),
         ("Evaluation", evaluation_page.evaluation_page()),
+        ("🖥️ Admin Dashboard", admin_dashboard_mod.AdminDashboardTab().get_panel()),
     )
 
     # Create the template

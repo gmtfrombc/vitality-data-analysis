@@ -6,5 +6,12 @@ for the learning and correction system.
 """
 
 from .correction_service import CorrectionService, CorrectionSession, IntentPattern
+from .dashboard_service import DashboardService, DashboardHealthStatus
 
-__all__ = ["CorrectionService", "CorrectionSession", "IntentPattern"]
+__all__ = [
+    "CorrectionService",
+    "CorrectionSession",
+    "IntentPattern",
+    "DashboardService",
+    "DashboardHealthStatus",
+]
