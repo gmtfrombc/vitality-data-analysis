@@ -28,6 +28,7 @@ from app.components.admin_dashboard.learning_charts import LearningChartsPanel
 from app.components.admin_dashboard.export_panel import ExportPanel
 from app.components.admin_dashboard.maintenance_panel import MaintenancePanel
 from app.services.metrics_collector import MetricsCollector
+from app.services.production_monitor import ProductionMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,10 @@ class AdminDashboardTab(param.Parameterized):
     # Sprint 3.1 parameters
     show_maintenance_panel = param.Boolean(default=False)
 
+    # Sprint 3.2 parameters
+    production_status = param.Dict(default={})
+    active_alerts_count = param.Integer(default=0)
+
     def __init__(self, **params):
         super().__init__(**params)
         self.dashboard_service = DashboardService()
@@ -76,6 +81,10 @@ class AdminDashboardTab(param.Parameterized):
         # Initialize maintenance panel (Sprint 3.1)
         self.maintenance_panel = MaintenancePanel()
 
+        # Initialize production monitor (Sprint 3.2)
+        self.production_monitor = ProductionMonitor()
+        self.production_monitor.start_monitoring()
+
         # Start metrics collection
         self.metrics_collector.start_collection()
 
@@ -89,6 +98,12 @@ class AdminDashboardTab(param.Parameterized):
             "<div style='text-align: center; font-size: 24px; padding: 20px;'>"
             "🔄 Loading system status..."
             "</div>",
+            sizing_mode="stretch_width",
+        )
+
+        # Production status panel (Sprint 3.2)
+        self.production_status_panel = pn.pane.HTML(
+            "<div style='padding: 10px;'>Loading production status...</div>",
             sizing_mode="stretch_width",
         )
 
@@ -420,6 +435,99 @@ class AdminDashboardTab(param.Parameterized):
         except Exception as e:
             logger.error(f"Failed to check alerts: {e}")
 
+    def _update_production_status(self):
+        """Update production status panel (Sprint 3.2)."""
+        try:
+            system_status = self.production_monitor.get_system_status()
+            active_alerts = self.production_monitor.get_active_alerts()
+
+            # Update reactive parameters
+            self.production_status = system_status.__dict__
+            self.active_alerts_count = len(active_alerts)
+
+            # Status color and icon
+            status_colors = {
+                "operational": ("#28a745", "🟢"),
+                "degraded": ("#ffc107", "🟡"),
+                "outage": ("#dc3545", "🔴"),
+                "unknown": ("#6c757d", "⚪"),
+            }
+
+            color, icon = status_colors.get(system_status.status, ("#6c757d", "⚪"))
+
+            # Create production status HTML
+            html = f"""
+            <div style='padding: 15px; background-color: #f8f9fa; border-radius: 8px; margin: 10px;
+                        border-left: 4px solid {color};'>
+                <h4 style='margin-top: 0; color: {color};'>
+                    {icon} Production Status: {system_status.status.title()}
+                </h4>
+                <div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
+                           gap: 15px; margin-top: 15px;'>
+                    <div style='text-align: center;'>
+                        <div style='font-size: 20px; font-weight: bold; color: #007bff;'>
+                            {system_status.uptime_percentage:.1f}%
+                        </div>
+                        <div style='font-size: 12px; color: #666;'>Uptime (24h)</div>
+                    </div>
+                    <div style='text-align: center;'>
+                        <div style='font-size: 20px; font-weight: bold; color: {"#dc3545" if len(active_alerts) > 0 else "#28a745"};'>
+                            {len(active_alerts)}
+                        </div>
+                        <div style='font-size: 12px; color: #666;'>Active Alerts</div>
+                    </div>
+                    <div style='text-align: center;'>
+                        <div style='font-size: 20px; font-weight: bold; color: #17a2b8;'>
+                            {system_status.performance_score:.0f}
+                        </div>
+                        <div style='font-size: 12px; color: #666;'>Performance Score</div>
+                    </div>
+                    <div style='text-align: center;'>
+                        <div style='font-size: 14px; font-weight: bold; color: #666;'>
+                            {system_status.last_incident.strftime('%m/%d %H:%M') if system_status.last_incident else 'None'}
+                        </div>
+                        <div style='font-size: 12px; color: #666;'>Last Incident</div>
+                    </div>
+                </div>
+            """
+
+            # Add active alerts summary if any
+            if active_alerts:
+                html += "<div style='margin-top: 15px; padding-top: 15px; border-top: 1px solid #dee2e6;'>"
+                html += "<h6 style='margin-bottom: 10px; color: #dc3545;'>🚨 Active Alerts:</h6>"
+                for alert in active_alerts[:3]:  # Show first 3 alerts
+                    severity_colors = {
+                        "critical": "#dc3545",
+                        "high": "#fd7e14",
+                        "medium": "#ffc107",
+                        "low": "#28a745",
+                    }
+                    alert_color = severity_colors.get(alert.severity, "#6c757d")
+                    html += f"""
+                    <div style='font-size: 12px; margin-bottom: 5px; padding: 5px; 
+                               background-color: {alert_color}20; border-left: 3px solid {alert_color};'>
+                        <strong>{alert.title}</strong> ({alert.severity})
+                        <br><span style='color: #666;'>{alert.timestamp.strftime('%H:%M:%S')}</span>
+                    </div>
+                    """
+                if len(active_alerts) > 3:
+                    html += f"<div style='font-size: 12px; color: #666; text-align: center;'>... and {len(active_alerts) - 3} more alerts</div>"
+                html += "</div>"
+
+            html += "</div>"
+
+            self.production_status_panel.object = html
+
+        except Exception as e:
+            logger.error(f"Failed to update production status: {e}")
+            self.production_status_panel.object = f"""
+            <div style='padding: 15px; background-color: #f8f9fa; border-radius: 8px; margin: 10px;
+                        border-left: 4px solid #dc3545;'>
+                <h4 style='margin-top: 0; color: #dc3545;'>⚠️ Production Status Error</h4>
+                <p style='color: #666; margin: 0;'>Unable to load production status: {str(e)}</p>
+            </div>
+            """
+
     def _toggle_charts(self, event):
         """Toggle charts visibility."""
         self.charts_section.visible = self.show_charts
@@ -454,6 +562,7 @@ class AdminDashboardTab(param.Parameterized):
             self._update_metrics_summary(health_status)
             self._update_performance_metrics()
             self._check_and_display_alerts(health_status)
+            self._update_production_status()  # Sprint 3.2
             self._update_last_updated(health_status.last_updated)
 
         except Exception as e:
@@ -589,11 +698,12 @@ class AdminDashboardTab(param.Parameterized):
         """
 
     def get_panel(self):
-        """Get enhanced Panel layout with Sprint 2.2 features."""
+        """Get enhanced Panel layout with Sprint 3.2 features."""
         return pn.Column(
             "# 🖥️ Admin Monitoring Dashboard",
             self.alerts_panel,
             self.status_indicator,
+            self.production_status_panel,  # Sprint 3.2
             self.progress_indicator,
             self.component_cards,
             self.metrics_summary,

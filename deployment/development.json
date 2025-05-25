@@ -1,0 +1,17 @@
+{
+    "database_path": "test_patient_data.db",
+    "log_level": "DEBUG",
+    "monitoring_enabled": true,
+    "backup_enabled": false,
+    "alert_email_enabled": false,
+    "maintenance_schedule_enabled": false,
+    "performance_thresholds": {
+        "response_time_warning_ms": 2000,
+        "response_time_critical_ms": 5000,
+        "error_rate_warning": 0.10,
+        "error_rate_critical": 0.20
+    },
+    "backup_retention_days": 7,
+    "log_retention_days": 30,
+    "metrics_retention_days": 90
+}
