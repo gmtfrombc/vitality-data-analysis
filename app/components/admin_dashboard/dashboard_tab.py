@@ -24,6 +24,7 @@ from typing import Dict, Any
 
 from app.services.dashboard_service import DashboardService
 from app.components.admin_dashboard.charts import PerformanceChartsPanel
+from app.components.admin_dashboard.learning_charts import LearningChartsPanel
 from app.services.metrics_collector import MetricsCollector
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,9 @@ class AdminDashboardTab(param.Parameterized):
     # Sprint 2.1 parameters
     show_charts = param.Boolean(default=False)
 
+    # Sprint 2.2 parameters
+    show_learning_analytics = param.Boolean(default=False)
+
     def __init__(self, **params):
         super().__init__(**params)
         self.dashboard_service = DashboardService()
@@ -54,6 +58,9 @@ class AdminDashboardTab(param.Parameterized):
 
         # Initialize charts panel
         self.charts_panel = PerformanceChartsPanel()
+
+        # Initialize learning charts panel (Sprint 2.2)
+        self.learning_charts_panel = LearningChartsPanel()
 
         # Start metrics collection
         self.metrics_collector.start_collection()
@@ -133,6 +140,15 @@ class AdminDashboardTab(param.Parameterized):
         )
         self.charts_toggle.link(self, value="show_charts")
 
+        # Learning analytics toggle button (Sprint 2.2)
+        self.learning_toggle = pn.widgets.Toggle(
+            name="🧠 Show Learning Analytics",
+            value=self.show_learning_analytics,
+            sizing_mode="fixed",
+            width=200,
+        )
+        self.learning_toggle.link(self, value="show_learning_analytics")
+
         # Charts section (initially hidden)
         self.charts_section = pn.Column(
             self.charts_panel.get_panel(),
@@ -140,8 +156,18 @@ class AdminDashboardTab(param.Parameterized):
             sizing_mode="stretch_width",
         )
 
+        # Learning analytics section (initially hidden)
+        self.learning_section = pn.Column(
+            self.learning_charts_panel.get_panel(),
+            visible=self.show_learning_analytics,
+            sizing_mode="stretch_width",
+        )
+
         # Watch for charts toggle
         self.param.watch(self._toggle_charts, "show_charts")
+
+        # Watch for learning analytics toggle
+        self.param.watch(self._toggle_learning_analytics, "show_learning_analytics")
 
         # Enhanced controls
         self.enhanced_controls = pn.Row(
@@ -150,6 +176,7 @@ class AdminDashboardTab(param.Parameterized):
             self.auto_refresh_toggle,
             self.auto_refresh_interval_select,
             self.charts_toggle,
+            self.learning_toggle,
             sizing_mode="stretch_width",
         )
 
@@ -343,6 +370,10 @@ class AdminDashboardTab(param.Parameterized):
         """Toggle charts visibility."""
         self.charts_section.visible = self.show_charts
 
+    def _toggle_learning_analytics(self, event):
+        """Toggle learning analytics visibility."""
+        self.learning_section.visible = self.show_learning_analytics
+
     def _start_auto_refresh(self):
         """Start auto-refresh mechanism."""
         if hasattr(self, "_auto_refresh_task"):
@@ -496,7 +527,7 @@ class AdminDashboardTab(param.Parameterized):
         """
 
     def get_panel(self):
-        """Get enhanced Panel layout with Sprint 2.1 features."""
+        """Get enhanced Panel layout with Sprint 2.2 features."""
         return pn.Column(
             "# 🖥️ Admin Monitoring Dashboard",
             self.alerts_panel,
@@ -507,6 +538,7 @@ class AdminDashboardTab(param.Parameterized):
             self.performance_metrics,
             self.enhanced_controls,
             self.charts_section,
+            self.learning_section,
             self.last_updated,
             sizing_mode="stretch_width",
         )

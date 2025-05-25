@@ -22,7 +22,7 @@ MH_DB_PATH = os.getenv("MH_DB_PATH", "patient_data.db")
 # Shared DB file for saved questions, logs, etc. (used by utils)
 VP_DATA_DB = os.getenv(
     "VP_DATA_DB",
-    os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "patient_data.db"),
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), "patient_data.db"),
 )
 
 # --- Email/Notification Settings ---
@@ -72,9 +72,7 @@ def get_vp_data_db() -> str:
     """Return the current VP_DATA_DB from the environment (for test overrides)."""
     return os.getenv(
         "VP_DATA_DB",
-        os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), "..", "patient_data.db"
-        ),
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "patient_data.db"),
     )
 
 
