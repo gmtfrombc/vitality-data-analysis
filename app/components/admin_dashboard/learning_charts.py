@@ -207,18 +207,23 @@ class LearningChartsPanel:
                 height=380,
             )
 
-            source = ColumnDataSource(
-                data=dict(types=types, counts=counts, percentages=percentages)
-            )
-
             # Get colors for the bars
             colors = (
                 Category10[max(3, len(types))] if len(types) <= 10 else Category10[10]
             )
             bar_colors = colors[: len(types)]
 
+            source = ColumnDataSource(
+                data=dict(
+                    types=types,
+                    counts=counts,
+                    percentages=percentages,
+                    colors=bar_colors,
+                )
+            )
+
             bars = p.hbar(
-                y="types", right="counts", height=0.8, color=bar_colors, source=source
+                y="types", right="counts", height=0.8, color="colors", source=source
             )
 
             # Add hover tool

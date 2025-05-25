@@ -444,7 +444,7 @@ class DashboardService:
                 # Get recent metrics from dashboard_metrics_history
                 cursor = conn.execute(
                     """
-                    SELECT metric_name, value, unit, timestamp
+                    SELECT metric_name, metric_value, metric_unit, timestamp
                     FROM dashboard_metrics_history
                     WHERE timestamp > datetime('now', '-1 hour')
                     ORDER BY timestamp DESC
@@ -453,7 +453,7 @@ class DashboardService:
 
                 metrics = {}
                 for row in cursor:
-                    metrics[row["metric_name"]] = row["value"]
+                    metrics[row["metric_name"]] = row["metric_value"]
 
                 # Add some default metrics if not available
                 return {
@@ -474,6 +474,10 @@ class DashboardService:
                 "active_patterns": 12,
                 "uptime_hours": 24,
             }
+
+    def get_current_metrics(self) -> Dict[str, Any]:
+        """Public method to get current system metrics."""
+        return self._get_current_metrics()
 
     def _get_system_info(self) -> Dict[str, Any]:
         """Get system information for export."""

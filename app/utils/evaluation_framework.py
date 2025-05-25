@@ -77,8 +77,8 @@ def _load_feedback_as_df(days: int = 30, db_file: str | None = None) -> pd.DataF
         )
 
     df = pd.DataFrame(feedback_rows)
-    # Convert timestamps to datetime
-    df["created_at"] = pd.to_datetime(df["created_at"])
+    # Convert timestamps to datetime with flexible parsing
+    df["created_at"] = pd.to_datetime(df["created_at"], format="mixed")
 
     # Filter for specified time period
     cutoff = datetime.now() - timedelta(days=days)
@@ -103,8 +103,8 @@ def _load_logs_as_df(days: int = 30, db_file: str | None = None) -> pd.DataFrame
         )
 
     df = pd.DataFrame(logs)
-    # Convert timestamps to datetime
-    df["created_at"] = pd.to_datetime(df["created_at"])
+    # Convert timestamps to datetime with flexible parsing
+    df["created_at"] = pd.to_datetime(df["created_at"], format="mixed")
 
     # Filter for specified time period
     cutoff = datetime.now() - timedelta(days=days)
@@ -650,11 +650,11 @@ def load_metrics_history(
 
     df = pd.DataFrame([dict(row) for row in rows])
 
-    # Convert date strings to datetime
+    # Convert date strings to datetime with flexible parsing
     if "period_start" in df.columns:
-        df["period_start"] = pd.to_datetime(df["period_start"])
+        df["period_start"] = pd.to_datetime(df["period_start"], format="mixed")
     if "period_end" in df.columns:
-        df["period_end"] = pd.to_datetime(df["period_end"])
+        df["period_end"] = pd.to_datetime(df["period_end"], format="mixed")
 
     # Parse JSON details when present
     if "metric_details" in df.columns:

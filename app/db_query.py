@@ -13,7 +13,7 @@ import logging
 import re
 from app.utils.schema_cache import load_schema
 from app.utils.patient_attributes import Active, ETOH, Tobacco, GLP1Full, label_for
-from app.reference_ranges import get_reference_range
+from app.utils.metric_reference import get_range
 from app.config import get_mh_db_path
 
 # Configure logging
@@ -626,7 +626,7 @@ def get_patient_overview(patient_id, db_path=DB_PATH):
 
 def find_patients_with_abnormal_values(db_path=DB_PATH):
     """
-    Find patients with abnormal lab or vital values.
+    Find patients with abnormal lab or vital values using YAML-based reference ranges.
 
     Args:
         db_path (str): Path to the SQLite database file
@@ -637,113 +637,137 @@ def find_patients_with_abnormal_values(db_path=DB_PATH):
     conn = sqlite3.connect(db_path)
 
     try:
+        # Helper function to get normal range bounds from YAML
+        def get_normal_range(metric):
+            """Get (low, high) bounds for normal range from YAML config."""
+            normal_range = get_range(metric, "normal")
+            if normal_range:
+                return normal_range.get("min"), normal_range.get("max")
+            return None, None
+
         # Construct query parts for lab results outside normal ranges
         lab_conditions = []
         lab_columns = []
 
-        for measure in [
-            "glucose_level",
-            "a1c",
-            "total_cholesterol",
-            "ldl",
-            "hdl",
-            "triglycerides",
-            "sbp",
-            "dbp",
-            "bmi",
-        ]:
-            rng = get_reference_range(measure)
-            if rng is None:
+        # Map old metric names to new YAML metric names
+        metric_mapping = {
+            "glucose_level": "glucose",
+            "a1c": "a1c",
+            "total_cholesterol": "total_cholesterol",
+            "ldl": "ldl",
+            "hdl": "hdl",
+            "triglycerides": "triglycerides",
+            "sbp": "sbp",
+            "dbp": "dbp",
+            "bmi": "bmi",
+        }
+
+        for old_measure, yaml_measure in metric_mapping.items():
+            low, high = get_normal_range(yaml_measure)
+            if low is None and high is None:
                 continue
-            low, high = rng
-            if measure in ["sbp", "dbp", "bmi"]:  # These are in vitals table
+
+            if old_measure in ["sbp", "dbp", "bmi"]:  # These are in vitals table
                 continue
-            lab_conditions.append(
-                f"(lab_results.test_name = '{measure}' AND (lab_results.value < {low} OR lab_results.value > {high}))"
-            )
-            lab_columns.append(
-                f"MAX(CASE WHEN lab_results.test_name = '{measure}' THEN lab_results.value END) AS {measure}"
-            )
+
+            # Build condition for values outside normal range
+            conditions = []
+            if low is not None:
+                conditions.append(f"lab_results.value < {low}")
+            if high is not None:
+                conditions.append(f"lab_results.value > {high}")
+
+            if conditions:
+                lab_conditions.append(
+                    f"(lab_results.test_name = '{old_measure}' AND ({' OR '.join(conditions)}))"
+                )
+                lab_columns.append(
+                    f"MAX(CASE WHEN lab_results.test_name = '{old_measure}' THEN lab_results.value END) AS {old_measure}"
+                )
 
         # Construct query parts for vital signs outside normal ranges
         vital_conditions = []
         vital_columns = []
 
-        for measure in [
-            "glucose_level",
-            "a1c",
-            "total_cholesterol",
-            "ldl",
-            "hdl",
-            "triglycerides",
-            "sbp",
-            "dbp",
-            "bmi",
-        ]:
-            rng = get_reference_range(measure)
-            if rng is None:
+        for old_measure, yaml_measure in metric_mapping.items():
+            low, high = get_normal_range(yaml_measure)
+            if low is None and high is None:
                 continue
-            low, high = rng
-            if measure in ["sbp", "dbp", "bmi"]:
-                vital_conditions.append(
-                    f"(vitals.{measure} < {low} OR vitals.{measure} > {high})"
-                )
-                vital_columns.append(f"vitals.{measure}")
 
-        # Build query for abnormal lab values
-        lab_query = f"""
-        SELECT 
-            patients.id as patient_id,
-            patients.first_name,
-            patients.last_name,
-            patients.gender,
-            CAST(strftime('%Y', 'now') - strftime('%Y', patients.birth_date) AS INTEGER) as age,
-            {', '.join(lab_columns)}
-        FROM 
-            patients
-        JOIN 
-            lab_results ON patients.id = lab_results.patient_id
-        WHERE 
-            {' OR '.join(lab_conditions)}
-        GROUP BY 
-            patients.id
-        """
+            if old_measure in ["sbp", "dbp", "bmi"]:
+                # Build condition for values outside normal range
+                conditions = []
+                if low is not None:
+                    conditions.append(f"vitals.{old_measure} < {low}")
+                if high is not None:
+                    conditions.append(f"vitals.{old_measure} > {high}")
 
-        # Build query for abnormal vital values
-        vital_query = f"""
-        SELECT 
-            patients.id as patient_id,
-            patients.first_name,
-            patients.last_name,
-            patients.gender,
-            CAST(strftime('%Y', 'now') - strftime('%Y', patients.birth_date) AS INTEGER) as age,
-            {', '.join(vital_columns)}
-        FROM 
-            patients
-        JOIN 
-            vitals ON patients.id = vitals.patient_id
-        WHERE 
-            {' OR '.join(vital_conditions)}
-        GROUP BY 
-            patients.id
-        """
+                if conditions:
+                    vital_conditions.append(f"({' OR '.join(conditions)})")
+                    vital_columns.append(f"vitals.{old_measure}")
 
-        # Execute queries
-        lab_df = pd.read_sql_query(lab_query, conn)
-        vital_df = pd.read_sql_query(vital_query, conn)
-
-        # Merge the two dataframes
-        if lab_df.empty and vital_df.empty:
+        # Only proceed if we have conditions to check
+        if not lab_conditions and not vital_conditions:
+            logger.warning("No reference ranges found for abnormal value detection")
             return pd.DataFrame()
-        elif lab_df.empty:
-            return vital_df
-        elif vital_df.empty:
-            return lab_df
+
+        # Build and execute queries
+        results = []
+
+        if lab_conditions:
+            lab_query = f"""
+            SELECT 
+                patients.id as patient_id,
+                patients.first_name,
+                patients.last_name,
+                patients.gender,
+                CAST(strftime('%Y', 'now') - strftime('%Y', patients.birth_date) AS INTEGER) as age,
+                {', '.join(lab_columns)}
+            FROM 
+                patients
+            JOIN 
+                lab_results ON patients.id = lab_results.patient_id
+            WHERE 
+                {' OR '.join(lab_conditions)}
+            GROUP BY 
+                patients.id
+            """
+            lab_df = pd.read_sql_query(lab_query, conn)
+            if not lab_df.empty:
+                results.append(lab_df)
+
+        if vital_conditions:
+            vital_query = f"""
+            SELECT 
+                patients.id as patient_id,
+                patients.first_name,
+                patients.last_name,
+                patients.gender,
+                CAST(strftime('%Y', 'now') - strftime('%Y', patients.birth_date) AS INTEGER) as age,
+                {', '.join(vital_columns)}
+            FROM 
+                patients
+            JOIN 
+                vitals ON patients.id = vitals.patient_id
+            WHERE 
+                {' OR '.join(vital_conditions)}
+            GROUP BY 
+                patients.id
+            """
+            vital_df = pd.read_sql_query(vital_query, conn)
+            if not vital_df.empty:
+                results.append(vital_df)
+
+        # Merge results if we have multiple dataframes
+        if not results:
+            return pd.DataFrame()
+        elif len(results) == 1:
+            return results[0]
         else:
             # Merge on patient_id, keeping all rows from both dataframes
             result_df = pd.merge(
-                lab_df,
-                vital_df,
+                results[0],
+                results[1],
                 on=["patient_id", "first_name", "last_name", "gender", "age"],
                 how="outer",
             )

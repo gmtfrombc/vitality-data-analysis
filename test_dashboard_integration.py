@@ -56,14 +56,13 @@ def test_dashboard_integration():
         )
 
         print("\n🎉 All Sprint 2.2 components successfully integrated!")
-        return True
 
     except Exception as e:
         print(f"\n❌ Integration test failed: {e}")
         import traceback
 
         traceback.print_exc()
-        return False
+        raise
 
 
 if __name__ == "__main__":

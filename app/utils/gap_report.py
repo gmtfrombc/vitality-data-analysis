@@ -25,7 +25,7 @@ from textwrap import dedent
 
 from app.db_query import query_dataframe
 from app.utils.condition_mapper import condition_mapper
-from app.reference_ranges import REFERENCE_RANGES
+from app.utils.metric_reference import get_range
 
 logger = logging.getLogger(__name__)
 
@@ -90,22 +90,25 @@ def _simple_lab_cte(test_name: str, where_clause: str) -> str:
 _RULES: Dict[str, ConditionRule] = {
     # Obesity – BMI ≥ 30
     "obesity": (
-        _vitals_cte("bmi", f"bmi >= {REFERENCE_RANGES['bmi_obese']}"),
+        _vitals_cte("bmi", f"bmi >= {get_range('bmi', 'obese')['min']}"),
         "bmi",
     ),
     # Morbid obesity – BMI ≥ 40
     "morbid_obesity": (
-        _vitals_cte("bmi", f"bmi >= {REFERENCE_RANGES['bmi_morbid_obesity']}"),
+        _vitals_cte("bmi", f"bmi >= {get_range('bmi', 'morbid_obesity')['min']}"),
         "bmi",
     ),
-    # Prediabetes – A1C 5.7–6.4  (inclusive of lower bound, exclusive upper)
+    # Prediabetes – A1C 5.7–6.4  (inclusive of lower bound, inclusive upper)
     "prediabetes": (
-        _simple_lab_cte("A1C", "metric_value >= 5.7 AND metric_value < 6.5"),
+        _simple_lab_cte(
+            "A1C",
+            f"metric_value >= {get_range('a1c', 'pre_diabetes')['min']} AND metric_value <= {get_range('a1c', 'pre_diabetes')['max']}",
+        ),
         "a1c",
     ),
     # Type-2 diabetes – A1C ≥ 6.5
     "type_2_diabetes": (
-        _simple_lab_cte("A1C", "metric_value >= 6.5"),
+        _simple_lab_cte("A1C", f"metric_value >= {get_range('a1c', 'high')['min']}"),
         "a1c",
     ),
 }

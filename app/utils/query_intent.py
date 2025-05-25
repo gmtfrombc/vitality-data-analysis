@@ -148,6 +148,16 @@ class Condition(BaseModel):
     )
     value: Any = Field(..., description="Comparison value (or list / tuple for ranges)")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_operator(cls, data):
+        """Normalize operator values to match expected literals."""
+        if isinstance(data, dict) and "operator" in data:
+            # Normalize single '=' to '==' for equality comparison
+            if data["operator"] == "=":
+                data["operator"] = "=="
+        return data
+
 
 # ---------------------------------------------------------------------------
 # Main intent schema

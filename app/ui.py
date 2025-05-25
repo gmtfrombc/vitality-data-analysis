@@ -1,5 +1,3 @@
-from app.utils.assumptions import NO_DATA_MESSAGE
-
 """
 UI Components for Data Analysis Assistant
 
@@ -483,20 +481,20 @@ class UIComponents(param.Parameterized):
         """Display execution results"""
         from app.analysis_helpers import combine_visualizations
 
-        # Create execution pane content
-        elements = [
-            pn.pane.Markdown("### Analysis Results"),
-            pn.pane.Markdown("The analysis has been completed. Here are the results:"),
-        ]
+        # Create execution pane content - only show errors, not raw results
+        elements = []
 
-        # Handle error results
+        # Handle error results only - don't show raw technical data
         if isinstance(results, dict) and "error" in results:
-            elements.append(
-                pn.pane.Alert(
-                    f"Error: {results['error']}",
-                    alert_type="danger",
-                    sizing_mode="stretch_width",
-                )
+            elements.extend(
+                [
+                    pn.pane.Markdown("### Analysis Results"),
+                    pn.pane.Alert(
+                        f"Error: {results['error']}",
+                        alert_type="danger",
+                        sizing_mode="stretch_width",
+                    ),
+                ]
             )
 
             # Show traceback if available
@@ -511,48 +509,16 @@ class UIComponents(param.Parameterized):
                         height=300,
                     )
                 )
+        # For successful results, don't display raw technical data here
+        # The meaningful interpretation will be shown in the lower section
+
+        # Update execution pane - hide if no errors to show
+        if elements:
+            self.execution_pane.objects = elements
+            self.execution_pane.visible = True
         else:
-            # Format results based on type
-            if isinstance(results, (int, float)):
-                elements.append(pn.pane.Markdown(f"**Result:** {results}"))
-            elif isinstance(results, dict):
-                # Remove unnecessary fields from display
-                display_results = {
-                    k: v
-                    for k, v in results.items()
-                    if k not in ["visualization", "execution_time", "index", "bmi_mean"]
-                }
-
-                # If there are meaningful results to show, display them
-                if display_results:
-                    if len(display_results) == 1:
-                        # Single result - display as simple text
-                        key, value = next(iter(display_results.items()))
-                        elements.append(pn.pane.Markdown(f"**{key.title()}:** {value}"))
-                    else:
-                        # Multiple results - display as formatted text
-                        for key, value in display_results.items():
-                            elements.append(
-                                pn.pane.Markdown(f"**{key.title()}:** {value}")
-                            )
-            elif hasattr(results, "to_dict"):
-                # Handle DataFrame-like objects
-                elements.append(
-                    pn.widgets.Tabulator(
-                        results,
-                        pagination="local",
-                        page_size=10,
-                        sizing_mode="stretch_width",
-                        theme="default",
-                    )
-                )
-            else:
-                # Default display
-                elements.append(pn.pane.Markdown(NO_DATA_MESSAGE))
-
-        # Update execution pane
-        self.execution_pane.objects = elements
-        self.execution_pane.visible = True
+            self.execution_pane.objects = []
+            self.execution_pane.visible = False
 
         # Update visualization pane if visualizations exist or can be created
         if visualizations:

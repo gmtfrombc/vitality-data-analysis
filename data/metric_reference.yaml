@@ -91,6 +91,9 @@ bmi:
     max: 29.9
   obese:
     min: 30.0
+    max: 39.9
+  morbid_obesity:
+    min: 40.0
     max: null
 
 vitality_score:

@@ -89,6 +89,18 @@ class CorrectionService:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
 
+                # Check if indexes already exist to avoid spam
+                cursor.execute(
+                    """
+                    SELECT name FROM sqlite_master 
+                    WHERE type='index' AND name='idx_intent_patterns_success_rate'
+                """
+                )
+
+                if cursor.fetchone():
+                    # Indexes already exist, no need to log
+                    return
+
                 # Additional performance indexes for Sprint 4
                 indexes = [
                     "CREATE INDEX IF NOT EXISTS idx_intent_patterns_success_rate ON intent_patterns(success_rate DESC)",
@@ -100,7 +112,7 @@ class CorrectionService:
                 for index_sql in indexes:
                     cursor.execute(index_sql)
 
-                logger.info("Created performance indexes")
+                logger.debug("Created performance indexes")
 
         except Exception as e:
             logger.warning(f"Failed to create performance indexes: {e}")

@@ -110,7 +110,7 @@ class TimeSeriesChart(param.Parameterized):
                 )
 
                 # Add circle markers
-                p.circle(
+                p.scatter(
                     x="timestamp",
                     y="value",
                     source=df,
@@ -134,8 +134,11 @@ class TimeSeriesChart(param.Parameterized):
 
         # Customize chart appearance
         p.title.text_font_size = "16pt"
-        p.legend.location = "top_left"
-        p.legend.click_policy = "hide"
+
+        # Only set legend properties if legend exists
+        if p.legend:
+            p.legend.location = "top_left"
+            p.legend.click_policy = "hide"
 
         # Format x-axis
         p.xaxis.formatter = DatetimeTickFormatter(

@@ -100,15 +100,48 @@ def interpret_results(
         logger.info("Offline mode – returning simplified interpretation")
         return "Here is a concise summary of the analysis results based on the provided data."
 
-    system_prompt = """
+    # ---------------------------
+    # Enhance results with reference ranges
+    # ---------------------------
+    from app.utils.preprocess import preprocess_results_for_ai
+
+    # Add reference ranges to results for AI context
+    enhanced_results = preprocess_results_for_ai(results, query)
+
+    # Build reference range context for the system prompt
+    reference_context = ""
+    if isinstance(enhanced_results, dict) and "reference" in enhanced_results:
+        reference_context = (
+            "\n\nClinical Reference Ranges to use in your interpretation:\n"
+        )
+        for metric, ranges in enhanced_results["reference"].items():
+            if isinstance(ranges, dict) and "units" in ranges:
+                units = ranges["units"]
+                reference_context += f"- {metric.upper()}: "
+                range_parts = []
+                for category, bounds in ranges.items():
+                    if category == "units" or not isinstance(bounds, dict):
+                        continue
+                    min_val = bounds.get("min")
+                    max_val = bounds.get("max")
+                    if min_val is not None and max_val is not None:
+                        range_parts.append(f"{category} {min_val}-{max_val} {units}")
+                    elif min_val is not None:
+                        range_parts.append(f"{category} ≥{min_val} {units}")
+                    elif max_val is not None:
+                        range_parts.append(f"{category} ≤{max_val} {units}")
+                reference_context += ", ".join(range_parts) + "\n"
+
+    system_prompt = f"""
 You are an expert healthcare data analyst and medical professional. Based on the patient data analysis results, provide a clear, insightful interpretation that:
 
 1. Directly answers the user's original question
 2. Highlights key findings and patterns in the data
 3. Provides relevant clinical context or healthcare implications
-4. Suggests potential follow-up analyses if appropriate
+4. When mentioning clinical categories (like "high A1C" or "normal blood pressure"), include the specific threshold values in parentheses
+5. Suggests potential follow-up analyses if appropriate
 
-Respond in 3-5 sentences, focusing on the most important insights.
+Respond in 3-5 sentences, focusing on the most important insights.{reference_context}
 """
 
     # Prepare visualisation notes
@@ -120,7 +153,7 @@ Respond in 3-5 sentences, focusing on the most important insights.
     try:
         payload = (
             f"Original question: {query}\n\n"
-            f"Analysis results: {json.dumps(simplify_for_json(results))}{viz_notes}"
+            f"Analysis results: {json.dumps(simplify_for_json(enhanced_results))}{viz_notes}"
         )
 
         response = ask_llm(

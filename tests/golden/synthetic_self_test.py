@@ -625,7 +625,7 @@ class SyntheticDataGenerator:
         )
 
 
-class TestCase:
+class SyntheticTestCase:
     """Represents a single test case with query and expected result."""
 
     def __init__(self, name, query, expected_result, tolerance=0.05):
@@ -652,11 +652,11 @@ class TestCase:
         self.error = None
 
     def __str__(self):
-        return f"TestCase({self.name})"
+        return f"SyntheticTestCase({self.name})"
 
 
 # Mock implementation for testing without OpenAI API
-class TestModeAIHelper:
+class MockAIHelper:
     """Special version of AIHelper that returns fixed intents and results for testing."""
 
     def __init__(self):
@@ -1146,7 +1146,7 @@ class SyntheticSelfTestLoop:
         self.report_path = self.output_dir / f"test_report_{self.timestamp}.json"
 
         # Initialize dependencies - use test mode AI helper for offline testing
-        self.ai_helper = TestModeAIHelper()
+        self.ai_helper = MockAIHelper()
         self.test_cases = []
 
         # Set up a file handler for logging
@@ -1189,28 +1189,28 @@ class SyntheticSelfTestLoop:
         """Generate test cases with known ground truth answers."""
         # Define test cases based on our synthetic data properties
         test_cases = [
-            TestCase(
+            SyntheticTestCase(
                 name="active_patient_count",
                 query="How many active patients are in the program?",
                 expected_result=15,  # We generated 15 active patients
             ),
-            TestCase(
+            SyntheticTestCase(
                 name="average_weight",
                 query="What is the average weight of all patients?",
                 expected_result=80.0,  # Approximate expected value
             ),
-            TestCase(
+            SyntheticTestCase(
                 name="average_female_bmi",
                 query="What is the average BMI of female patients?",
                 expected_result=26.5,  # Approximate expected value
             ),
-            TestCase(
+            SyntheticTestCase(
                 name="count_by_gender",
                 query="Show me the count of patients by gender",
                 # We have even distribution
                 expected_result={"F": 10, "M": 10},
             ),
-            TestCase(
+            SyntheticTestCase(
                 name="active_count_by_ethnicity",
                 query="How many active patients are there in each ethnicity?",
                 expected_result={
@@ -1220,7 +1220,7 @@ class SyntheticSelfTestLoop:
                     "African American": 3,
                 },
             ),
-            TestCase(
+            SyntheticTestCase(
                 name="weight_trend",
                 query="Show the trend of average weight by month in 2025",
                 expected_result={
@@ -1232,24 +1232,24 @@ class SyntheticSelfTestLoop:
                     "2025-06": 79.5,
                 },
             ),
-            TestCase(
+            SyntheticTestCase(
                 name="phq9_improvement",
                 query="What is the percent change in PHQ-9 scores from January to June 2025?",
                 expected_result=-25.0,  # Approximate expected value
             ),
-            TestCase(
+            SyntheticTestCase(
                 name="weight_bmi_correlation",
                 query="Is there a correlation between weight and BMI?",
                 # Strong positive correlation
                 expected_result={"correlation_coefficient": 0.9},
             ),
-            TestCase(
+            SyntheticTestCase(
                 name="avg_a1c_by_gender",
                 query="Compare the average A1C levels between male and female patients",
                 # Approximate expected values
                 expected_result={"F": 6.5, "M": 6.7},
             ),
-            TestCase(
+            SyntheticTestCase(
                 name="bmi_distribution",
                 query="Show me the distribution of BMI across all patients",
                 # Special case - just check we get a visualization

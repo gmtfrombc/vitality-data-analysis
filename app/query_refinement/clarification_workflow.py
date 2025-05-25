@@ -20,7 +20,8 @@ class ClarificationWorkflow:
         needs_clarification, questions = clarifier.get_specific_clarification(
             intent, query_text
         )
-        return needs_clarification, questions
+        # Return only the questions list, not the tuple
+        return questions if needs_clarification else []
 
     def process_clarification_response(self, intent, clarification_text):
         """

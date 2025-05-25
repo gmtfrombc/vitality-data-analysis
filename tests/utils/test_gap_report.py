@@ -3,6 +3,7 @@ import pandas as pd
 from pandas.testing import assert_frame_equal
 
 from app.utils.gap_report import get_condition_gap_report
+from app.utils.metric_reference import get_range
 
 # Mock data to be returned by query_dataframe
 MOCK_PATIENT_DATA_OBESITY = pd.DataFrame(
@@ -80,7 +81,12 @@ def test_get_condition_gap_report_prediabetes(mocker):
     assert_frame_equal(result_df, MOCK_PATIENT_DATA_A1C)
     called_sql = mock_query_dataframe.call_args[0][0]
 
-    assert "metric_value >= 5.7 AND metric_value < 6.5" in called_sql
+    prediabetes_min = get_range("a1c", "pre_diabetes")["min"]
+    prediabetes_max = get_range("a1c", "pre_diabetes")["max"]
+    assert (
+        f"metric_value >= {prediabetes_min} AND metric_value <= {prediabetes_max}"
+        in called_sql
+    )
     assert "test_name = 'A1C'" in called_sql
     assert "lower(pmh.condition) like '%prediabetes%'" in called_sql.lower()
 
@@ -97,7 +103,8 @@ def test_get_condition_gap_report_type_2_diabetes(mocker):
     assert_frame_equal(result_df, MOCK_PATIENT_DATA_A1C)
     called_sql = mock_query_dataframe.call_args[0][0]
 
-    assert "metric_value >= 6.5" in called_sql
+    diabetes_min = get_range("a1c", "high")["min"]
+    assert f"metric_value >= {diabetes_min}" in called_sql
     assert "test_name = 'A1C'" in called_sql
     assert "patients.active = 1" in called_sql
     assert "lower(pmh.condition) like '%type 2 diabetes%'" in called_sql.lower()
@@ -117,7 +124,9 @@ def test_get_condition_gap_report_diabetes_alias(mocker):
     assert_frame_equal(result_df, MOCK_PATIENT_DATA_A1C)
     called_sql = mock_query_dataframe.call_args[0][0]
 
-    assert "metric_value >= 6.5" in called_sql  # Check for Type 2 Diabetes criteria
+    diabetes_min = get_range("a1c", "high")["min"]
+    # Check for Type 2 Diabetes criteria
+    assert f"metric_value >= {diabetes_min}" in called_sql
     # Canonical name in SQL
     assert "lower(pmh.condition) like '%type 2 diabetes%'" in called_sql.lower()
 
@@ -136,7 +145,9 @@ def test_get_condition_gap_report_t2dm_alias(mocker):
     assert_frame_equal(result_df, MOCK_PATIENT_DATA_A1C)
     called_sql = mock_query_dataframe.call_args[0][0]
 
-    assert "metric_value >= 6.5" in called_sql  # Check for Type 2 Diabetes criteria
+    diabetes_min = get_range("a1c", "high")["min"]
+    # Check for Type 2 Diabetes criteria
+    assert f"metric_value >= {diabetes_min}" in called_sql
     # Canonical name in SQL
     assert "lower(pmh.condition) like '%type 2 diabetes%'" in called_sql.lower()
 
@@ -251,10 +262,9 @@ def test_get_condition_gap_report_pmh_filter_logic(mocker):
         in sql_query_no_codes.lower().replace("\n", " ")
     )
     assert (
-        " or "
-        not in sql_query_no_codes.split("WHERE")[1]
-        .split(")")[0]  # Convert "WHERE" to "where" if comparing against lowercased SQL
-        .lower()
+        " or " not in sql_query_no_codes.split("WHERE")[1]
+        # Convert "WHERE" to "where" if comparing against lowercased SQL
+        .split(")")[0].lower()
         if "where" in sql_query_no_codes.lower()
         else " or " not in sql_query_no_codes.split("WHERE")[1].split(")")[0]
     )

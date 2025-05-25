@@ -959,4 +959,122 @@ def format_results(results, intent=None, show_narrative=True):
             label += patient_status_text
         formatted_results.append(pn.pane.Markdown(f"**{label}:** {results}"))
 
+    # Add reference ranges table if applicable
+    query_text = ""
+    if intent and hasattr(intent, "raw_query"):
+        query_text = intent.raw_query
+    elif isinstance(results, dict) and "query" in results:
+        query_text = results["query"]
+
+    reference_table = create_reference_ranges_table(results, query_text)
+    if reference_table:
+        formatted_results.append(reference_table)
+
     return formatted_results
+
+
+def create_reference_ranges_table(results, query):
+    """
+    Create a reference ranges table for metrics mentioned in the query/results.
+
+    Args:
+        results: Analysis results dictionary
+        query: Original user query
+
+    Returns:
+        Panel component with reference ranges table, or None if no ranges found
+    """
+    try:
+        from app.utils.metric_reference import get_reference, extract_metrics_from_text
+        import pandas as pd
+        import panel as pn
+
+        # Extract metrics from query and results
+        metrics = extract_metrics_from_text(query)
+
+        # Also check if results contain reference data
+        if isinstance(results, dict) and "reference" in results:
+            metrics.extend(results["reference"].keys())
+
+        # Remove duplicates while preserving order
+        metrics = list(dict.fromkeys(metrics))
+
+        if not metrics:
+            return None
+
+        # Get reference data
+        ref_data = get_reference()
+
+        # Build table data
+        table_data = []
+        for metric in metrics:
+            if metric not in ref_data:
+                continue
+
+            metric_data = ref_data[metric]
+            if not isinstance(metric_data, dict) or "units" not in metric_data:
+                continue
+
+            units = metric_data["units"]
+            metric_name = metric.replace("_", " ").title()
+
+            # Process each category
+            for category, bounds in metric_data.items():
+                if category == "units" or not isinstance(bounds, dict):
+                    continue
+
+                min_val = bounds.get("min")
+                max_val = bounds.get("max")
+
+                # Format range string
+                if min_val is not None and max_val is not None:
+                    range_str = f"{min_val} - {max_val} {units}"
+                elif min_val is not None:
+                    range_str = f"≥ {min_val} {units}"
+                elif max_val is not None:
+                    range_str = f"≤ {max_val} {units}"
+                else:
+                    continue
+
+                table_data.append(
+                    {
+                        "Metric": metric_name,
+                        "Category": category.replace("_", " ").title(),
+                        "Range": range_str,
+                    }
+                )
+
+        if not table_data:
+            return None
+
+        # Create DataFrame and Panel table
+        df = pd.DataFrame(table_data)
+
+        # Create a nicely formatted table
+        table_html = df.to_html(
+            index=False, classes="table table-striped table-hover", escape=False
+        )
+
+        # Wrap in a collapsible section
+        reference_section = pn.pane.HTML(
+            f"""
+        <details style="margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
+            <summary style="font-weight: bold; font-size: 16px; cursor: pointer; color: #2c3e50;">
+                📊 Clinical Reference Ranges Used
+            </summary>
+            <div style="margin-top: 10px;">
+                <p style="color: #666; font-size: 14px; margin-bottom: 10px;">
+                    The following clinical reference ranges were used to categorize values in this analysis:
+                </p>
+                {table_html}
+            </div>
+        </details>
+        """,
+            sizing_mode="stretch_width",
+        )
+
+        return reference_section
+
+    except Exception as e:
+        logger.error(f"Error creating reference ranges table: {e}")
+        return None

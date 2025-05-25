@@ -6,7 +6,7 @@ is functioning correctly.
 
 from tests.golden.synthetic_self_test import (
     SyntheticDataGenerator,
-    TestCase,
+    SyntheticTestCase,
     SyntheticSelfTestLoop,
 )
 import os
@@ -67,9 +67,9 @@ class TestSyntheticSelfTestFramework(unittest.TestCase):
         conn.close()
 
     def test_test_case_class(self):
-        """Test that the TestCase class works correctly."""
+        """Test that the SyntheticTestCase class works correctly."""
         # Create a test case
-        test_case = TestCase(
+        test_case = SyntheticTestCase(
             name="test", query="How many patients?", expected_result=42, tolerance=0.1
         )
 
