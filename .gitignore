@@ -51,4 +51,4 @@ Thumbs.db
 # Project specific
 patient_data.db
 *.log
-logs/ 
+logs/ last_executed_code.py
