@@ -9,6 +9,7 @@ Key Features:
 - Analyzes error patterns and categorizes mistakes
 - Integrates successful corrections into the knowledge base
 - Provides similarity matching for future queries
+- SPRINT 4: Advanced pattern learning and query routing
 """
 
 from __future__ import annotations
@@ -16,12 +17,15 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import hashlib
+import math
+import re
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 
 from app.utils.saved_questions_db import DB_FILE
-from app.utils.query_intent import QueryIntent, parse_intent_json
+from app.utils.query_intent import parse_intent_json
 from app.utils.db_migrations import apply_pending_migrations
 
 logger = logging.getLogger(__name__)
@@ -43,6 +47,7 @@ class CorrectionSession:
     status: str = "pending"
     reviewed_by: Optional[str] = None
     reviewed_at: Optional[str] = None
+    corrected_intent_json: Optional[str] = None  # Added for Sprint 4
 
 
 @dataclass
@@ -55,6 +60,7 @@ class IntentPattern:
     confidence_boost: float = 0.1
     usage_count: int = 0
     success_rate: float = 1.0
+    last_used_at: Optional[str] = None
 
 
 class CorrectionService:
@@ -68,6 +74,7 @@ class CorrectionService:
         """
         self.db_path = db_path or DB_FILE
         self._ensure_tables_exist()
+        self._create_performance_indexes()
 
     def _ensure_tables_exist(self):
         """Ensure all required tables exist."""
@@ -75,6 +82,28 @@ class CorrectionService:
             apply_pending_migrations(self.db_path)
         except Exception as e:
             logger.error(f"Failed to apply migrations: {e}")
+
+    def _create_performance_indexes(self):
+        """Create additional indexes for performance."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Additional performance indexes for Sprint 4
+                indexes = [
+                    "CREATE INDEX IF NOT EXISTS idx_intent_patterns_success_rate ON intent_patterns(success_rate DESC)",
+                    "CREATE INDEX IF NOT EXISTS idx_intent_patterns_last_used ON intent_patterns(last_used_at DESC)",
+                    "CREATE INDEX IF NOT EXISTS idx_query_similarity_cache_computed ON query_similarity_cache(computed_at DESC)",
+                    "CREATE INDEX IF NOT EXISTS idx_correction_sessions_created ON correction_sessions(created_at DESC)",
+                ]
+
+                for index_sql in indexes:
+                    cursor.execute(index_sql)
+
+                logger.info("Created performance indexes")
+
+        except Exception as e:
+            logger.warning(f"Failed to create performance indexes: {e}")
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get database connection with row factory."""
@@ -292,16 +321,29 @@ class CorrectionService:
             return False
 
         try:
-            # Apply the correction based on type
-            if correction_type == "intent_fix" and corrected_intent_json:
-                self._learn_intent_pattern(session, corrected_intent_json)
-            elif correction_type == "code_fix" and corrected_code:
-                self._learn_code_template(session, corrected_code)
+            # Create suggestion object for learning
+            suggestion = {
+                "action_type": (
+                    "intent_modification"
+                    if correction_type == "intent_fix"
+                    else "code_modification"
+                ),
+                "corrected_intent": corrected_intent_json,
+                "corrected_code": corrected_code,
+                "type": correction_type,
+            }
+
+            # Learn from the correction
+            self._learn_from_correction(session, suggestion)
 
             # Update session status
             self.update_correction_session(
                 session_id,
-                {"status": "integrated", "reviewed_at": datetime.now().isoformat()},
+                {
+                    "status": "integrated",
+                    "reviewed_at": datetime.now().isoformat(),
+                    "corrected_intent_json": corrected_intent_json,
+                },
             )
 
             logger.info(f"Applied correction for session {session_id}")
@@ -311,158 +353,595 @@ class CorrectionService:
             logger.error(f"Failed to apply correction for session {session_id}: {e}")
             return False
 
-    def _learn_intent_pattern(
-        self, session: CorrectionSession, corrected_intent_json: str
-    ):
-        """Learn a new intent pattern from a correction."""
+    def _learn_from_correction(self, session: CorrectionSession, suggestion: Dict):
+        """Learn patterns from successful corrections.
+
+        Args:
+            session: The correction session
+            suggestion: The applied suggestion
+        """
         try:
-            # Validate the corrected intent
-            corrected_intent = parse_intent_json(corrected_intent_json)
+            # Learn intent patterns
+            if suggestion.get("action_type") == "intent_modification":
+                self._learn_intent_pattern(session, suggestion)
 
-            # Create a pattern from the original query and corrected intent
-            pattern = IntentPattern(
-                query_pattern=self._normalize_query(session.original_query),
-                canonical_intent_json=corrected_intent_json,
-                confidence_boost=0.2,  # Higher boost for human-corrected patterns
-                usage_count=0,
-                success_rate=1.0,
-            )
+            # Learn code templates
+            if session.original_code and suggestion.get("corrected_code"):
+                self._learn_code_template(session, suggestion)
 
-            self._store_intent_pattern(pattern, session.id)
-            logger.info(f"Learned new intent pattern from session {session.id}")
+            # Update learning metrics
+            self._update_learning_metrics(session, suggestion)
+
+            logger.info(f"Learned from session {session.id}: {suggestion['type']}")
+
+        except Exception as e:
+            logger.error(f"Failed to learn from correction {session.id}: {e}")
+
+    def _learn_intent_pattern(self, session: CorrectionSession, suggestion: Dict):
+        """Learn an intent pattern from a successful correction."""
+        try:
+            # Normalize the query for pattern matching
+            normalized_query = self._normalize_query(session.original_query)
+
+            # Get the corrected intent
+            corrected_intent_json = suggestion.get("corrected_intent")
+            if not corrected_intent_json and hasattr(session, "corrected_intent_json"):
+                corrected_intent_json = session.corrected_intent_json
+
+            if not corrected_intent_json:
+                logger.warning(
+                    f"No corrected intent available for session {session.id}"
+                )
+                return
+
+            # Check if similar pattern already exists
+            existing_pattern = self._find_existing_pattern(normalized_query)
+
+            if existing_pattern:
+                # Update existing pattern
+                self._update_pattern_usage(existing_pattern.id, success=True)
+                logger.info(f"Updated existing pattern {existing_pattern.id}")
+            else:
+                # Create new pattern
+                pattern_id = self._create_intent_pattern(
+                    query_pattern=normalized_query,
+                    canonical_intent_json=corrected_intent_json,
+                    session_id=session.id,
+                )
+                logger.info(f"Created new intent pattern {pattern_id}")
 
         except Exception as e:
             logger.error(f"Failed to learn intent pattern: {e}")
 
-    def _learn_code_template(self, session: CorrectionSession, corrected_code: str):
-        """Learn a new code template from a correction."""
+    def _learn_code_template(self, session: CorrectionSession, suggestion: Dict):
+        """Learn a code template from successful correction."""
         try:
-            if session.original_intent_json:
-                intent = parse_intent_json(session.original_intent_json)
-                intent_signature = self._create_intent_signature(intent)
+            corrected_code = suggestion.get("corrected_code")
+            if not corrected_code:
+                return
 
-                with self._get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        """
-                        INSERT INTO code_templates 
-                        (intent_signature, template_code, template_description, 
-                         created_from_session_id, success_rate)
-                        VALUES (?, ?, ?, ?, 1.0)
-                    """,
-                        (
-                            intent_signature,
-                            corrected_code,
-                            f"Template learned from correction session {session.id}",
-                            session.id,
-                        ),
-                    )
+            # Generate intent signature for template matching
+            intent_signature = self._generate_intent_signature(
+                session.original_intent_json
+            )
 
-                logger.info(f"Learned new code template from session {session.id}")
+            # Check for existing template
+            existing_template = self._find_existing_template(intent_signature)
+
+            if existing_template:
+                self._update_template_usage(existing_template["id"], success=True)
+            else:
+                self._create_code_template(intent_signature, corrected_code, session.id)
 
         except Exception as e:
             logger.error(f"Failed to learn code template: {e}")
 
-    def _normalize_query(self, query: str) -> str:
-        """Normalize a query for pattern matching."""
-        # Simple normalization - could be more sophisticated
-        return query.lower().strip()
+    def _generate_intent_signature(self, intent_json: str) -> str:
+        """Generate a signature for intent matching."""
+        try:
+            intent_data = json.loads(intent_json) if intent_json else {}
 
-    def _create_intent_signature(self, intent: QueryIntent) -> str:
-        """Create a signature for intent matching."""
-        signature = {
-            "analysis_type": intent.analysis_type,
-            "target_field": intent.target_field,
-            "has_filters": len(intent.filters) > 0,
-            "has_conditions": len(intent.conditions) > 0,
-            "has_groupby": len(intent.group_by) > 0,
-        }
-        return json.dumps(signature, sort_keys=True)
+            # Create a normalized signature
+            signature = {
+                "analysis_type": intent_data.get("analysis_type", "unknown"),
+                "target_field": intent_data.get("target_field", "unknown"),
+                "has_filters": bool(intent_data.get("filters")),
+                "has_grouping": bool(intent_data.get("grouping")),
+            }
 
-    def _store_intent_pattern(
-        self, pattern: IntentPattern, session_id: Optional[int] = None
+            return json.dumps(signature, sort_keys=True)
+
+        except Exception as e:
+            logger.warning(f"Failed to generate intent signature: {e}")
+            return "{}"
+
+    def _find_existing_template(self, intent_signature: str) -> Optional[Dict]:
+        """Find existing code template for intent signature."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT * FROM code_templates 
+                    WHERE intent_signature = ?
+                    ORDER BY usage_count DESC
+                    LIMIT 1
+                """,
+                    (intent_signature,),
+                )
+
+                row = cursor.fetchone()
+                return dict(row) if row else None
+
+        except Exception as e:
+            logger.error(f"Failed to find existing template: {e}")
+            return None
+
+    def _create_code_template(
+        self, intent_signature: str, corrected_code: str, session_id: int
     ):
-        """Store an intent pattern in the database."""
+        """Create a new code template."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO code_templates 
+                    (intent_signature, template_code, template_description, 
+                     created_from_session_id, success_rate, usage_count)
+                    VALUES (?, ?, ?, ?, 1.0, 1)
+                """,
+                    (
+                        intent_signature,
+                        corrected_code,
+                        f"Template learned from correction session {session_id}",
+                        session_id,
+                    ),
+                )
+
+                logger.info(f"Created new code template from session {session_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to create code template: {e}")
+
+    def _update_template_usage(self, template_id: int, success: bool = True):
+        """Update code template usage statistics."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Get current stats
+                cursor.execute(
+                    """
+                    SELECT usage_count, success_rate FROM code_templates WHERE id = ?
+                """,
+                    (template_id,),
+                )
+
+                row = cursor.fetchone()
+                if not row:
+                    return
+
+                current_usage = row["usage_count"]
+                current_success_rate = row["success_rate"]
+
+                # Calculate new stats
+                new_usage = current_usage + 1
+                if success:
+                    new_success_rate = (
+                        (current_success_rate * current_usage) + 1
+                    ) / new_usage
+                else:
+                    new_success_rate = (
+                        current_success_rate * current_usage
+                    ) / new_usage
+
+                # Update template
+                cursor.execute(
+                    """
+                    UPDATE code_templates 
+                    SET usage_count = ?, success_rate = ?, last_used_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """,
+                    (new_usage, new_success_rate, template_id),
+                )
+
+                logger.info(
+                    f"Updated template {template_id}: usage={new_usage}, success_rate={new_success_rate:.2f}"
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to update template usage: {e}")
+
+    def _normalize_query(self, query: str) -> str:
+        """Normalize a query for pattern matching.
+
+        Args:
+            query: The original query
+
+        Returns:
+            Normalized query string for pattern matching
+        """
+        # Convert to lowercase
+        normalized = query.lower().strip()
+
+        # Remove punctuation
+        normalized = re.sub(r"[^\w\s]", "", normalized)
+
+        # Remove extra whitespace
+        normalized = re.sub(r"\s+", " ", normalized)
+
+        # Replace numbers with placeholders for generalization
+        normalized = re.sub(r"\b\d+\b", "[NUMBER]", normalized)
+
+        # Replace specific names/IDs with placeholders
+        normalized = re.sub(r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\b", "[NAME]", normalized)
+
+        # Standardize common phrases
+        phrase_replacements = {
+            "how many": "count",
+            "what is the average": "average",
+            "what is the total": "sum",
+            "show me": "get",
+            "tell me": "get",
+            "what are": "get",
+            "give me": "get",
+        }
+
+        for phrase, replacement in phrase_replacements.items():
+            normalized = normalized.replace(phrase, replacement)
+
+        return normalized
+
+    def _find_existing_pattern(self, normalized_query: str) -> Optional[IntentPattern]:
+        """Find an existing pattern that matches the normalized query."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # First, try exact match
+                cursor.execute(
+                    """
+                    SELECT * FROM intent_patterns 
+                    WHERE query_pattern = ?
+                    ORDER BY usage_count DESC
+                    LIMIT 1
+                """,
+                    (normalized_query,),
+                )
+
+                row = cursor.fetchone()
+                if row:
+                    return self._row_to_intent_pattern(row)
+
+                # Then try similarity matching
+                cursor.execute(
+                    """
+                    SELECT * FROM intent_patterns
+                    ORDER BY usage_count DESC
+                """
+                )
+
+                patterns = cursor.fetchall()
+
+                # Find most similar pattern
+                best_match = None
+                best_similarity = 0.0
+
+                for pattern_row in patterns:
+                    similarity = self._calculate_query_similarity(
+                        normalized_query, pattern_row["query_pattern"]
+                    )
+                    if (
+                        similarity > 0.5 and similarity > best_similarity
+                    ):  # 50% similarity threshold
+                        best_similarity = similarity
+                        best_match = self._row_to_intent_pattern(pattern_row)
+
+                return best_match
+
+        except Exception as e:
+            logger.error(f"Failed to find existing pattern: {e}")
+            return None
+
+    def _calculate_query_similarity(self, query1: str, query2: str) -> float:
+        """Calculate similarity between two queries.
+
+        Args:
+            query1: First query
+            query2: Second query
+
+        Returns:
+            Similarity score between 0.0 and 1.0
+        """
+        # Simple word-based similarity for now
+        words1 = set(query1.split())
+        words2 = set(query2.split())
+
+        if not words1 and not words2:
+            return 1.0
+        if not words1 or not words2:
+            return 0.0
+
+        intersection = len(words1.intersection(words2))
+        union = len(words1.union(words2))
+
+        return intersection / union if union > 0 else 0.0
+
+    def _create_intent_pattern(
+        self, query_pattern: str, canonical_intent_json: str, session_id: int
+    ) -> int:
+        """Create a new intent pattern."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
                 INSERT INTO intent_patterns 
-                (query_pattern, canonical_intent_json, confidence_boost, 
-                 usage_count, success_rate, created_from_session_id)
+                (query_pattern, canonical_intent_json, confidence_boost, usage_count, 
+                 success_rate, created_from_session_id)
                 VALUES (?, ?, ?, ?, ?, ?)
             """,
-                (
-                    pattern.query_pattern,
-                    pattern.canonical_intent_json,
-                    pattern.confidence_boost,
-                    pattern.usage_count,
-                    pattern.success_rate,
-                    session_id,
-                ),
+                (query_pattern, canonical_intent_json, 0.1, 1, 1.0, session_id),
             )
+            return cursor.lastrowid
+
+    def _update_pattern_usage(self, pattern_id: int, success: bool = True):
+        """Update pattern usage statistics."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Get current stats
+                cursor.execute(
+                    """
+                    SELECT usage_count, success_rate FROM intent_patterns WHERE id = ?
+                """,
+                    (pattern_id,),
+                )
+
+                row = cursor.fetchone()
+                if not row:
+                    return
+
+                current_usage = row["usage_count"]
+                current_success_rate = row["success_rate"]
+
+                # Calculate new stats
+                new_usage = current_usage + 1
+                if success:
+                    new_success_rate = (
+                        (current_success_rate * current_usage) + 1
+                    ) / new_usage
+                else:
+                    new_success_rate = (
+                        current_success_rate * current_usage
+                    ) / new_usage
+
+                # Update pattern
+                cursor.execute(
+                    """
+                    UPDATE intent_patterns 
+                    SET usage_count = ?, success_rate = ?, last_used_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """,
+                    (new_usage, new_success_rate, pattern_id),
+                )
+
+                logger.info(
+                    f"Updated pattern {pattern_id}: usage={new_usage}, success_rate={new_success_rate:.2f}"
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to update pattern usage: {e}")
+
+    def _row_to_intent_pattern(self, row) -> IntentPattern:
+        """Convert database row to IntentPattern object."""
+        return IntentPattern(
+            id=row["id"],
+            query_pattern=row["query_pattern"],
+            canonical_intent_json=row["canonical_intent_json"],
+            confidence_boost=row["confidence_boost"],
+            usage_count=row["usage_count"],
+            success_rate=row["success_rate"],
+            last_used_at=row["last_used_at"] if "last_used_at" in row.keys() else None,
+        )
 
     def find_similar_patterns(self, query: str, limit: int = 5) -> List[IntentPattern]:
         """Find similar learned patterns for a query.
 
         Args:
-            query: The input query to match
+            query: The user query
             limit: Maximum number of patterns to return
 
         Returns:
-            List of similar intent patterns
+            List of similar patterns sorted by relevance and success rate
         """
         normalized_query = self._normalize_query(query)
 
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
+        # Check cache first
+        cache_key = self._get_query_hash(normalized_query)
+        cached_patterns = self._get_cached_patterns(cache_key)
+        if cached_patterns:
+            return cached_patterns[:limit]
 
-            # Get all patterns for similarity comparison
-            cursor.execute(
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Get all patterns ordered by usage and success rate
+                cursor.execute(
+                    """
+                    SELECT * FROM intent_patterns
+                    WHERE success_rate >= 0.7
+                    ORDER BY usage_count DESC, success_rate DESC
                 """
-                SELECT id, query_pattern, canonical_intent_json, confidence_boost,
-                       usage_count, success_rate
-                FROM intent_patterns
-                ORDER BY usage_count DESC, success_rate DESC
-            """
-            )
+                )
 
-            patterns = []
-            query_words = set(normalized_query.split())
+                patterns = cursor.fetchall()
 
-            for row in cursor.fetchall():
-                pattern_words = set(row["query_pattern"].split())
+                # Calculate similarity scores
+                scored_patterns = []
+                for pattern_row in patterns:
+                    pattern = self._row_to_intent_pattern(pattern_row)
+                    similarity = self._calculate_query_similarity(
+                        normalized_query, pattern.query_pattern
+                    )
 
-                # Calculate similarity based on word overlap
-                common_words = query_words.intersection(pattern_words)
-                total_unique_words = len(query_words.union(pattern_words))
-
-                if total_unique_words > 0:
-                    similarity = len(common_words) / total_unique_words
-
-                    # Only include patterns with significant word overlap
-                    if similarity >= 0.5:  # At least 50% word overlap
-                        patterns.append(
-                            (
-                                similarity,
-                                IntentPattern(
-                                    id=row["id"],
-                                    query_pattern=row["query_pattern"],
-                                    canonical_intent_json=row["canonical_intent_json"],
-                                    confidence_boost=row["confidence_boost"],
-                                    usage_count=row["usage_count"],
-                                    success_rate=row["success_rate"],
-                                ),
-                            )
+                    if similarity > 0.3:  # Minimum similarity threshold
+                        # Combined score: similarity * success_rate * log(usage_count)
+                        usage_factor = math.log(max(pattern.usage_count, 1) + 1)
+                        combined_score = (
+                            similarity * pattern.success_rate * usage_factor
                         )
 
-            # Sort by similarity first, then usage_count
-            patterns.sort(
-                key=lambda x: (x[0], x[1].usage_count, x[1].success_rate), reverse=True
-            )
+                        scored_patterns.append((combined_score, pattern))
 
-            # Return just the patterns (without similarity scores), limited by the limit
-            return [pattern for _, pattern in patterns[:limit]]
+                # Sort by combined score
+                scored_patterns.sort(key=lambda x: x[0], reverse=True)
+
+                # Extract patterns
+                result_patterns = [
+                    pattern for score, pattern in scored_patterns[:limit]
+                ]
+
+                # Cache the results
+                self._cache_similar_patterns(cache_key, result_patterns)
+
+                return result_patterns
+
+        except Exception as e:
+            logger.error(f"Failed to find similar patterns: {e}")
+            return []
+
+    def _get_query_hash(self, query: str) -> str:
+        """Get hash for query caching."""
+        return hashlib.md5(query.encode()).hexdigest()
+
+    def _get_cached_patterns(self, query_hash: str) -> Optional[List[IntentPattern]]:
+        """Get cached similar patterns."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT similar_patterns FROM query_similarity_cache 
+                    WHERE query_hash = ? AND computed_at > datetime('now', '-1 hour')
+                """,
+                    (query_hash,),
+                )
+
+                row = cursor.fetchone()
+                if row:
+                    pattern_ids = json.loads(row["similar_patterns"])
+                    return self._get_patterns_by_ids(pattern_ids)
+
+        except Exception as e:
+            logger.warning(f"Failed to get cached patterns: {e}")
+
+        return None
+
+    def _cache_similar_patterns(self, query_hash: str, patterns: List[IntentPattern]):
+        """Cache similar patterns for faster lookup."""
+        try:
+            pattern_ids = [p.id for p in patterns if p.id]
+
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO query_similarity_cache 
+                    (query_hash, similar_patterns, computed_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                """,
+                    (query_hash, json.dumps(pattern_ids)),
+                )
+
+        except Exception as e:
+            logger.warning(f"Failed to cache patterns: {e}")
+
+    def _get_patterns_by_ids(self, pattern_ids: List[int]) -> List[IntentPattern]:
+        """Get patterns by their IDs."""
+        if not pattern_ids:
+            return []
+
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                placeholders = ",".join("?" * len(pattern_ids))
+                cursor.execute(
+                    f"""
+                    SELECT * FROM intent_patterns 
+                    WHERE id IN ({placeholders})
+                    ORDER BY usage_count DESC, success_rate DESC
+                """,
+                    pattern_ids,
+                )
+
+                return [self._row_to_intent_pattern(row) for row in cursor.fetchall()]
+
+        except Exception as e:
+            logger.error(f"Failed to get patterns by IDs: {e}")
+            return []
+
+    def cleanup_old_cache_entries(self, days_old: int = 7):
+        """Clean up old cache entries to maintain performance."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    DELETE FROM query_similarity_cache 
+                    WHERE computed_at < datetime('now', '-' || ? || ' days')
+                """,
+                    (days_old,),
+                )
+
+                deleted = cursor.rowcount
+                logger.info(f"Cleaned up {deleted} old cache entries")
+
+        except Exception as e:
+            logger.warning(f"Failed to cleanup cache entries: {e}")
+
+    def _update_learning_metrics(self, session: CorrectionSession, suggestion: Dict):
+        """Update learning metrics after successful correction."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Get today's metrics or create new entry
+                today = datetime.now().date().isoformat()
+                cursor.execute(
+                    """
+                    SELECT * FROM learning_metrics WHERE metric_date = ?
+                """,
+                    (today,),
+                )
+
+                row = cursor.fetchone()
+                if row:
+                    # Update existing metrics
+                    cursor.execute(
+                        """
+                        UPDATE learning_metrics 
+                        SET correction_applied = correction_applied + 1,
+                            accuracy_rate = (correct_answers + 1.0) / (total_queries + 1.0)
+                        WHERE metric_date = ?
+                    """,
+                        (today,),
+                    )
+                else:
+                    # Create new metrics entry
+                    cursor.execute(
+                        """
+                        INSERT INTO learning_metrics 
+                        (metric_date, total_queries, correct_answers, correction_applied, accuracy_rate)
+                        VALUES (?, 1, 1, 1, 1.0)
+                    """,
+                        (today,),
+                    )
+
+        except Exception as e:
+            logger.warning(f"Failed to update learning metrics: {e}")
 
     def get_correction_session(self, session_id: int) -> Optional[CorrectionSession]:
         """Get a correction session by ID."""
@@ -490,6 +969,7 @@ class CorrectionService:
                     status=row["status"],
                     reviewed_by=row["reviewed_by"],
                     reviewed_at=row["reviewed_at"],
+                    corrected_intent_json=row["corrected_intent_json"],
                 )
             return None
 
@@ -521,49 +1001,68 @@ class CorrectionService:
             logger.error(f"Failed to update correction session {session_id}: {e}")
             return False
 
-    def get_learning_metrics(self, days: int = 30) -> Dict[str, any]:
-        """Get learning metrics for the past N days."""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
+    def get_learning_metrics(self, days: int = 30) -> Dict[str, Any]:
+        """Get learning system performance metrics."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
 
-            # Get correction sessions created in the past N days
-            cursor.execute(
+                # Pattern usage metrics
+                cursor.execute(
+                    """
+                    SELECT 
+                        COUNT(*) as total_patterns,
+                        AVG(usage_count) as avg_usage,
+                        AVG(success_rate) as avg_success_rate,
+                        COUNT(CASE WHEN success_rate > 0.9 THEN 1 END) as high_confidence_patterns
+                    FROM intent_patterns
                 """
-                SELECT 
-                    COUNT(*) as total_sessions,
-                    COUNT(CASE WHEN status = 'integrated' THEN 1 END) as integrated_sessions,
-                    COUNT(CASE WHEN status = 'validated' THEN 1 END) as validated_sessions
-                FROM correction_sessions
-                WHERE datetime(created_at) >= datetime('now', '-{} days')
-            """.format(
-                    days
                 )
-            )
+                pattern_stats = cursor.fetchone()
 
-            session_stats = cursor.fetchone()
+                # Recent correction metrics
+                cursor.execute(
+                    """
+                    SELECT 
+                        COUNT(*) as total_corrections,
+                        COUNT(CASE WHEN status = 'integrated' THEN 1 END) as successful_corrections,
+                        COUNT(CASE WHEN created_at > datetime('now', '-' || ? || ' days') THEN 1 END) as recent_corrections
+                    FROM correction_sessions
+                """,
+                    (days,),
+                )
+                correction_stats = cursor.fetchone()
 
-            # Get pattern usage
-            cursor.execute(
+                # Cache performance
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) as cached_queries
+                    FROM query_similarity_cache
+                    WHERE computed_at > datetime('now', '-1 hour')
                 """
-                SELECT 
-                    COUNT(*) as total_patterns,
-                    SUM(usage_count) as total_usage,
-                    AVG(success_rate) as avg_success_rate
-                FROM intent_patterns
-            """
-            )
+                )
+                cache_stats = cursor.fetchone()
 
-            pattern_stats = cursor.fetchone()
+                return {
+                    "patterns": {
+                        "total": pattern_stats["total_patterns"] or 0,
+                        "average_usage": pattern_stats["avg_usage"] or 0,
+                        "average_success_rate": pattern_stats["avg_success_rate"] or 0,
+                        "high_confidence": pattern_stats["high_confidence_patterns"]
+                        or 0,
+                    },
+                    "corrections": {
+                        "total": correction_stats["total_corrections"] or 0,
+                        "successful": correction_stats["successful_corrections"] or 0,
+                        "recent": correction_stats["recent_corrections"] or 0,
+                        "success_rate": (
+                            correction_stats["successful_corrections"] or 0
+                        )
+                        / max(correction_stats["total_corrections"] or 1, 1),
+                    },
+                    "cache": {"recent_entries": cache_stats["cached_queries"] or 0},
+                }
 
-            return {
-                "correction_sessions": {
-                    "total": session_stats["total_sessions"],
-                    "integrated": session_stats["integrated_sessions"],
-                    "validated": session_stats["validated_sessions"],
-                },
-                "learned_patterns": {
-                    "total": pattern_stats["total_patterns"] or 0,
-                    "total_usage": pattern_stats["total_usage"] or 0,
-                    "avg_success_rate": pattern_stats["avg_success_rate"] or 0.0,
-                },
-            }
+        except Exception as e:
+            logger.error(f"Failed to get learning metrics: {e}")
+            return {}

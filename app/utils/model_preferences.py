@@ -75,7 +75,7 @@ def load_model_preference() -> str:
 
                 # Validate that the model is still available
                 if model in AVAILABLE_MODELS:
-                    logger.info(f"Loaded model preference: {model}")
+                    # logger.info(f"Loaded model preference: {model}")
                     return model
                 else:
                     logger.warning(
@@ -122,7 +122,7 @@ def save_model_preference(model_key: str) -> bool:
         with open(PREFERENCES_FILE, "w") as f:
             json.dump(prefs, f, indent=2)
 
-        logger.info(f"Saved model preference: {model_key}")
+        # logger.info(f"Saved model preference: {model_key}")
         return True
 
     except Exception as e:

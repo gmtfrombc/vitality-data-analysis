@@ -137,8 +137,8 @@ class AnalysisEngine:
         # Aggregator (average/min/max) using get_default_aggregator
         self.parameters["aggregator"] = get_default_aggregator(query)
 
-        # Parse the query intent (step 1)
-        return self.get_query_intent()
+        # SPRINT 4: Check for learned patterns first, then fall back to LLM
+        return self.process_query_with_patterns()
 
     def detect_threshold_query(self, query_text):
         """
@@ -295,12 +295,14 @@ class AnalysisEngine:
                     # If 'all', do NOT add any filter for active/inactive
 
                 # Metric instance: ensure intent.parameters has the resolved metric instance
-                self.intent.parameters["metric_instance"] = self.parameters[
-                    "metric_instance"
-                ]
+                metric_instance = self.parameters.get("metric_instance")
+                if metric_instance is not None:
+                    self.intent.parameters["metric_instance"] = metric_instance
 
                 # Aggregator: ensure intent.parameters has the resolved aggregator
-                self.intent.parameters["aggregator"] = self.parameters["aggregator"]
+                aggregator = self.parameters.get("aggregator")
+                if aggregator is not None:
+                    self.intent.parameters["aggregator"] = aggregator
 
             # Calculate confidence if possible
             if isinstance(self.intent, QueryIntent):
@@ -314,6 +316,97 @@ class AnalysisEngine:
         except Exception as e:
             logger.error(f"Error getting query intent: {e}", exc_info=True)
             return {"analysis_type": "unknown", "error": str(e)}
+
+    def process_query_with_patterns(self):
+        """Enhanced query processing with pattern matching.
+
+        First checks for learned patterns, falls back to LLM if no high-confidence match.
+        """
+        # Import at method level to avoid scope issues
+        from app.services.correction_service import CorrectionService
+        from app.utils.query_intent import parse_intent_json
+
+        try:
+            # NEW: Check for learned patterns first
+            correction_service = CorrectionService()
+            patterns = correction_service.find_similar_patterns(self.query)
+
+            if (
+                patterns
+                and patterns[0].success_rate > 0.9
+                and patterns[0].usage_count > 2
+            ):
+                # Use learned pattern (high confidence)
+                logger.info(
+                    f"Using learned pattern {patterns[0].id} for query: {self.query[:50]}..."
+                )
+
+                # Parse the canonical intent
+                self.intent = parse_intent_json(patterns[0].canonical_intent_json)
+
+                # Mark as high confidence
+                if hasattr(self.intent, "parameters"):
+                    self.intent.parameters = self.intent.parameters or {}
+                    self.intent.parameters["confidence"] = 0.95
+                    self.intent.parameters["source"] = "learned_pattern"
+                    self.intent.parameters["pattern_id"] = patterns[0].id
+
+                # Update pattern usage
+                correction_service._update_pattern_usage(patterns[0].id, success=True)
+
+                return self.intent
+
+            elif patterns and patterns[0].success_rate > 0.7:
+                # Medium confidence - use pattern but also check with LLM
+                logger.info(
+                    f"Using pattern {patterns[0].id} with LLM validation for query: {self.query[:50]}..."
+                )
+
+                pattern_intent = parse_intent_json(patterns[0].canonical_intent_json)
+                llm_intent = self.get_query_intent()  # Get LLM opinion
+
+                # Compare intents and use pattern if they're similar
+                if self._intents_are_similar(pattern_intent, llm_intent):
+                    self.intent = pattern_intent
+                    if hasattr(self.intent, "parameters"):
+                        self.intent.parameters = self.intent.parameters or {}
+                        self.intent.parameters["confidence"] = 0.85
+                        self.intent.parameters["source"] = "pattern_validated"
+
+                    correction_service._update_pattern_usage(
+                        patterns[0].id, success=True
+                    )
+                    return self.intent
+
+        except Exception as e:
+            logger.warning(f"Pattern matching failed, falling back to LLM: {e}")
+
+        # EXISTING: Fall back to normal LLM processing
+        logger.info(f"Using LLM processing for query: {self.query[:50]}...")
+        return self.get_query_intent()
+
+    def _intents_are_similar(self, intent1, intent2) -> bool:
+        """Check if two intents are similar enough to trust pattern matching."""
+        try:
+            # Compare key fields
+            if intent1.analysis_type != intent2.analysis_type:
+                return False
+
+            if intent1.target_field != intent2.target_field:
+                return False
+
+            # Compare filters (basic check)
+            filters1 = getattr(intent1, "filters", []) or []
+            filters2 = getattr(intent2, "filters", []) or []
+
+            if len(filters1) != len(filters2):
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to compare intents: {e}")
+            return False
 
     def is_low_confidence_intent(self, intent):
         """
