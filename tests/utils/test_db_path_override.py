@@ -27,8 +27,8 @@ def test_db_path_env_override(tmp_path, monkeypatch, table_name):
     monkeypatch.setenv("MH_DB_PATH", str(mock_db))
 
     # Force fresh import to pick up env var
-    if "db_query" in importlib.sys.modules:
-        importlib.reload(importlib.import_module("db_query"))
+    if "app.db_query" in importlib.sys.modules:
+        importlib.reload(importlib.import_module("app.db_query"))
     else:
         import app.db_query as db_query  # noqa: F401 – imported for side-effect
 

@@ -9,6 +9,7 @@ Features:
 - Detailed correction capture for negative feedback
 - Integration with CorrectionService
 - Real-time error analysis and suggestions
+- Priority-based customization and analytics display
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ class EnhancedFeedbackWidget(param.Parameterized):
         original_code: Optional[str] = None,
         original_results: Optional[str] = None,
         on_correction_applied: Optional[Callable] = None,
+        custom_message: Optional[str] = None,
         **params,
     ):
         """Initialize the enhanced feedback widget.
@@ -52,6 +54,7 @@ class EnhancedFeedbackWidget(param.Parameterized):
             original_code: The generated code (if available)
             original_results: The analysis results (if available)
             on_correction_applied: Callback when correction is applied
+            custom_message: Custom feedback message based on priority
         """
         super().__init__(**params)
 
@@ -60,6 +63,7 @@ class EnhancedFeedbackWidget(param.Parameterized):
         self.original_code = original_code or ""
         self.original_results = original_results or ""
         self.on_correction_applied = on_correction_applied
+        self.custom_message = custom_message or "**Was this answer helpful?**"
 
         # Initialize correction service
         self.correction_service = CorrectionService()
@@ -76,7 +80,7 @@ class EnhancedFeedbackWidget(param.Parameterized):
 
         # Standard feedback section
         self.feedback_section = pn.Column(
-            pn.pane.Markdown("**Was this answer helpful?**", margin=(5, 0)),
+            pn.pane.Markdown(self.custom_message, margin=(5, 0)),
             pn.Row(
                 pn.widgets.Button(
                     name="👍 Yes", button_type="success", width=80, margin=(0, 5, 0, 0)
@@ -196,17 +200,17 @@ class EnhancedFeedbackWidget(param.Parameterized):
                 cursor.execute(
                     """
                     SELECT id FROM assistant_feedback 
-                    WHERE question = ? AND rating = 'down'
-                    ORDER BY id DESC LIMIT 1
+                    WHERE question = ? 
+                    ORDER BY created_at DESC 
+                    LIMIT 1
                 """,
                     (self.query,),
                 )
-
-                row = cursor.fetchone()
-                return row[0] if row else None
+                result = cursor.fetchone()
+                return result[0] if result else None
 
         except Exception as e:
-            logger.error(f"Failed to get latest feedback ID: {e}")
+            logger.error(f"Error getting latest feedback ID: {e}")
             return None
 
     def _show_correction_interface(self):
@@ -216,176 +220,180 @@ class EnhancedFeedbackWidget(param.Parameterized):
 
     def _on_submit_correction(self, event):
         """Handle correction submission."""
-        correct_answer = self.correct_answer_input.value.strip()
-
-        if not correct_answer:
-            # Show error message
-            self.correct_answer_input.placeholder = (
-                "Please provide a correct answer before submitting..."
-            )
-            return
-
         try:
-            # Create correction session
-            if self.feedback_id:
-                self.correction_session_id = (
-                    self.correction_service.capture_correction_session(
-                        feedback_id=self.feedback_id,
-                        original_query=self.query,
-                        human_correct_answer=correct_answer,
-                        original_intent_json=self.original_intent_json or None,
-                        original_code=self.original_code or None,
-                        original_results=self.original_results or None,
-                    )
+            correct_answer = self.correct_answer_input.value.strip()
+
+            if not correct_answer:
+                # Show error message
+                self.correct_answer_input.placeholder = (
+                    "Please provide a correction before submitting..."
                 )
+                return
 
-                logger.info(f"Created correction session {self.correction_session_id}")
+            # Store the correction
+            session_id = self.correction_service.capture_correction_session(
+                feedback_id=self.feedback_id,
+                original_query=self.query,
+                human_correct_answer=correct_answer,
+                original_intent_json=self.original_intent_json,
+                original_code=self.original_code,
+                original_results=self.original_results,
+            )
+            success = session_id is not None
 
-                # Analyze the error
+            if success:
+                logger.info(f"Correction stored for query: {self.query[:50]}...")
+                self.correction_captured = True
+                self.correction_session_id = session_id
+
+                # Analyze and show suggestions
                 self._analyze_and_show_suggestions()
             else:
-                logger.error("No feedback ID available for correction session")
-                self._show_thank_you()
+                logger.error("Failed to store correction")
 
         except Exception as e:
             logger.error(f"Error submitting correction: {e}")
             self._show_thank_you()
 
     def _on_skip_correction(self, event):
-        """Handle skipping the correction."""
+        """Handle skipping correction."""
         self._show_thank_you()
 
     def _analyze_and_show_suggestions(self):
-        """Analyze the error and show suggestions."""
-        if not self.correction_session_id:
-            self._show_thank_you()
-            return
+        """Analyze the correction and show suggestions."""
+        try:
+            # Use the session ID we already have from capture_correction_session
+            if not self.correction_session_id:
+                logger.warning("No correction session found")
+                self._show_thank_you()
+                return
 
+            # Analyze the error type
+            error_category = self.correction_service.analyze_error_type(
+                self.correction_session_id
+            )
+            logger.info(f"Error category: {error_category}")
+
+            # Generate suggestions
+            suggestions = self.correction_service.generate_correction_suggestions(
+                self.correction_session_id
+            )
+
+            if suggestions:
+                logger.info(f"Generated {len(suggestions)} suggestions")
+                self._show_suggestions(suggestions)
+            else:
+                logger.info("No suggestions generated")
+                self._show_thank_you()
+
+        except Exception as e:
+            logger.error(f"Error analyzing correction: {e}")
+            self._show_thank_you()
+
+    def _show_suggestions(self, suggestions: list):
+        """Show correction suggestions to the user."""
         try:
             # Hide correction interface
             self.correction_section.visible = False
 
+            # Update analysis section
+            analysis_text = self.analysis_section[1]
+            analysis_text.object = "**Analysis complete!** Here are some suggestions:"
+
+            # Clear previous suggestions
+            suggestions_container = self.analysis_section[2]
+            suggestions_container.clear()
+
+            # Add suggestion buttons
+            for i, suggestion in enumerate(suggestions):
+                suggestion_text = suggestion.get("description", "No description")
+                confidence = suggestion.get("confidence", 0.0)
+
+                # Create suggestion button with confidence indicator
+                confidence_indicator = (
+                    "🟢" if confidence > 0.8 else "🟡" if confidence > 0.6 else "🔴"
+                )
+                button_text = f"{confidence_indicator} {suggestion_text[:60]}..."
+
+                suggestion_btn = pn.widgets.Button(
+                    name=button_text,
+                    button_type="primary" if confidence > 0.8 else "default",
+                    width=400,
+                    margin=(5, 0),
+                )
+
+                # Store suggestion data in button for callback
+                suggestion_btn._suggestion_data = suggestion
+
+                # Add click handler
+                suggestion_btn.on_click(
+                    lambda event, s=suggestion: self._apply_suggestion(s)
+                )
+
+                suggestions_container.append(suggestion_btn)
+
+            # Add skip button
+            skip_btn = pn.widgets.Button(
+                name="Skip suggestions",
+                button_type="light",
+                width=150,
+                margin=(10, 0),
+            )
+            skip_btn.on_click(lambda event: self._show_thank_you())
+            suggestions_container.append(skip_btn)
+
             # Show analysis section
             self.analysis_section.visible = True
 
-            # Perform error analysis
-            error_category = self.correction_service.analyze_error_type(
-                self.correction_session_id
-            )
-
-            # Update analysis text
-            analysis_text = self.analysis_section[1]
-            analysis_text.object = (
-                f"**Error Category:** {error_category.replace('_', ' ').title()}"
-            )
-
-            # Generate and show suggestions
-            suggestions = self.correction_service.generate_correction_suggestions(
-                self.correction_session_id
-            )
-            self._show_suggestions(suggestions)
-
         except Exception as e:
-            logger.error(f"Error during analysis: {e}")
+            logger.error(f"Error showing suggestions: {e}")
             self._show_thank_you()
 
-    def _show_suggestions(self, suggestions: list):
-        """Show correction suggestions."""
-        suggestions_container = self.analysis_section[2]
-
-        if not suggestions:
-            suggestions_container.append(
-                pn.pane.Markdown(
-                    "*No specific suggestions available. Thank you for the feedback!*"
-                )
-            )
-            # Auto-proceed to thank you after a moment
-            pn.state.add_periodic_callback(
-                lambda: self._show_thank_you(), 3000, count=1
-            )
-            return
-
-        # Create suggestion buttons
-        for i, suggestion in enumerate(suggestions):
-            suggestion_card = pn.Column(
-                pn.pane.Markdown(f"**{suggestion['description']}**"),
-                pn.pane.Markdown(
-                    f"*Action: {suggestion['action']}*",
-                    styles={"font-size": "0.9em", "color": "#666"},
-                ),
-                pn.widgets.Button(
-                    name=f"Apply Suggestion {i+1}",
-                    button_type=(
-                        "success"
-                        if suggestion["type"] != "manual_correction"
-                        else "light"
-                    ),
-                    width=150,
-                    margin=(5, 0, 10, 0),
-                ),
-                styles={
-                    "border": "1px solid #ddd",
-                    "padding": "10px",
-                    "margin": "5px 0",
-                    "border-radius": "5px",
-                },
-            )
-
-            # Set up suggestion button handler
-            suggestion_btn = suggestion_card[2]
-            suggestion_btn.param.watch(
-                lambda event, idx=i: self._apply_suggestion(suggestions[idx]), "clicks"
-            )
-
-            suggestions_container.append(suggestion_card)
-
-        # Add "Finish" button
-        finish_btn = pn.widgets.Button(
-            name="Finish", button_type="primary", width=100, margin=(15, 0, 0, 0)
-        )
-        finish_btn.on_click(lambda event: self._show_thank_you())
-        suggestions_container.append(finish_btn)
-
     def _apply_suggestion(self, suggestion: Dict[str, Any]):
-        """Apply a correction suggestion."""
+        """Apply a selected suggestion."""
         try:
-            suggestion_type = suggestion["type"]
+            logger.info(f"Applying suggestion: {suggestion.get('type', 'unknown')}")
 
-            if suggestion_type == "manual_correction":
-                # For manual corrections, just mark as reviewed
-                self.correction_service.update_correction_session(
-                    self.correction_session_id,
-                    {"status": "pending", "reviewed_by": "user"},
-                )
-                logger.info(
-                    f"Marked correction session {self.correction_session_id} for manual review"
-                )
-            else:
-                # For automated suggestions, attempt to apply
-                success = self.correction_service.apply_correction(
-                    self.correction_session_id, suggestion_type
-                )
+            # Apply the suggestion through correction service
+            success = self.correction_service.apply_correction(
+                session_id=self.correction_session_id,
+                correction_type=suggestion.get("type", "manual_correction"),
+                corrected_intent_json=suggestion.get("corrected_intent_json"),
+                corrected_code=suggestion.get("corrected_code"),
+            )
 
-                if success:
-                    logger.info(f"Applied correction suggestion: {suggestion_type}")
+            if success:
+                logger.info("Suggestion applied successfully")
 
-                    # Trigger callback if provided
-                    if self.on_correction_applied:
+                # Call the callback if provided
+                if self.on_correction_applied:
+                    try:
                         self.on_correction_applied(
                             self.correction_session_id, suggestion
                         )
-                else:
-                    logger.warning(
-                        f"Failed to apply correction suggestion: {suggestion_type}"
-                    )
+                    except Exception as callback_error:
+                        logger.error(f"Error in correction callback: {callback_error}")
 
-            self.correction_captured = True
+                # Show success message
+                self.analysis_section.visible = False
+                self.thank_you_section[0].object = (
+                    "✅ **Suggestion applied successfully!**"
+                )
+                self.thank_you_section[1].object = (
+                    "The assistant has been updated with your correction."
+                )
+                self.thank_you_section.visible = True
+
+            else:
+                logger.error("Failed to apply suggestion")
+                self._show_thank_you()
 
         except Exception as e:
             logger.error(f"Error applying suggestion: {e}")
+            self._show_thank_you()
 
     def _show_thank_you(self):
-        """Show thank you message."""
+        """Show thank you message and hide other sections."""
         self.feedback_section.visible = False
         self.correction_section.visible = False
         self.analysis_section.visible = False
@@ -393,15 +401,165 @@ class EnhancedFeedbackWidget(param.Parameterized):
         self.feedback_submitted = True
 
     def view(self) -> pn.Column:
-        """Get the complete widget view."""
+        """Return the complete widget view."""
         return pn.Column(
             self.feedback_section,
             self.correction_section,
             self.analysis_section,
             self.thank_you_section,
             sizing_mode="stretch_width",
-            styles={"background": "#f8f9fa", "padding": "15px", "border-radius": "8px"},
         )
+
+
+class SmartFeedbackWidget(EnhancedFeedbackWidget):
+    """Enhanced feedback widget with priority-based customization."""
+
+    def __init__(
+        self,
+        query: str,
+        priority: str = "medium",
+        analytics_data: Optional[Dict] = None,
+        **params,
+    ):
+        """Initialize with priority-based customization.
+
+        Args:
+            query: The original user query
+            priority: Feedback priority level
+            analytics_data: Optional analytics data to display
+            **params: Additional parameters
+        """
+        # Set custom message based on priority before calling super().__init__
+        custom_message = self._get_priority_message(priority)
+        params["custom_message"] = custom_message
+
+        super().__init__(query, **params)
+        self.priority = priority
+        self.analytics_data = analytics_data or {}
+
+        # Customize widget for priority after initialization
+        self._customize_for_priority(priority)
+
+    def _customize_for_priority(self, priority: str):
+        """Customize widget appearance based on priority.
+
+        Args:
+            priority: Priority level ('high', 'medium', 'low', 'skip')
+        """
+        try:
+            # Add priority indicators
+            self._add_priority_indicators(priority)
+
+            # Show analytics if available and priority is medium or high
+            if priority in ["medium", "high"] and self.analytics_data:
+                self._show_analytics_summary()
+
+        except Exception as e:
+            logger.error(f"Error customizing widget for priority {priority}: {e}")
+
+    def _add_priority_indicators(self, priority: str):
+        """Add visual indicators based on priority.
+
+        Args:
+            priority: Priority level
+        """
+        try:
+            priority_config = {
+                "high": {
+                    "color": "orange",
+                    "icon": "🎯",
+                    "border_style": "solid",
+                    "border_color": "#ff6b35",
+                },
+                "medium": {
+                    "color": "blue",
+                    "icon": "💭",
+                    "border_style": "solid",
+                    "border_color": "#007bff",
+                },
+                "low": {
+                    "color": "gray",
+                    "icon": "👍",
+                    "border_style": "dashed",
+                    "border_color": "#6c757d",
+                },
+            }
+
+            config = priority_config.get(priority, priority_config["medium"])
+
+            # Add priority indicator to the feedback message
+            if hasattr(self, "feedback_section") and len(self.feedback_section) > 0:
+                current_message = self.feedback_section[0].object
+                priority_indicator = f"{config['icon']} "
+
+                # Update the message with priority indicator
+                self.feedback_section[0].object = priority_indicator + current_message
+
+                # Style the feedback section with priority colors
+                self.feedback_section.styles = {
+                    "border": f"2px {config['border_style']} {config['border_color']}",
+                    "border-radius": "8px",
+                    "padding": "10px",
+                    # Light background
+                    "background-color": f"{config['border_color']}10",
+                }
+
+        except Exception as e:
+            logger.error(f"Error adding priority indicators: {e}")
+
+    def _show_analytics_summary(self):
+        """Show brief analytics summary if available."""
+        try:
+            if not self.analytics_data:
+                return
+
+            # Create analytics summary
+            analytics_text = "📊 **System Insights:** "
+
+            # Add key metrics
+            if "request_rate" in self.analytics_data:
+                request_rate = self.analytics_data["request_rate"]
+                analytics_text += f"Request rate: {request_rate:.1%} | "
+
+            if "response_rate" in self.analytics_data:
+                response_rate = self.analytics_data["response_rate"]
+                analytics_text += f"Response rate: {response_rate:.1%} | "
+
+            if "total_requests" in self.analytics_data:
+                total_requests = self.analytics_data["total_requests"]
+                analytics_text += f"Total requests: {total_requests}"
+
+            # Add analytics section to the widget
+            analytics_section = pn.pane.Markdown(
+                analytics_text,
+                margin=(0, 0, 5, 0),
+                styles={"font-size": "0.9em", "color": "#666"},
+            )
+
+            # Insert analytics before the feedback buttons
+            if hasattr(self, "feedback_section") and len(self.feedback_section) > 1:
+                self.feedback_section.insert(1, analytics_section)
+
+        except Exception as e:
+            logger.error(f"Error showing analytics summary: {e}")
+
+    def _get_priority_message(self, priority: str) -> str:
+        """Get priority-specific message.
+
+        Args:
+            priority: Priority level
+
+        Returns:
+            Customized message for the priority level
+        """
+        priority_messages = {
+            "high": "🎯 **Your feedback is especially valuable for this question!**",
+            "medium": "💭 **Was this answer helpful?**",
+            "low": "👍 **Quick rating appreciated**",
+            "skip": "**Feedback not needed for this query**",
+        }
+
+        return priority_messages.get(priority, priority_messages["medium"])
 
 
 def create_enhanced_feedback_widget(
@@ -410,6 +568,7 @@ def create_enhanced_feedback_widget(
     original_code: Optional[str] = None,
     original_results: Optional[str] = None,
     on_correction_applied: Optional[Callable] = None,
+    custom_message: Optional[str] = None,
 ) -> pn.Column:
     """Create an enhanced feedback widget.
 
@@ -419,12 +578,50 @@ def create_enhanced_feedback_widget(
         original_code: The generated code (if available)
         original_results: The analysis results (if available)
         on_correction_applied: Callback when correction is applied
+        custom_message: Custom feedback message
 
     Returns:
-        Panel Column widget
+        Panel Column containing the feedback widget
     """
     widget = EnhancedFeedbackWidget(
         query=query,
+        original_intent_json=original_intent_json,
+        original_code=original_code,
+        original_results=original_results,
+        on_correction_applied=on_correction_applied,
+        custom_message=custom_message,
+    )
+
+    return widget.view()
+
+
+def create_smart_feedback_widget(
+    query: str,
+    priority: str = "medium",
+    analytics_data: Optional[Dict] = None,
+    original_intent_json: Optional[str] = None,
+    original_code: Optional[str] = None,
+    original_results: Optional[str] = None,
+    on_correction_applied: Optional[Callable] = None,
+) -> pn.Column:
+    """Create a smart feedback widget with priority-based customization.
+
+    Args:
+        query: The original user query
+        priority: Feedback priority level
+        analytics_data: Optional analytics data to display
+        original_intent_json: The parsed intent JSON (if available)
+        original_code: The generated code (if available)
+        original_results: The analysis results (if available)
+        on_correction_applied: Callback when correction is applied
+
+    Returns:
+        Panel Column containing the smart feedback widget
+    """
+    widget = SmartFeedbackWidget(
+        query=query,
+        priority=priority,
+        analytics_data=analytics_data,
         original_intent_json=original_intent_json,
         original_code=original_code,
         original_results=original_results,

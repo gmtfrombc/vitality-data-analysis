@@ -135,7 +135,8 @@ class TestEnhancedFeedbackWidget:
 
         # Should update placeholder with error message
         assert (
-            "Please provide a correct answer" in widget.correct_answer_input.placeholder
+            "Please provide a correction before submitting"
+            in widget.correct_answer_input.placeholder
         )
 
     def test_create_enhanced_feedback_widget_function(self):

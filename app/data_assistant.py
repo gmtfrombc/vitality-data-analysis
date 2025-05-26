@@ -541,6 +541,13 @@ class DataAnalysisAssistant(param.Parameterized):
             formatted_results = [
                 pn.pane.Markdown(f"### Analysis Results\n\n{narrative_text}")
             ]
+        elif show_narrative and not narrative_text:
+            # Narrative mode but narrative generation failed - show fallback
+            formatted_results = [
+                pn.pane.Markdown(
+                    f"### Analysis Results\n\nThe analysis resulted in a value of {self.engine.execution_results}."
+                )
+            ]
         else:
             # Show tabular/simple results view
             formatted_results = format_results(
@@ -549,48 +556,115 @@ class DataAnalysisAssistant(param.Parameterized):
                 False,  # Force tabular view
             )
 
+        # Always add reference ranges table if we're in narrative mode or if format_results didn't add it
+        if show_narrative:
+            from app.analysis_helpers import create_reference_ranges_table
+
+            query_text = ""
+
+            # Try multiple sources for the query text, prioritizing the most reliable
+            if self.query_text:  # This should be the most reliable source
+                query_text = self.query_text
+                logger.info(f"[REFERENCE_DEBUG] Using self.query_text: '{query_text}'")
+            elif (
+                self.engine.intent
+                and hasattr(self.engine.intent, "raw_query")
+                and self.engine.intent.raw_query
+            ):
+                query_text = self.engine.intent.raw_query
+                logger.info(f"[REFERENCE_DEBUG] Using intent.raw_query: '{query_text}'")
+            elif (
+                isinstance(self.engine.execution_results, dict)
+                and "query" in self.engine.execution_results
+            ):
+                query_text = self.engine.execution_results["query"]
+                logger.info(
+                    f"[REFERENCE_DEBUG] Using execution_results.query: '{query_text}'"
+                )
+            else:
+                logger.warning(
+                    "[REFERENCE_DEBUG] No query text found for reference table"
+                )
+
+            logger.info(
+                f"[REFERENCE_DEBUG] Final query_text for reference table: '{query_text}'"
+            )
+            reference_table = create_reference_ranges_table(
+                self.engine.execution_results, query_text
+            )
+            if reference_table:
+                formatted_results.append(reference_table)
+
         # Add refine option
         formatted_results = self.ui.add_refine_option(
             formatted_results, self._process_refinement
         )
 
-        # Add enhanced feedback widget
+        # Add enhanced feedback widget with smart curation (Sprint 2.2)
         if self.feedback_widget is None or not hasattr(self.feedback_widget, "visible"):
             from app.utils.enhanced_feedback_widget import (
-                create_enhanced_feedback_widget,
+                create_smart_feedback_widget,
+            )
+            from app.utils.smart_feedback import (
+                get_feedback_priority_advanced,
+            )
+            from app.utils.feedback_analytics import FeedbackAnalytics
+
+            # Get advanced feedback priority with fatigue detection
+            priority = get_feedback_priority_advanced(
+                self.query_text, self.engine.execution_results, user_id="default"
             )
 
-            # Safely serialize intent to JSON
-            intent_json = None
-            if self.engine.intent and hasattr(self.engine.intent, "model_dump"):
-                try:
-                    intent_json = json.dumps(self.engine.intent.model_dump())
-                except (TypeError, AttributeError) as e:
-                    logger.warning(f"Could not serialize intent to JSON: {e}")
-                    intent_json = None
+            # Skip feedback if priority is 'skip'
+            if priority != "skip":
+                # Get analytics data for display
+                analytics = FeedbackAnalytics()
+                analytics_data = analytics.get_engagement_metrics()
 
-            # Safely serialize results to JSON
-            results_json = None
-            if self.engine.execution_results:
-                try:
-                    results_json = json.dumps(self.engine.execution_results)
-                except (TypeError, AttributeError) as e:
-                    logger.warning(f"Could not serialize results to JSON: {e}")
-                    results_json = None
+                logger.info(
+                    f"Requesting feedback with priority '{priority}' for query: {self.query_text[:50]}..."
+                )
 
-            self.feedback_widget = create_enhanced_feedback_widget(
-                query=self.query_text,
-                original_intent_json=intent_json,
-                original_code=self.engine.generated_code,
-                original_results=results_json,
-                on_correction_applied=self._handle_correction_applied,
-            )
+                # Safely serialize intent to JSON
+                intent_json = None
+                if self.engine.intent and hasattr(self.engine.intent, "model_dump"):
+                    try:
+                        intent_json = json.dumps(self.engine.intent.model_dump())
+                    except (TypeError, AttributeError) as e:
+                        logger.warning(f"Could not serialize intent to JSON: {e}")
+                        intent_json = None
+
+                # Safely serialize results to JSON
+                results_json = None
+                if self.engine.execution_results:
+                    try:
+                        results_json = json.dumps(self.engine.execution_results)
+                    except (TypeError, AttributeError) as e:
+                        logger.warning(f"Could not serialize results to JSON: {e}")
+                        results_json = None
+
+                # Create smart feedback widget with priority-based customization
+                self.feedback_widget = create_smart_feedback_widget(
+                    query=self.query_text,
+                    priority=priority,
+                    analytics_data=analytics_data,
+                    original_intent_json=intent_json,
+                    original_code=self.engine.generated_code,
+                    original_results=results_json,
+                    on_correction_applied=self._handle_correction_applied,
+                )
+            else:
+                logger.info(
+                    f"Skipping feedback request for query: {self.query_text[:50]}..."
+                )
+                self.feedback_widget = None  # Don't show feedback widget
         else:
             # Re-show existing feedback widget
             self.feedback_widget.visible = True
 
-        # Add feedback widget to results
-        formatted_results.append(self.feedback_widget)
+        # Add feedback widget to results (only if it exists)
+        if self.feedback_widget:
+            formatted_results.append(self.feedback_widget)
 
         # Update result container with all results including feedback widget
         self.ui.result_container.objects = formatted_results

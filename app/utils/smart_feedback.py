@@ -25,6 +25,254 @@ except ImportError as e:
     NoveltyDetector = None
 
 
+class FeedbackPriorityCalculator:
+    """Advanced priority calculation using multiple factors."""
+
+    def __init__(self):
+        """Initialize the priority calculator."""
+        from app.utils.confidence_scoring import ConfidenceScorer
+        from app.utils.novelty_detection import NoveltyDetector
+
+        self.confidence_scorer = ConfidenceScorer()
+        self.novelty_detector = NoveltyDetector()
+
+        # Configurable weights for different factors
+        self.weights = {
+            "confidence": 0.25,  # Lower confidence = higher priority
+            "novelty": 0.30,  # Higher novelty = higher priority
+            "recency": 0.25,  # Recent similar feedback = lower priority
+            "learning_value": 0.20,  # Higher learning value = higher priority
+        }
+
+    def calculate_weighted_priority(self, factors: Dict[str, float]) -> str:
+        """Calculate priority using weighted factors.
+
+        Args:
+            factors: Dictionary of factor scores (0.0-1.0)
+
+        Returns:
+            Priority level: 'high', 'medium', 'low', or 'skip'
+        """
+        try:
+            # Calculate weighted score
+            weighted_score = 0.0
+
+            # Lower confidence = higher priority (invert score)
+            confidence_factor = 1.0 - factors.get("confidence", 0.5)
+            weighted_score += confidence_factor * self.weights["confidence"]
+
+            # Higher novelty = higher priority
+            novelty_factor = factors.get("novelty", 0.0)
+            weighted_score += novelty_factor * self.weights["novelty"]
+
+            # Recent feedback = lower priority (invert recency)
+            recency_factor = 1.0 - factors.get("recency", 0.0)
+            weighted_score += recency_factor * self.weights["recency"]
+
+            # Higher learning value = higher priority
+            learning_factor = factors.get("learning_value", 0.0)
+            weighted_score += learning_factor * self.weights["learning_value"]
+
+            # Convert to priority levels
+            if weighted_score >= 0.75:
+                return "high"
+            elif weighted_score >= 0.55:
+                return "medium"
+            elif weighted_score >= 0.35:
+                return "low"
+            else:
+                return "skip"
+
+        except Exception as e:
+            logger.error(f"Error calculating weighted priority: {e}")
+            return "medium"  # Fail safe
+
+    def assess_learning_value(self, query: str) -> float:
+        """Assess potential learning value of feedback (0.0-1.0).
+
+        Args:
+            query: Query text to analyze
+
+        Returns:
+            Learning value score
+        """
+        try:
+            learning_factors = []
+
+            # Factor 1: Query complexity (30% weight)
+            complexity_score = self._assess_query_complexity(query)
+            learning_factors.append(complexity_score * 0.3)
+
+            # Factor 2: Potential for pattern learning (40% weight)
+            pattern_score = self._assess_pattern_learning_potential(query)
+            learning_factors.append(pattern_score * 0.4)
+
+            # Factor 3: Error correction opportunity (30% weight)
+            error_score = self._assess_error_correction_potential(query)
+            learning_factors.append(error_score * 0.3)
+
+            return sum(learning_factors)
+
+        except Exception as e:
+            logger.error(f"Error assessing learning value: {e}")
+            return 0.5  # Default moderate learning value
+
+    def detect_feedback_fatigue(self, user_id: str = "anon") -> bool:
+        """Detect if user is experiencing feedback fatigue.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            True if fatigue detected, False otherwise
+        """
+        try:
+            with _get_conn() as conn:
+                cursor = conn.cursor()
+
+                # Check feedback frequency in last hour
+                one_hour_ago = datetime.now() - timedelta(hours=1)
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM assistant_feedback 
+                    WHERE created_at > ? AND user_id = ?
+                """,
+                    (one_hour_ago.isoformat(), user_id),
+                )
+
+                recent_feedback_count = cursor.fetchone()[0]
+
+                # Check negative feedback ratio in last 24 hours
+                one_day_ago = datetime.now() - timedelta(days=1)
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) as total,
+                           SUM(CASE WHEN rating = 'down' THEN 1 ELSE 0 END) as negative
+                    FROM assistant_feedback 
+                    WHERE created_at > ? AND user_id = ?
+                """,
+                    (one_day_ago.isoformat(), user_id),
+                )
+
+                result = cursor.fetchone()
+                total_feedback = result[0] if result[0] else 0
+                negative_feedback = result[1] if result[1] else 0
+
+                # Fatigue indicators:
+                # 1. More than 5 feedback requests in last hour
+                # 2. More than 70% negative feedback in last 24 hours (with at least 3 feedbacks)
+                if recent_feedback_count > 5:
+                    logger.info(
+                        f"Feedback fatigue detected: {recent_feedback_count} requests in last hour"
+                    )
+                    return True
+
+                if total_feedback >= 3 and (negative_feedback / total_feedback) > 0.7:
+                    logger.info(
+                        f"Feedback fatigue detected: {negative_feedback}/{total_feedback} negative feedback"
+                    )
+                    return True
+
+                return False
+
+        except Exception as e:
+            logger.error(f"Error detecting feedback fatigue: {e}")
+            return False  # Err on the side of not detecting fatigue
+
+    def _assess_query_complexity(self, query: str) -> float:
+        """Assess query complexity for learning value."""
+        try:
+            complexity_indicators = [
+                r"\bcorrelation\b",
+                r"\bcompare\b",
+                r"\btrends?\b",  # Match both trend and trends
+                r"\bpredict\b",
+                r"\banalysis\b",
+                r"\bstatistical\b",
+                r"\bregression\b",
+                r"\bvariance\b",
+            ]
+
+            import re
+
+            matches = sum(
+                1
+                for pattern in complexity_indicators
+                if re.search(pattern, query.lower())
+            )
+
+            # Normalize to 0.0-1.0 scale with more generous scoring
+            return min(1.0, matches / 2.0)
+
+        except Exception as e:
+            logger.error(f"Error assessing query complexity: {e}")
+            return 0.5
+
+    def _assess_pattern_learning_potential(self, query: str) -> float:
+        """Assess potential for learning new patterns."""
+        try:
+            # Check if query contains new field combinations
+            correction_service = CorrectionService()
+
+            # Simple heuristic: queries with multiple fields have higher learning potential
+            import re
+
+            field_mentions = len(
+                re.findall(r"\b\w+\s+(?:and|with|vs|versus)\s+\w+\b", query.lower())
+            )
+
+            # Queries asking for specific metrics have learning potential
+            metric_patterns = [
+                r"\baverage\b",
+                r"\bmedian\b",
+                r"\bcount\b",
+                r"\bsum\b",
+                r"\bmax\b",
+                r"\bmin\b",
+            ]
+            metric_matches = sum(
+                1 for pattern in metric_patterns if re.search(pattern, query.lower())
+            )
+
+            # Combine factors with more generous scoring
+            pattern_score = (
+                (field_mentions * 0.5) + (min(metric_matches, 2) * 0.3) + 0.2
+            )  # Base score for any query
+            return min(1.0, pattern_score)
+
+        except Exception as e:
+            logger.error(f"Error assessing pattern learning potential: {e}")
+            return 0.5
+
+    def _assess_error_correction_potential(self, query: str) -> float:
+        """Assess potential for error correction learning."""
+        try:
+            # Queries with ambiguous terms have higher error correction potential
+            ambiguous_terms = [
+                r"\bthis\b",
+                r"\bthat\b",
+                r"\bit\b",
+                r"\bthese\b",
+                r"\bthose\b",
+                r"\bstuff\b",
+                r"\bthing\b",
+                r"\bdata\b",
+            ]
+
+            import re
+
+            ambiguity_score = sum(
+                1 for term in ambiguous_terms if re.search(term, query.lower())
+            )
+
+            # Normalize and cap at 1.0
+            return min(1.0, ambiguity_score / 3.0)
+
+        except Exception as e:
+            logger.error(f"Error assessing error correction potential: {e}")
+            return 0.5
+
+
 def should_request_feedback(query: str, results: Dict[str, Any] = None) -> bool:
     """Determine if feedback would be valuable for this query.
 
@@ -290,3 +538,61 @@ def is_novel_query_pattern(query: str, threshold: float = 0.7) -> bool:
     except Exception as e:
         logger.error(f"Error checking novel query pattern: {e}")
         return True  # Err on the side of requesting feedback
+
+
+def get_feedback_priority_advanced(
+    query: str, results: Dict[str, Any] = None, user_id: str = "anon"
+) -> str:
+    """Advanced priority calculation with multiple factors.
+
+    Args:
+        query: Query text
+        results: Analysis results (optional)
+        user_id: User identifier for fatigue detection
+
+    Returns:
+        Priority level: 'high', 'medium', 'low', or 'skip'
+    """
+    try:
+        calculator = FeedbackPriorityCalculator()
+
+        # Check for feedback fatigue first
+        if calculator.detect_feedback_fatigue(user_id):
+            logger.info(f"Skipping feedback request due to fatigue for user: {user_id}")
+            return "skip"
+
+        # Phase 1: Basic duplicate detection (unchanged)
+        if has_recent_exact_feedback(query, days=1):
+            return "skip"
+
+        # Calculate recency factor
+        recency_factor = 0.0
+        if has_recent_similar_feedback(query, days=7):
+            # Check if this is a novel pattern despite similarity
+            if is_novel_query_pattern(query, threshold=0.8):
+                recency_factor = 0.3  # Some recency penalty but not full
+            else:
+                recency_factor = 0.8  # High recency penalty
+
+        # Calculate all factors
+        factors = {
+            "confidence": calculate_confidence_score(query, results),
+            "novelty": calculate_novelty_score(query),
+            "recency": recency_factor,
+            "learning_value": calculator.assess_learning_value(query),
+        }
+
+        # Log factors for debugging
+        logger.debug(f"Priority factors for query '{query[:50]}...': {factors}")
+
+        # Calculate weighted priority
+        priority = calculator.calculate_weighted_priority(factors)
+
+        logger.info(
+            f"Advanced priority calculated: {priority} for query: {query[:50]}..."
+        )
+        return priority
+
+    except Exception as e:
+        logger.error(f"Error calculating advanced feedback priority: {e}")
+        return "medium"  # Fail safe
