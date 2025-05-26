@@ -12,6 +12,8 @@ Sprint 2.3 Features:
 
 import panel as pn
 import asyncio
+import io
+import os
 from typing import Optional
 import logging
 
@@ -32,6 +34,9 @@ class ExportPanel:
             export_service: Optional export service (for testing)
         """
         self.export_service = export_service or ExportService()
+
+        # Track active downloads
+        self.active_downloads = []
 
         # Create UI components
         self._create_components()
@@ -89,16 +94,22 @@ class ExportPanel:
             name="Run Benchmark", button_type="light", width=150
         )
 
+        # Cleanup button
+        self.cleanup_button = pn.widgets.Button(
+            name="Clear All Downloads", button_type="danger", width=150
+        )
+
         # Status and results
         self.status_text = pn.pane.HTML("<p>Ready to generate reports</p>", width=600)
 
-        self.download_links = pn.Column(width=600)
+        self.download_container = pn.Column(width=600)
 
         # Bind events
         self.template_selector.param.watch(self._on_template_change, "value")
         self.export_button.on_click(self._on_custom_export)
         self.template_export_button.on_click(self._on_template_export)
         self.benchmark_button.on_click(self._on_run_benchmark)
+        self.cleanup_button.on_click(self._on_cleanup_downloads)
 
     def _get_template_description(self, template_id: str) -> str:
         """Get description for a template."""
@@ -196,11 +207,11 @@ class ExportPanel:
 
                 # Add download link
                 download_link = self._create_download_link(result, report_name)
-                self.download_links.append(download_link)
+                self.download_container.append(download_link)
 
                 # Keep only last 5 downloads
-                if len(self.download_links) > 5:
-                    self.download_links.pop(0)
+                if len(self.download_container) > 5:
+                    self.download_container.pop(0)
 
             else:
                 self.status_text.object = (
@@ -231,22 +242,45 @@ class ExportPanel:
 
             # Add benchmark results as a "download"
             benchmark_summary = self._create_benchmark_summary(suite)
-            self.download_links.append(benchmark_summary)
+            self.download_container.append(benchmark_summary)
 
             # Keep only last 5 items
-            if len(self.download_links) > 5:
-                self.download_links.pop(0)
+            if len(self.download_container) > 5:
+                self.download_container.pop(0)
 
         except Exception as e:
             logger.error(f"Error running benchmark: {e}")
             self.status_text.object = f"<p>❌ Benchmark error: {str(e)}</p>"
 
-    def _create_download_link(self, result: ExportResult, report_name: str) -> pn.Row:
-        """Create download link for export result."""
+    def _create_download_link(
+        self, result: ExportResult, report_name: str
+    ) -> pn.Column:
+        """Create download widget for export result."""
         try:
             file_size_mb = result.metadata.get("file_size", 0) / (1024 * 1024)
 
-            download_html = f"""
+            # Read file content for download
+            file_content = None
+            if result.file_path and os.path.exists(result.file_path):
+                with open(result.file_path, "rb") as f:
+                    file_content = f.read()
+
+            # Create download widget
+            download_widget = pn.widgets.FileDownload(
+                label=f"📥 Download {report_name}",
+                button_type="success",
+                filename=(
+                    os.path.basename(result.file_path)
+                    if result.file_path
+                    else f"{report_name}.{result.export_type}"
+                ),
+                file=io.BytesIO(file_content) if file_content else None,
+                disabled=file_content is None,
+                width=200,
+            )
+
+            # Create info panel
+            info_html = f"""
             <div style="background: #f0f8ff; padding: 10px; border-radius: 5px; margin: 5px 0;">
                 <h4 style="margin: 0 0 5px 0;">📄 {report_name}</h4>
                 <p style="margin: 0; color: #666;">
@@ -254,23 +288,56 @@ class ExportPanel:
                     Size: {file_size_mb:.2f} MB | 
                     Generated: {result.created_at.strftime('%Y-%m-%d %H:%M')}
                 </p>
-                <p style="margin: 5px 0 0 0;">
-                    <a href="file://{result.file_path}" 
-                       style="color: #0066cc; text-decoration: none;">
-                       📥 Download Report
-                    </a>
-                    <span style="margin-left: 10px; color: #999;">
-                        File: {result.file_path}
-                    </span>
+                <p style="margin: 5px 0 0 0; color: #999; font-size: 12px;">
+                    Export ID: {result.export_id}
                 </p>
             </div>
             """
 
-            return pn.pane.HTML(download_html, width=580)
+            info_panel = pn.pane.HTML(info_html, width=380)
+
+            # Create delete button
+            delete_button = pn.widgets.Button(
+                name="🗑️ Delete", button_type="danger", width=80, height=30
+            )
+
+            # Store reference to container for deletion
+            container = pn.Column(
+                pn.Row(
+                    info_panel,
+                    pn.Column(download_widget, delete_button, width=200),
+                    width=580,
+                ),
+                width=580,
+            )
+
+            # Bind delete button
+            def delete_export(event):
+                try:
+                    # Remove file if it exists
+                    if result.file_path and os.path.exists(result.file_path):
+                        os.remove(result.file_path)
+
+                    # Remove from UI
+                    if container in self.download_container:
+                        self.download_container.remove(container)
+
+                    self.status_text.object = f"<p>✅ Deleted export: {report_name}</p>"
+                except Exception as e:
+                    logger.error(f"Error deleting export: {e}")
+                    self.status_text.object = (
+                        f"<p>❌ Error deleting export: {str(e)}</p>"
+                    )
+
+            delete_button.on_click(delete_export)
+
+            return container
 
         except Exception as e:
             logger.error(f"Error creating download link: {e}")
-            return pn.pane.HTML("<p>Error creating download link</p>")
+            return pn.pane.HTML(
+                f"<p>❌ Error creating download for {report_name}: {str(e)}</p>"
+            )
 
     def _create_benchmark_summary(self, suite) -> pn.pane.HTML:
         """Create benchmark summary display."""
@@ -301,6 +368,40 @@ class ExportPanel:
         except Exception as e:
             logger.error(f"Error creating benchmark summary: {e}")
             return pn.pane.HTML("<p>Error creating benchmark summary</p>")
+
+    def _on_cleanup_downloads(self, event):
+        """Handle cleanup button click."""
+        try:
+            self.status_text.object = "<p>🔄 Cleaning up downloads...</p>"
+
+            # Clear all downloads from UI
+            self.download_container.clear()
+
+            # Also clean up old export files from disk
+            import glob
+
+            export_dir = self.export_service.export_dir
+            export_files = (
+                glob.glob(str(export_dir / "export_*.csv"))
+                + glob.glob(str(export_dir / "export_*.pdf"))
+                + glob.glob(str(export_dir / "export_*.json"))
+            )
+
+            deleted_count = 0
+            for file_path in export_files:
+                try:
+                    os.remove(file_path)
+                    deleted_count += 1
+                except Exception as e:
+                    logger.warning(f"Could not delete file {file_path}: {e}")
+
+            self.status_text.object = (
+                f"<p>✅ Cleared {deleted_count} export files from disk and UI!</p>"
+            )
+
+        except Exception as e:
+            logger.error(f"Error cleaning up downloads: {e}")
+            self.status_text.object = f"<p>❌ Error: {str(e)}</p>"
 
     def get_panel(self):
         """Get the complete export panel."""
@@ -353,6 +454,9 @@ class ExportPanel:
             # Status and downloads
             pn.pane.HTML("<h3>📥 Export Status & Downloads</h3>"),
             self.status_text,
-            self.download_links,
+            self.download_container,
+            pn.Row(
+                self.cleanup_button,
+            ),
             width=800,
         )

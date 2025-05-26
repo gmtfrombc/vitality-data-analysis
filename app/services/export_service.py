@@ -143,45 +143,89 @@ class ExportService:
 
         try:
             if "health" in request.data_types:
-                data["health"] = {
-                    "current_status": self.dashboard_service.get_health_status(),
-                    "timestamp": datetime.now().isoformat(),
-                }
+                try:
+                    health_status = self.dashboard_service.get_health_status()
+                    data["health"] = {
+                        "current_status": health_status,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to collect health data: {e}")
+                    data["health"] = {
+                        "current_status": None,
+                        "error": str(e),
+                        "timestamp": datetime.now().isoformat(),
+                    }
 
             if "performance" in request.data_types:
-                # Get performance metrics from dashboard
-                data["performance"] = {
-                    "current_metrics": self.dashboard_service._get_current_metrics(),
-                    "system_info": self.dashboard_service._get_system_info(),
-                    "timestamp": datetime.now().isoformat(),
-                }
+                try:
+                    # Get performance metrics from dashboard
+                    current_metrics = self.dashboard_service.get_current_metrics()
+                    system_info = self.dashboard_service._get_system_info()
+                    data["performance"] = {
+                        "current_metrics": current_metrics,
+                        "system_info": system_info,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to collect performance data: {e}")
+                    data["performance"] = {
+                        "current_metrics": {},
+                        "system_info": {},
+                        "error": str(e),
+                        "timestamp": datetime.now().isoformat(),
+                    }
 
             if "learning" in request.data_types:
-                data["learning"] = {
-                    "pattern_effectiveness": self.analytics_service.get_pattern_effectiveness(
-                        request.time_period
-                    ),
-                    "correction_analysis": self.analytics_service.get_correction_analysis(
-                        request.time_period
-                    ),
-                    "learning_progress": self.analytics_service.get_learning_progress(
-                        request.time_period
-                    ),
-                    "user_feedback": self.analytics_service.get_user_feedback_analytics(
-                        request.time_period
-                    ),
-                    "timestamp": datetime.now().isoformat(),
-                }
+                try:
+                    data["learning"] = {
+                        "pattern_effectiveness": self.analytics_service.get_pattern_effectiveness(
+                            request.time_period
+                        ),
+                        "correction_analysis": self.analytics_service.get_correction_analysis(
+                            request.time_period
+                        ),
+                        "learning_progress": self.analytics_service.get_learning_progress(
+                            request.time_period
+                        ),
+                        "user_feedback": self.analytics_service.get_user_feedback_analytics(
+                            request.time_period
+                        ),
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to collect learning data: {e}")
+                    data["learning"] = {
+                        "pattern_effectiveness": [],
+                        "correction_analysis": None,
+                        "learning_progress": None,
+                        "user_feedback": None,
+                        "error": str(e),
+                        "timestamp": datetime.now().isoformat(),
+                    }
 
             if "benchmarks" in request.data_types:
-                benchmark_history = self.benchmark_service.get_benchmark_history(
-                    request.time_period
-                )
-                data["benchmarks"] = {
-                    "recent_suites": benchmark_history,
-                    "summary": self._summarize_benchmarks(benchmark_history),
-                    "timestamp": datetime.now().isoformat(),
-                }
+                try:
+                    benchmark_history = self.benchmark_service.get_benchmark_history(
+                        request.time_period
+                    )
+                    data["benchmarks"] = {
+                        "recent_suites": benchmark_history,
+                        "summary": self._summarize_benchmarks(benchmark_history),
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to collect benchmark data: {e}")
+                    data["benchmarks"] = {
+                        "recent_suites": [],
+                        "summary": {},
+                        "error": str(e),
+                        "timestamp": datetime.now().isoformat(),
+                    }
+
+            # Validate that we have some data
+            if not any(data.values()):
+                raise ValueError("No data could be collected for export")
 
             return data
 
@@ -274,57 +318,109 @@ class ExportService:
         """Write health data to CSV."""
         writer.writerow(["Component", "Status", "Details"])
 
-        health_status = health_data["current_status"]
-        for component, details in health_status.components.items():
-            writer.writerow([component, details.get("status", "unknown"), str(details)])
+        if health_data.get("error"):
+            writer.writerow(["Error", health_data["error"], "Data collection failed"])
+            return
+
+        health_status = health_data.get("current_status")
+        if not health_status:
+            writer.writerow(["No Data", "unavailable", "Health status not available"])
+            return
+
+        if hasattr(health_status, "components") and health_status.components:
+            for component, details in health_status.components.items():
+                writer.writerow(
+                    [component, details.get("status", "unknown"), str(details)]
+                )
+        else:
+            writer.writerow(
+                ["No Components", "unavailable", "Component data not available"]
+            )
 
         writer.writerow([])
-        writer.writerow(["Overall Status", health_status.overall_status])
-        writer.writerow(["Last Updated", health_status.last_updated])
+        if hasattr(health_status, "overall_status"):
+            writer.writerow(["Overall Status", health_status.overall_status])
+        if hasattr(health_status, "last_updated"):
+            writer.writerow(["Last Updated", health_status.last_updated])
 
     def _write_performance_csv(self, writer, performance_data):
         """Write performance data to CSV."""
         writer.writerow(["Metric", "Value", "Unit"])
 
-        current_metrics = performance_data["current_metrics"]
+        if performance_data.get("error"):
+            writer.writerow(["Error", performance_data["error"], ""])
+            return
+
+        current_metrics = performance_data.get("current_metrics", {})
+        if not current_metrics:
+            writer.writerow(["No Data", "unavailable", ""])
+            return
+
         for metric, value in current_metrics.items():
             writer.writerow([metric, value, ""])
 
     def _write_learning_csv(self, writer, learning_data):
         """Write learning data to CSV."""
+        if learning_data.get("error"):
+            writer.writerow(["Error", learning_data["error"]])
+            return
+
         # Pattern effectiveness
         writer.writerow(["=== PATTERN EFFECTIVENESS ==="])
         writer.writerow(
             ["Pattern ID", "Type", "Success Rate", "Total Applications", "Trend"]
         )
 
-        for pattern in learning_data["pattern_effectiveness"]:
-            writer.writerow(
-                [
-                    pattern.pattern_id,
-                    pattern.pattern_type,
-                    f"{pattern.success_rate:.2%}",
-                    pattern.total_applications,
-                    pattern.trend,
-                ]
-            )
+        pattern_effectiveness = learning_data.get("pattern_effectiveness", [])
+        if not pattern_effectiveness:
+            writer.writerow(["No patterns", "available", "0%", "0", "none"])
+        else:
+            for pattern in pattern_effectiveness:
+                writer.writerow(
+                    [
+                        getattr(pattern, "pattern_id", "N/A"),
+                        getattr(pattern, "pattern_type", "N/A"),
+                        f"{getattr(pattern, 'success_rate', 0):.2%}",
+                        getattr(pattern, "total_applications", 0),
+                        getattr(pattern, "trend", "N/A"),
+                    ]
+                )
 
         writer.writerow([])
 
         # Correction analysis
         writer.writerow(["=== CORRECTION ANALYSIS ==="])
-        correction_analysis = learning_data["correction_analysis"]
-        writer.writerow(["Total Corrections", correction_analysis.total_corrections])
-        writer.writerow(
-            ["Successful Corrections", correction_analysis.successful_corrections]
-        )
-        writer.writerow(["Success Rate", f"{correction_analysis.success_rate:.2%}"])
-        writer.writerow(
-            [
-                "Avg Time to Success (min)",
-                f"{correction_analysis.avg_time_to_success:.1f}",
-            ]
-        )
+        correction_analysis = learning_data.get("correction_analysis")
+        if not correction_analysis:
+            writer.writerow(["Total Corrections", "0"])
+            writer.writerow(["Successful Corrections", "0"])
+            writer.writerow(["Success Rate", "0%"])
+            writer.writerow(["Avg Time to Success (min)", "0"])
+        else:
+            writer.writerow(
+                [
+                    "Total Corrections",
+                    getattr(correction_analysis, "total_corrections", 0),
+                ]
+            )
+            writer.writerow(
+                [
+                    "Successful Corrections",
+                    getattr(correction_analysis, "successful_corrections", 0),
+                ]
+            )
+            writer.writerow(
+                [
+                    "Success Rate",
+                    f"{getattr(correction_analysis, 'success_rate', 0):.2%}",
+                ]
+            )
+            writer.writerow(
+                [
+                    "Avg Time to Success (min)",
+                    f"{getattr(correction_analysis, 'avg_time_to_success', 0):.1f}",
+                ]
+            )
 
     def _write_benchmarks_csv(self, writer, benchmark_data):
         """Write benchmark data to CSV."""
@@ -338,18 +434,30 @@ class ExportService:
             ]
         )
 
-        for suite in benchmark_data["recent_suites"]:
+        if benchmark_data.get("error"):
+            writer.writerow(["Error", benchmark_data["error"], "0", "0", "0%"])
+            return
+
+        recent_suites = benchmark_data.get("recent_suites", [])
+        if not recent_suites:
+            writer.writerow(["No benchmarks", "N/A", "0", "0", "0%"])
+            return
+
+        for suite in recent_suites:
             success_rate = (
-                suite.successful_tests / suite.total_tests
-                if suite.total_tests > 0
+                getattr(suite, "successful_tests", 0) / getattr(suite, "total_tests", 1)
+                if getattr(suite, "total_tests", 0) > 0
                 else 0
             )
+            started_at = getattr(suite, "started_at", None)
+            started_at_str = started_at.isoformat() if started_at else "N/A"
+
             writer.writerow(
                 [
-                    suite.suite_id,
-                    suite.started_at.isoformat(),
-                    f"{suite.performance_score:.1f}",
-                    suite.total_tests,
+                    getattr(suite, "suite_id", "N/A"),
+                    started_at_str,
+                    f"{getattr(suite, 'performance_score', 0):.1f}",
+                    getattr(suite, "total_tests", 0),
                     f"{success_rate:.2%}",
                 ]
             )

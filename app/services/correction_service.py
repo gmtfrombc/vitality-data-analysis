@@ -675,6 +675,27 @@ class CorrectionService:
         if not words1 or not words2:
             return 0.0
 
+        # Check for conflicting medical terms that should prevent matching
+        conflicting_terms = {
+            frozenset(["weight", "bmi"]),
+            frozenset(["weight", "height"]),
+            frozenset(["bmi", "height"]),
+            frozenset(["sbp", "dbp"]),  # systolic vs diastolic
+            frozenset(["glucose", "bmi"]),
+            frozenset(["a1c", "weight"]),
+        }
+
+        for conflict_set in conflicting_terms:
+            if (
+                len(conflict_set.intersection(words1)) > 0
+                and len(conflict_set.intersection(words2)) > 0
+            ):
+                # Check if they contain different terms from the conflict set
+                terms1 = conflict_set.intersection(words1)
+                terms2 = conflict_set.intersection(words2)
+                if terms1 != terms2:  # Different conflicting terms
+                    return 0.0  # No similarity for conflicting medical terms
+
         intersection = len(words1.intersection(words2))
         union = len(words1.union(words2))
 

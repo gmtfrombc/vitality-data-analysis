@@ -20,8 +20,13 @@ def preprocess_results_for_ai(results: Dict[str, Any], query: str) -> Dict[str, 
     Returns:
         Processed results with reference ranges added
     """
-    # Make a copy to avoid modifying the original
-    enriched_results = results.copy() if results else {}
+    # Handle scalar results (like numpy float64) by wrapping them in a dictionary
+    if not isinstance(results, dict):
+        # Convert scalar results to a dictionary
+        enriched_results = {"value": results}
+    else:
+        # Make a copy to avoid modifying the original
+        enriched_results = results.copy() if results else {}
 
     # Detect metrics mentioned in query or results
     metrics = extract_metrics_from_text(query)

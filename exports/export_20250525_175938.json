@@ -1,0 +1,69 @@
+{
+  "export_id": "export_20250525_175938",
+  "generated_at": "2025-05-25T17:59:38.455886",
+  "time_period_days": 30,
+  "data_types": [
+    "health",
+    "performance"
+  ],
+  "data": {
+    "health": {
+      "current_status": {
+        "overall_status": "warning",
+        "components": {
+          "database": {
+            "status": "connected",
+            "response_time_ms": 50,
+            "icon": "\u2705"
+          },
+          "pattern_learning": {
+            "status": "inactive",
+            "active_patterns": 12,
+            "icon": "\u274c"
+          },
+          "cache": {
+            "performance": "poor",
+            "hit_rate": 0.85,
+            "icon": "\u274c"
+          }
+        },
+        "metrics": {
+          "error_rate": 0.0,
+          "response_time_ms": 67.0,
+          "uptime_hours": 24
+        },
+        "recommendations": [
+          "Pattern learning system inactive",
+          "Cache performance is degraded"
+        ],
+        "last_updated": "2025-05-25T17:59:38.450668"
+      },
+      "timestamp": "2025-05-25T17:59:38.455340"
+    },
+    "performance": {
+      "current_metrics": {
+        "avg_response_time": 67.0,
+        "db_response_time": 50,
+        "cache_hit_rate": 0.85,
+        "active_patterns": 12,
+        "uptime_hours": 24,
+        "response_time": 67.0
+      },
+      "system_info": {
+        "platform": "Darwin",
+        "platform_version": "Darwin Kernel Version 24.5.0: Tue Apr 22 19:54:33 PDT 2025; root:xnu-11417.121.6~2/RELEASE_ARM64_T8122",
+        "python_version": "3.13.2",
+        "cpu_count": 8,
+        "memory_total_gb": 16.0,
+        "memory_available_gb": 4.92,
+        "memory_percent": 69.3,
+        "disk_usage_percent": 19.0,
+        "timestamp": "2025-05-25T17:59:38.455636",
+        "database_patients": 0,
+        "database_questions": 0,
+        "database_connected": true
+      },
+      "timestamp": "2025-05-25T17:59:38.455882"
+    }
+  }
+}

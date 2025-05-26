@@ -989,8 +989,12 @@ def create_reference_ranges_table(results, query):
         import pandas as pd
         import panel as pn
 
+        # Add debug logging
+        logger.info(f"[REFERENCE_TABLE] Creating reference table for query: '{query}'")
+
         # Extract metrics from query and results
         metrics = extract_metrics_from_text(query)
+        logger.info(f"[REFERENCE_TABLE] Extracted metrics: {metrics}")
 
         # Also check if results contain reference data
         if isinstance(results, dict) and "reference" in results:
@@ -1000,6 +1004,7 @@ def create_reference_ranges_table(results, query):
         metrics = list(dict.fromkeys(metrics))
 
         if not metrics:
+            logger.info("[REFERENCE_TABLE] No metrics found, returning None")
             return None
 
         # Get reference data
@@ -1045,7 +1050,10 @@ def create_reference_ranges_table(results, query):
                 )
 
         if not table_data:
+            logger.info("[REFERENCE_TABLE] No table data generated, returning None")
             return None
+
+        logger.info(f"[REFERENCE_TABLE] Generated {len(table_data)} table rows")
 
         # Create DataFrame and Panel table
         df = pd.DataFrame(table_data)
@@ -1073,6 +1081,9 @@ def create_reference_ranges_table(results, query):
             sizing_mode="stretch_width",
         )
 
+        logger.info(
+            "[REFERENCE_TABLE] Successfully created reference table HTML component"
+        )
         return reference_section
 
     except Exception as e:

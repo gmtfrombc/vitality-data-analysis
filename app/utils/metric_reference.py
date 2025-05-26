@@ -85,6 +85,10 @@ def extract_metrics_from_text(text: str) -> list[str]:
     Returns:
         List of metric names found in the text
     """
+    # Handle None or empty text
+    if not text:
+        return []
+
     text = text.lower()
     ref = get_reference()
 

@@ -1,7 +1,17 @@
-import tempfile
-import sqlite3
-from app.services.correction_service import CorrectionService
+#!/usr/bin/env python3
+"""
+Debug script to test pattern matching similarity calculation.
+"""
+
 from app.utils.feedback_db import insert_feedback
+from app.services.correction_service import CorrectionService
+import sqlite3
+import tempfile
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 
 # Create temp db
 with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
@@ -73,3 +83,71 @@ print(f'Search normalized: "{search_normalized}"')
 # Test similarity between the two
 similarity = cs._calculate_query_similarity(normalized, search_normalized)
 print(f'Similarity between "{normalized}" and "{search_normalized}": {similarity}')
+
+
+def test_similarity_calculation():
+    """Test the similarity calculation that's causing the weight/BMI mix-up."""
+    print("=== Testing Similarity Calculation ===")
+
+    cs = CorrectionService()
+
+    # Test the exact case that's causing the issue
+    query = "What is the average weight of patients?"
+    pattern = "average bmi active patients"
+
+    # Normalize both
+    normalized_query = cs._normalize_query(query)
+    print(f"Original query: '{query}'")
+    print(f"Normalized query: '{normalized_query}'")
+    print(f"Pattern: '{pattern}'")
+
+    # Calculate similarity
+    similarity = cs._calculate_query_similarity(normalized_query, pattern)
+    print(f"Similarity: {similarity:.3f}")
+
+    # Break down the calculation
+    words1 = set(normalized_query.split())
+    words2 = set(pattern.split())
+    intersection = words1.intersection(words2)
+    union = words1.union(words2)
+
+    print(f"Query words: {words1}")
+    print(f"Pattern words: {words2}")
+    print(f"Intersection: {intersection} (count: {len(intersection)})")
+    print(f"Union: {union} (count: {len(union)})")
+    print(
+        f"Similarity calculation: {len(intersection)}/{len(union)} = {similarity:.3f}"
+    )
+
+    # Test if this exceeds the threshold
+    threshold = 0.3
+    print(f"Threshold: {threshold}")
+    print(f"Exceeds threshold: {similarity > threshold}")
+
+    # Test with a correct weight pattern
+    print("\n--- Testing with correct weight pattern ---")
+    correct_pattern = "average weight patients"
+    correct_similarity = cs._calculate_query_similarity(
+        normalized_query, correct_pattern
+    )
+    print(f"Correct pattern: '{correct_pattern}'")
+    print(f"Correct similarity: {correct_similarity:.3f}")
+
+    # Test other problematic cases
+    print("\n--- Testing other cases ---")
+    test_cases = [
+        ("What is the average BMI?", "average weight patients"),
+        ("Show me patient weights", "average bmi active patients"),
+        ("Average weight by gender", "average bmi active patients"),
+    ]
+
+    for test_query, test_pattern in test_cases:
+        norm_query = cs._normalize_query(test_query)
+        sim = cs._calculate_query_similarity(norm_query, test_pattern)
+        print(
+            f"'{test_query}' vs '{test_pattern}': {sim:.3f} ({'MATCH' if sim > threshold else 'NO MATCH'})"
+        )
+
+
+if __name__ == "__main__":
+    test_similarity_calculation()
